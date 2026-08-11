@@ -150,6 +150,27 @@ jobs:
           npm ci
           npm run audit:ci
 
+  mobile-detox-scaffold:
+    name: Mobile Detox scaffold validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate Detox config + e2e specs exist
+        run: |
+          test -f .detoxrc.js
+          test -f e2e/config.json
+          test -f e2e/smoke.e2e.js
+          test -f e2e/auth.e2e.js
+          node -e "const c=require('./.detoxrc.js'); if(!c.configurations['android.emu.debug']) process.exit(1); console.log('detox scaffold OK')"
+      - name: SQLCipher verify script
+        run: node ./scripts/verify-sqlcipher.mjs
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -189,6 +210,7 @@ jobs:
       - frontend-audit
       - frontend-build
       - packaging-validate
+      - mobile-detox-scaffold
     steps:
       - uses: actions/checkout@v4
 
