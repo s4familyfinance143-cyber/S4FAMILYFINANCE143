@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f8f6f">
+<title>S4 FAMILY 143 — Executive Dashboard</title>
+<style>
+:root{
+  --bg:#f3f7f6;--surface:#ffffff;--surface-2:#f8fbfa;--surface-3:#edf7f3;
+  --text:#17211e;--muted:#6c7b76;--line:#dce7e3;--primary:#0f8f6f;--primary-2:#0b6f58;
+  --primary-soft:#e0f4ed;--blue:#2563eb;--blue-soft:#e8efff;--orange:#d97706;--orange-soft:#fff2dd;
+  --red:#dc2626;--red-soft:#fee9e9;--purple:#7c3aed;--purple-soft:#f0eafe;--shadow:0 12px 34px rgba(16,55,43,.08);
+  --sidebar:270px;--radius:18px;--topbar:76px;
+}
+[data-theme="dark"]{
+  --bg:#0e1614;--surface:#14201d;--surface-2:#182724;--surface-3:#1d302b;
+  --text:#eef8f5;--muted:#9dafaa;--line:#2b3c37;--primary:#35c49a;--primary-2:#6ddab8;
+  --primary-soft:#173c31;--blue:#6ea1ff;--blue-soft:#1d3158;--orange:#f4a83b;--orange-soft:#442e14;
+  --red:#ff7676;--red-soft:#4a2323;--purple:#b99aff;--purple-soft:#332853;--shadow:0 16px 38px rgba(0,0,0,.24);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+button,input,select,textarea{font:inherit}
+button{border:0;cursor:pointer}
+.app{min-height:100vh;display:grid;grid-template-columns:var(--sidebar) minmax(0,1fr)}
+.sidebar{height:100vh;position:sticky;top:0;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:50;overflow:hidden}
+.brand{height:var(--topbar);display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--line)}
+.brand-mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--primary),#47caa6);display:grid;place-items:center;color:white;font-weight:900;box-shadow:0 8px 20px rgba(15,143,111,.25)}
+.brand-title{font-size:16px;font-weight:900;letter-spacing:.2px}.brand-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.sidebar-scroll{padding:14px 12px;overflow-y:auto;flex:1;scrollbar-width:thin}
+.nav-group{margin-bottom:16px}.nav-label{padding:0 10px 7px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.nav-item{width:100%;display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:11px;background:transparent;color:var(--muted);text-align:left;margin:2px 0;transition:.18s ease;position:relative}
+.nav-item:hover{background:var(--surface-2);color:var(--text);transform:translateX(2px)}
+.nav-item.active{background:var(--primary-soft);color:var(--primary-2);font-weight:800}
+.nav-icon{width:24px;text-align:center;font-size:15px}.nav-text{flex:1;font-size:12.5px}.nav-badge{font-size:10px;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--red);color:#fff;display:grid;place-items:center}
+.profile{border-top:1px solid var(--line);padding:14px;display:flex;align-items:center;gap:10px}.avatar{width:38px;height:38px;border-radius:13px;background:var(--primary-soft);display:grid;place-items:center;font-weight:900;color:var(--primary-2)}
+.profile-meta{min-width:0;flex:1}.profile-name{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.profile-role{font-size:10px;color:var(--muted);margin-top:2px}
+.main{min-width:0}.topbar{height:var(--topbar);position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--surface) 92%, transparent);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 24px}
+.mobile-menu{display:none;width:38px;height:38px;border-radius:11px;background:var(--surface-2);color:var(--text)}
+.search{flex:1;max-width:540px;position:relative}.search input{width:100%;height:42px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2);color:var(--text);padding:0 44px 0 40px;outline:none}.search input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.search .sicon{position:absolute;left:14px;top:11px;color:var(--muted)}.search kbd{position:absolute;right:10px;top:9px;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:7px;padding:3px 7px;font-size:10px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:9px}.icon-btn{width:40px;height:40px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);display:grid;place-items:center;position:relative}.icon-btn:hover{background:var(--surface-2)}
+.online-pill{height:40px;padding:0 12px;border:1px solid #bfe7da;background:var(--primary-soft);color:var(--primary-2);border-radius:12px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800}.online-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 4px color-mix(in srgb,var(--primary) 18%, transparent)}
+.dot-badge{position:absolute;top:6px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface)}
+.content{padding:24px;max-width:1700px;margin:0 auto}.page{display:none}.page.active{display:block;animation:fadeIn .24s ease}@keyframes fadeIn{from{opacity:.35;transform:translateY(4px)}to{opacity:1;transform:none}}
+.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.page-kicker{font-size:11px;font-weight:900;color:var(--primary);letter-spacing:.11em;text-transform:uppercase}.page-title{font-size:26px;line-height:1.15;margin-top:4px;font-weight:900}.page-sub{font-size:12px;color:var(--muted);margin-top:7px;max-width:760px;line-height:1.55}.head-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+.btn{height:40px;padding:0 15px;border-radius:12px;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;border:1px solid var(--line);background:var(--surface);color:var(--text)}.btn:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(0,0,0,.06)}.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}.btn-danger{background:var(--red-soft);color:var(--red);border-color:transparent}.btn-sm{height:32px;padding:0 10px;font-size:11px;border-radius:9px}
+.notice{border:1px solid #c7e8dd;background:var(--primary-soft);color:var(--primary-2);padding:11px 14px;border-radius:13px;font-size:11px;display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:16px}.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:17px;box-shadow:0 4px 18px rgba(16,55,43,.03);position:relative;overflow:hidden}.kpi::after{content:"";position:absolute;right:-24px;bottom:-35px;width:90px;height:90px;border-radius:50%;background:var(--primary-soft)}
+.kpi-top{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative;z-index:1}.kpi-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary-2)}.kpi-change{font-size:10px;font-weight:800;padding:4px 7px;border-radius:999px;background:var(--primary-soft);color:var(--primary-2)}.kpi-change.down{background:var(--red-soft);color:var(--red)}
+.kpi-value{font-size:23px;font-weight:900;margin-top:15px;position:relative;z-index:1}.kpi-label{font-size:11px;color:var(--muted);margin-top:4px;position:relative;z-index:1}
+.grid{display:grid;gap:16px}.grid-12{grid-template-columns:repeat(12,minmax(0,1fr))}.span-8{grid-column:span 8}.span-7{grid-column:span 7}.span-6{grid-column:span 6}.span-5{grid-column:span 5}.span-4{grid-column:span 4}.span-3{grid-column:span 3}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 4px 18px rgba(16,55,43,.035);min-width:0}.card-head{padding:17px 18px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.card-title{font-size:13px;font-weight:900}.card-sub{font-size:10.5px;color:var(--muted);margin-top:3px}.card-body{padding:0 18px 18px}.card-link{font-size:10.5px;font-weight:800;color:var(--primary);background:transparent}
+.chart-area{height:250px;position:relative;border-top:1px dashed var(--line);margin-top:10px;padding-top:10px}.chart-grid{position:absolute;inset:15px 0 25px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}.chart-grid span{border-top:1px dashed var(--line)}.chart-svg{position:relative;width:100%;height:210px;overflow:visible}.chart-labels{display:grid;grid-template-columns:repeat(7,1fr);font-size:9px;color:var(--muted);text-align:center;margin-top:-2px}.chart-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted)}.legend-dot{display:inline-block;width:8px;height:8px;border-radius:3px;margin-right:5px}.legend-income{background:var(--primary)}.legend-expense{background:var(--orange)}
+.donut-wrap{display:flex;align-items:center;gap:20px;padding-top:8px}.donut{width:150px;height:150px;border-radius:50%;background:conic-gradient(var(--primary) 0 38%,var(--blue) 38% 62%,var(--orange) 62% 78%,var(--purple) 78% 91%,var(--line) 91%);position:relative;flex:0 0 auto}.donut::after{content:"";position:absolute;inset:28px;border-radius:50%;background:var(--surface)}.donut-center{position:absolute;inset:0;z-index:2;display:grid;place-content:center;text-align:center}.donut-center strong{font-size:17px}.donut-center span{font-size:9px;color:var(--muted)}.donut-list{flex:1;display:grid;gap:10px}.donut-row{display:grid;grid-template-columns:1fr auto;gap:10px;font-size:10.5px}.donut-row span{color:var(--muted)}
+.quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.quick{padding:13px 8px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);text-align:center;color:var(--text);transition:.18s}.quick:hover{border-color:var(--primary);background:var(--primary-soft);transform:translateY(-2px)}.quick-icon{font-size:20px}.quick-label{font-size:10.5px;font-weight:800;margin-top:6px}
+.budget-list,.due-list,.member-list{display:grid;gap:12px}.budget-row-top,.due-row,.member-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.budget-name{font-size:11px;font-weight:800}.budget-amount{font-size:10px;color:var(--muted)}.progress{height:8px;border-radius:99px;background:var(--surface-3);overflow:hidden;margin-top:7px}.progress span{display:block;height:100%;border-radius:inherit;background:var(--primary)}.progress.warn span{background:var(--orange)}.progress.danger span{background:var(--red)}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}.table{width:100%;border-collapse:collapse;min-width:740px}.table th{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;text-align:left;color:var(--muted);background:var(--surface-2);padding:11px 12px;border-bottom:1px solid var(--line)}.table td{font-size:11px;padding:12px;border-bottom:1px solid var(--line);white-space:nowrap}.table tr:last-child td{border-bottom:0}.table tr:hover td{background:var(--surface-2)}
+.tx-name{display:flex;align-items:center;gap:9px;font-weight:800}.tx-icon{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:var(--surface-3)}.amount.plus{color:var(--primary);font-weight:900}.amount.minus{color:var(--red);font-weight:900}.status{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:var(--primary-soft);color:var(--primary-2);font-size:9.5px;font-weight:800}.status.pending{background:var(--orange-soft);color:var(--orange)}.status.failed{background:var(--red-soft);color:var(--red)}
+.member-avatar{width:32px;height:32px;border-radius:11px;display:grid;place-items:center;background:var(--primary-soft);font-size:11px;font-weight:900;color:var(--primary-2)}.member-info{flex:1;min-width:0}.member-name{font-size:11px;font-weight:800}.member-role{font-size:9.5px;color:var(--muted)}
+.due-icon{width:34px;height:34px;border-radius:11px;background:var(--orange-soft);color:var(--orange);display:grid;place-items:center}.due-info{flex:1}.due-name{font-size:11px;font-weight:800}.due-date{font-size:9.5px;color:var(--muted)}.due-amount{font-size:11px;font-weight:900}
+.module-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.module-card{background:var(--surface);border:1px solid var(--line);border-radius:17px;padding:16px;transition:.18s;cursor:pointer;min-height:148px}.module-card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:color-mix(in srgb,var(--primary) 45%,var(--line))}.module-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:var(--primary-soft);font-size:20px}.module-title{font-size:12px;font-weight:900;margin-top:12px}.module-desc{font-size:10px;color:var(--muted);line-height:1.5;margin-top:5px}.module-meta{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:9.5px;color:var(--muted)}
+.detail-hero{background:linear-gradient(120deg,var(--surface),var(--primary-soft));border:1px solid var(--line);border-radius:22px;padding:22px;display:flex;align-items:center;gap:18px;margin-bottom:16px}.detail-icon{width:64px;height:64px;border-radius:20px;background:var(--surface);display:grid;place-items:center;font-size:29px;box-shadow:var(--shadow)}.detail-title{font-size:22px;font-weight:900}.detail-desc{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}.detail-stats{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.mini-stat{min-width:110px;padding:11px 13px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}.mini-stat strong{display:block;font-size:16px}.mini-stat span{font-size:9.5px;color:var(--muted)}
+.feature-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.feature{display:flex;gap:9px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:10.5px;line-height:1.45}.feature-check{color:var(--primary);font-weight:900}
+.sync-card{display:flex;align-items:center;gap:15px}.sync-ring{width:62px;height:62px;border-radius:50%;background:conic-gradient(var(--primary) 0 92%,var(--line) 92%);position:relative;flex:none}.sync-ring:after{content:"92%";position:absolute;inset:7px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-size:11px;font-weight:900}.sync-info h4{font-size:12px}.sync-info p{font-size:10px;color:var(--muted);margin-top:4px}.sync-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.tag{font-size:9px;padding:4px 7px;border-radius:7px;background:var(--surface-3);color:var(--muted)}
+.empty{padding:32px;text-align:center;color:var(--muted);font-size:12px}
+.dropdown{position:absolute;top:56px;right:0;width:330px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:16px;padding:10px;display:none}.dropdown.open{display:block}.dropdown-title{font-size:12px;font-weight:900;padding:6px 7px 10px}.notification-item{display:flex;gap:10px;padding:10px 8px;border-radius:11px}.notification-item:hover{background:var(--surface-2)}.notification-item .ni{width:31px;height:31px;border-radius:10px;background:var(--orange-soft);display:grid;place-items:center}.notification-item strong{font-size:10.5px;display:block}.notification-item p{font-size:9.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+.overlay{position:fixed;inset:0;background:rgba(7,19,15,.52);z-index:90;display:none;align-items:center;justify-content:center;padding:18px}.overlay.open{display:flex}.modal{width:min(640px,100%);max-height:92vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:0 28px 80px rgba(0,0,0,.25)}.modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.modal-title{font-size:16px;font-weight:900}.modal-body{padding:20px}.modal-foot{padding:15px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:10px;font-weight:800;color:var(--muted)}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);background:var(--surface-2);color:var(--text);border-radius:11px;padding:11px 12px;outline:none}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}.field textarea{min-height:85px;resize:vertical}
+.toast-wrap{position:fixed;right:22px;bottom:22px;z-index:120;display:grid;gap:9px}.toast{min-width:280px;max-width:360px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px;animation:toastIn .2s ease}.toast strong{font-size:11px}.toast span{font-size:10px;color:var(--muted);display:block;margin-top:2px}@keyframes toastIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.search-results{position:absolute;left:0;right:0;top:48px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:7px;display:none;max-height:370px;overflow:auto}.search-results.open{display:block}.search-result{padding:10px;border-radius:10px;display:flex;align-items:center;gap:10px;cursor:pointer}.search-result:hover{background:var(--surface-2)}.search-result b{font-size:11px}.search-result small{display:block;color:var(--muted);font-size:9.5px;margin-top:2px}
+@media(max-width:1280px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.module-grid{grid-template-columns:repeat(3,1fr)}.span-8,.span-7{grid-column:span 12}.span-5,.span-4{grid-column:span 6}}
+@media(max-width:960px){.app{grid-template-columns:1fr}.sidebar{position:fixed;left:-290px;width:270px;box-shadow:var(--shadow);transition:.24s}.sidebar.open{left:0}.mobile-menu{display:grid;place-items:center}.content{padding:18px}.topbar{padding:0 16px}.online-pill span:last-child{display:none}.search kbd{display:none}.kpi-grid{grid-template-columns:repeat(2,1fr)}.module-grid{grid-template-columns:repeat(2,1fr)}.span-6,.span-5,.span-4,.span-3{grid-column:span 12}.sidebar-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:45;display:none}.sidebar-backdrop.open{display:block}}
+@media(max-width:620px){.content{padding:14px}.topbar{gap:8px}.search{max-width:none}.top-actions .online-pill,.top-actions .lang-btn{display:none}.page-head{display:block}.head-actions{justify-content:flex-start;margin-top:14px}.page-title{font-size:22px}.kpi-grid{grid-template-columns:1fr}.module-grid{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.detail-hero{align-items:flex-start;flex-wrap:wrap}.detail-stats{margin-left:0;justify-content:flex-start}.feature-list{grid-template-columns:1fr}.donut-wrap{flex-direction:column}.dropdown{position:fixed;top:70px;left:12px;right:12px;width:auto}.page-sub{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">S4</div>
+      <div><div class="brand-title">S4 FAMILY 143</div><div class="brand-sub">OFFLINE-FIRST FAMILY FINANCE</div></div>
+    </div>
+    <div class="sidebar-scroll" id="navContainer"></div>
+    <div class="profile">
+      <div class="avatar">SO</div>
+      <div class="profile-meta"><div class="profile-name">S4 Family Owner</div><div class="profile-role">Owner • Full Access</div></div>
+      <button class="icon-btn" data-page="settings" title="Settings">⚙</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+      <div class="search">
+        <span class="sicon">⌕</span>
+        <input id="globalSearch" type="search" placeholder="মডিউল, লেনদেন বা সদস্য খুঁজুন..." autocomplete="off">
+        <kbd>Ctrl K</kbd>
+        <div class="search-results" id="searchResults"></div>
+      </div>
+      <div class="top-actions">
+        <div class="online-pill"><span class="online-dot"></span><span id="syncTopText">সব ডেটা সিঙ্ক হয়েছে</span></div>
+        <button class="icon-btn lang-btn" id="langBtn" title="Language">BN</button>
+        <button class="icon-btn" id="themeBtn" title="Theme">☾</button>
+        <div style="position:relative">
+          <button class="icon-btn" id="notificationBtn" title="Notifications">🔔<span class="dot-badge"></span></button>
+          <div class="dropdown" id="notificationDropdown">
+            <div class="dropdown-title">নোটিফিকেশন</div>
+            <div id="notificationList"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="page active" id="page-dashboard">
+        <div class="page-head">
+          <div><div class="page-kicker">Executive Overview</div><h1 class="page-title">আপনার পরিবারের আর্থিক চিত্র</h1><p class="page-sub">Wallet, আয়-ব্যয়, budget, loan, savings, family approval এবং offline sync—সব গুরুত্বপূর্ণ তথ্য এক জায়গায়।</p></div>
+          <div class="head-actions"><button class="btn" id="exportBtn">⇩ রিপোর্ট Export</button><button class="btn btn-primary" data-action="add-transaction">＋ নতুন লেনদেন</button></div>
+        </div>
+        <div class="notice">✓ Offline-first সক্রিয় — Internet না থাকলেও নতুন data প্রথমে local SQLite flow অনুযায়ী save হবে এবং পরে sync হবে।</div>
+        <div class="kpi-grid" id="kpiGrid"></div>
+
+        <div class="grid grid-12">
+          <div class="card span-8">
+            <div class="card-head"><div><div class="card-title">আয় বনাম ব্যয়</div><div class="card-sub">গত ৭ মাসের trend</div></div><div class="chart-legend"><span><i class="legend-dot legend-income"></i>আয়</span><span><i class="legend-dot legend-expense"></i>ব্যয়</span></div></div>
+            <div class="card-body"><div class="chart-area"><div class="chart-grid"><span></span><span></span><span></span><span></span><span></span></div><svg class="chart-svg" viewBox="0 0 700 210" preserveAspectRatio="none" aria-label="Income expense chart"><polyline id="incomeLine" fill="none" stroke="var(--primary)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points=""></polyline><polyline id="expenseLine" fill="none" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points=""></polyline><g id="chartPoints"></g></svg><div class="chart-labels"><span>জানু</span><span>ফেব্রু</span><span>মার্চ</span><span>এপ্রিল</span><span>মে</span><span>জুন</span><span>জুলাই</span></div></div></div>
+          </div>
+          <div class="card span-4">
+            <div class="card-head"><div><div class="card-title">সম্পদ বণ্টন</div><div class="card-sub">Account ও asset group</div></div><button class="card-link" data-page="reports">বিস্তারিত</button></div>
+            <div class="card-body"><div class="donut-wrap"><div class="donut"><div class="donut-center"><strong id="assetTotal">৳0</strong><span>মোট সম্পদ</span></div></div><div class="donut-list"><div class="donut-row"><span>Cash / Bank</span><b>38%</b></div><div class="donut-row"><span>Property</span><b>24%</b></div><div class="donut-row"><span>Investment</span><b>16%</b></div><div class="donut-row"><span>Gold / Asset</span><b>13%</b></div><div class="donut-row"><span>Other</span><b>9%</b></div></div></div></div>
+          </div>
+
+          <div class="card span-4">
+            <div class="card-head"><div><div class="card-title">দ্রুত কাজ</div><div class="card-sub">সবচেয়ে বেশি ব্যবহৃত action</div></div></div>
+            <div class="card-body"><div class="quick-grid"><button class="quick" data-action="income"><div class="quick-icon">↙</div><div class="quick-label">আয়</div></button><button class="quick" data-action="expense"><div class="quick-icon">↗</div><div class="quick-label">খরচ</div></button><button class="quick" data-action="transfer"><div class="quick-icon">⇄</div><div class="quick-label">Transfer</div></button><button class="quick" data-action="invite"><div class="quick-icon">👤＋</div><div class="quick-label">Invite</div></button></div></div>
+          </div>
+          <div class="card span-4">
+            <div class="card-head"><div><div class="card-title">Budget অবস্থা</div><div class="card-sub">Current month utilization</div></div><button class="card-link" data-page="budgets">সব দেখুন</button></div>
+            <div class="card-body"><div class="budget-list" id="budgetList"></div></div>
+          </div>
+          <div class="card span-4">
+            <div class="card-head"><div><div class="card-title">Offline Sync Health</div><div class="card-sub">Device queue এবং server status</div></div><button class="card-link" data-page="sync">Details</button></div>
+            <div class="card-body"><div class="sync-card"><div class="sync-ring"></div><div class="sync-info"><h4>সিস্টেম স্বাভাবিক</h4><p>সর্বশেষ sync: এখনই</p><div class="sync-meta"><span class="tag">Pending 2</span><span class="tag">Failed 0</span><span class="tag">Devices 3</span></div></div></div></div>
+          </div>
+
+          <div class="card span-8">
+            <div class="card-head"><div><div class="card-title">সাম্প্রতিক লেনদেন</div><div class="card-sub">Double-entry journal দ্বারা balance গণনা</div></div><button class="card-link" data-page="transactions">সব লেনদেন</button></div>
+            <div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>লেনদেন</th><th>Category</th><th>Account</th><th>Date</th><th>Status</th><th>Amount</th></tr></thead><tbody id="recentTransactions"></tbody></table></div></div>
+          </div>
+          <div class="card span-4">
+            <div class="card-head"><div><div class="card-title">Upcoming Due</div><div class="card-sub">Loan, subscription ও document</div></div></div>
+            <div class="card-body"><div class="due-list" id="dueList"></div></div>
+          </div>
+
+          <div class="card span-6">
+            <div class="card-head"><div><div class="card-title">Family Governance</div><div class="card-sub">Owner, member role ও pending approval</div></div><button class="card-link" data-page="members">Manage</button></div>
+            <div class="card-body"><div class="member-list" id="memberList"></div></div>
+          </div>
+          <div class="card span-6">
+            <div class="card-head"><div><div class="card-title">সব Module</div><div class="card-sub">Architecture coverage shortcut</div></div><button class="card-link" data-page="all-modules">Open all</button></div>
+            <div class="card-body"><div class="quick-grid"><button class="quick" data-page="grocery"><div class="quick-icon">🛒</div><div class="quick-label">Grocery</div></button><button class="quick" data-page="loans"><div class="quick-icon">💸</div><div class="quick-label">Loan</div></button><button class="quick" data-page="investments"><div class="quick-icon">📈</div><div class="quick-label">Investment</div></button><button class="quick" data-page="documents"><div class="quick-icon">📂</div><div class="quick-label">Vault</div></button></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-transactions">
+        <div class="page-head"><div><div class="page-kicker">Accounting Engine</div><h1 class="page-title">সব লেনদেন</h1><p class="page-sub">Income, expense ও account transfer—প্রতিটি record balanced debit/credit journal line তৈরি করবে।</p></div><div class="head-actions"><button class="btn" id="transactionCsv">⇩ CSV</button><button class="btn btn-primary" data-action="add-transaction">＋ লেনদেন যোগ করুন</button></div></div>
+        <div class="kpi-grid" id="transactionKpis"></div>
+        <div class="card"><div class="card-head"><div><div class="card-title">Transaction Register</div><div class="card-sub">Local demo data • filter ও search কাজ করে</div></div><div class="head-actions"><select id="txTypeFilter" class="btn"><option value="all">সব ধরনের</option><option value="income">আয়</option><option value="expense">খরচ</option><option value="transfer">Transfer</option></select><input id="txSearch" class="btn" style="width:190px" placeholder="Search..."></div></div><div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>লেনদেন</th><th>Type</th><th>Category</th><th>Account</th><th>Date</th><th>Status</th><th>Amount</th></tr></thead><tbody id="transactionTable"></tbody></table></div></div></div>
+      </section>
+
+      <section class="page" id="page-members">
+        <div class="page-head"><div><div class="page-kicker">Family Governance</div><h1 class="page-title">পরিবার ও সদস্য ব্যবস্থাপনা</h1><p class="page-sub">Relationship identity এবং security role আলাদা থাকবে। Owner/Admin approval ছাড়া pending member family data দেখতে পারবে না।</p></div><div class="head-actions"><button class="btn" data-page="join-requests">Pending Requests</button><button class="btn btn-primary" data-action="invite">＋ Invite Code</button></div></div>
+        <div class="grid grid-12"><div class="card span-8"><div class="card-head"><div><div class="card-title">Active Family Members</div><div class="card-sub">Owner, Admin, Member, Viewer এবং Child role</div></div></div><div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>Member</th><th>Relationship</th><th>Role</th><th>Access</th><th>Joined</th><th>Status</th></tr></thead><tbody id="membersTable"></tbody></table></div></div></div><div class="card span-4"><div class="card-head"><div><div class="card-title">Pending Join Requests</div><div class="card-sub">Approve / reject audit logged</div></div></div><div class="card-body"><div class="member-list" id="joinRequestList"></div></div></div></div>
+      </section>
+
+      <section class="page" id="page-all-modules">
+        <div class="page-head"><div><div class="page-kicker">Architecture Coverage</div><h1 class="page-title">সম্পূর্ণ Module Center</h1><p class="page-sub">Architecture-এ থাকা core finance, family governance, daily life, assets, reporting এবং system module—একটিও বাদ দেওয়া হয়নি।</p></div><div class="head-actions"><button class="btn" data-page="dashboard">← Dashboard</button></div></div>
+        <div class="module-grid" id="moduleGrid"></div>
+      </section>
+
+      <section class="page" id="page-module-detail">
+        <div id="moduleDetail"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="transactionModal">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">নতুন লেনদেন</div><div class="card-sub">Double-entry rule অনুযায়ী entry save হবে</div></div><button class="icon-btn" data-close="transactionModal">✕</button></div>
+    <form id="transactionForm">
+      <div class="modal-body"><div class="form-grid">
+        <div class="field"><label>লেনদেনের ধরন</label><select id="formType" required><option value="income">আয়</option><option value="expense">খরচ</option><option value="transfer">Account Transfer</option></select></div>
+        <div class="field"><label>Amount</label><input id="formAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required></div>
+        <div class="field"><label>Category</label><select id="formCategory" required><option>Salary</option><option>Business</option><option>Grocery</option><option>Utilities</option><option>Health</option><option>Education</option><option>Loan</option><option>Transfer</option><option>Other</option></select></div>
+        <div class="field"><label>Account</label><select id="formAccount" required><option>Cash Wallet</option><option>Bank Account</option><option>bKash</option><option>Credit Card</option></select></div>
+        <div class="field"><label>Date</label><input id="formDate" type="date" required></div>
+        <div class="field"><label>Status</label><select id="formStatus"><option value="synced">Synced</option><option value="pending">Pending Sync</option></select></div>
+        <div class="field full"><label>নাম / বিবরণ</label><input id="formTitle" placeholder="যেমন: মাসিক বেতন" required></div>
+        <div class="field full"><label>Notes</label><textarea id="formNote" placeholder="ঐচ্ছিক নোট..."></textarea></div>
+      </div></div>
+      <div class="modal-foot"><button type="button" class="btn" data-close="transactionModal">Cancel</button><button type="submit" class="btn btn-primary">Save Transaction</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="overlay" id="inviteModal">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">Secure Invite Code তৈরি</div><div class="card-sub">Plain code শুধু একবার দেখানো হবে; database-এ hash save হবে</div></div><button class="icon-btn" data-close="inviteModal">✕</button></div>
+    <form id="inviteForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Requested Role</label><select id="inviteRole"><option>Member</option><option>Viewer</option><option>Child</option><option>Admin</option></select></div><div class="field"><label>Expiry</label><select id="inviteExpiry"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></div><div class="field"><label>Maximum Uses</label><input id="inviteUses" type="number" value="1" min="1" max="20"></div><div class="field"><label>Relationship hint</label><select><option>Other</option><option>Husband</option><option>Wife</option><option>Son</option><option>Daughter</option><option>Father</option><option>Mother</option></select></div></div><div id="inviteResult" style="display:none;margin-top:16px" class="notice"></div></div><div class="modal-foot"><button type="button" class="btn" data-close="inviteModal">Close</button><button type="submit" class="btn btn-primary">Generate Secure Code</button></div></form>
+  </div>
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+const NAV_GROUPS = [
+  {label:'Overview',items:[['dashboard','⌂','Dashboard'],['all-modules','▦','সব Module']]},
+  {label:'Finance',items:[['wallets','💳','Wallet / Account'],['transactions','↕','সব লেনদেন'],['income','↙','আয়'],['expenses','↗','খরচ'],['transfers','⇄','Account Transfer'],['budgets','◴','Budget'],['savings','◎','Savings Goals'],['loans','💸','Loan / Debt']]},
+  {label:'Family Governance',items:[['members','👥','Family Members'],['join-requests','⏳','Join Requests','2'],['invite-codes','🔗','Invite Codes'],['permissions','🛡','Roles & Permissions']]},
+  {label:'Daily Life',items:[['grocery','🛒','Grocery / Bazaar'],['health','🏥','Health Expense'],['education','🎓','Education Fund'],['vehicle','🚗','Vehicle'],['subscriptions','🔁','Subscriptions']]},
+  {label:'Assets & Planning',items:[['investments','📈','Investments'],['property','🏠','Property'],['zakat','🕌','Zakat'],['documents','📂','Document Vault']]},
+  {label:'Reports & System',items:[['reports','📊','Reports & Analytics'],['notifications','🔔','Notifications'],['audit','🧾','Audit Logs'],['sync','⟳','Offline Sync'],['settings','⚙','Settings']]}
+];
+
+const MODULES = {
+  wallets:{icon:'💳',title:'Wallet / Account',desc:'Cash, Bank, Mobile Wallet, Card, Gold ও অন্যান্য asset account। Balance journal line থেকে গণনা হবে।',features:['Multiple wallet ও bank account','Opening balance with audit','Current balance from journal lines','Account-wise statement','Multi-currency support','Archive / restore protection'],stats:[['4','Active accounts'],['৳ 6.82K','Wallet balance'],['3','Currencies']],action:'নতুন Account'},
+  income:{icon:'↙',title:'Income Module',desc:'Salary, business, freelance, rent ও recurring income management।',features:['Recurring income schedule','Attachment ও receipt','Income categories','Member-wise income','Double-entry auto posting','Monthly income analytics'],stats:[['৳ 62.5K','This month'],['5','Sources'],['+8.4%','Growth']],action:'আয় যোগ করুন'},
+  expenses:{icon:'↗',title:'Expense Module',desc:'Category budget, recurring bills, OCR receipt এবং member-wise expense tracking।',features:['Hierarchical expense category','80% budget alert','Bill/receipt attachment','Recurring expense','Split expense','Monthly category analytics'],stats:[['৳ 38.2K','This month'],['12','Categories'],['61%','Budget used']],action:'খরচ যোগ করুন'},
+  transfers:{icon:'⇄',title:'Account Transfer',desc:'Account-to-account transfer balanced debit/credit journal entry তৈরি করবে।',features:['Cash → Bank','Bank → Mobile Wallet','Transfer fee support','Reference number','Atomic database transaction','No direct balance edit'],stats:[['8','This month'],['৳ 24K','Transferred'],['0','Unbalanced']],action:'Transfer করুন'},
+  budgets:{icon:'◴',title:'Budget Planning',desc:'Category budget, overspend alert, annual planning ও utilization tracking।',features:['Monthly category budget','Overspend alert','80% warning threshold','Family/member scope','Budget carry-forward rule','Budget vs actual report'],stats:[['৳ 50K','Monthly plan'],['61%','Used'],['3','Alerts']],action:'Budget তৈরি'},
+  savings:{icon:'◎',title:'Savings Goals',desc:'Emergency fund, education, house এবং custom saving target progress।',features:['Target ও deadline','Auto contribution','Goal priority','Progress forecast','Emergency fund','Member contribution history'],stats:[['4','Goals'],['৳ 3.1L','Target'],['46%','Reached']],action:'Goal তৈরি'},
+  loans:{icon:'💸',title:'Loan / Debt',desc:'Borrow, lend, installment, interest এবং due reminder management।',features:['Borrowed এবং lent money','Installment schedule','Partial payment','Interest calculation','Due reminder','Payment history'],stats:[['3','Active loans'],['৳ 75K','Outstanding'],['1','Due soon']],action:'Loan যোগ করুন'},
+  'join-requests':{icon:'⏳',title:'Join Requests',desc:'Invite code ব্যবহার করে পাঠানো pending family membership request।',features:['Code hash validation','Expiry ও max-use check','Approve / reject reason','Role assignment','Relationship serial','Full audit log'],stats:[['2','Pending'],['8','Approved'],['1','Rejected']],action:'Review Requests'},
+  'invite-codes':{icon:'🔗',title:'Invite Codes',desc:'Secure hashed invite, expiry, revoke এবং usage tracking।',features:['Plain code one-time display','Hash only database storage','Default 7-day expiry','Maximum 30 days','Revoke anytime','Usage and audit history'],stats:[['3','Active'],['12','Used'],['0','Expired']],action:'Code তৈরি'},
+  permissions:{icon:'🛡',title:'Roles & Permissions',desc:'Owner, Admin, Member, Viewer, Child এবং custom permission override।',features:['Owner protection','RBAC role matrix','Custom member permission','Wallet/report scope','No hidden default access','Permission change audit'],stats:[['5','Roles'],['24','Permissions'],['4','Custom rules']],action:'Permission Manage'},
+  grocery:{icon:'🛒',title:'Grocery / Bazaar',desc:'Shared grocery list, barcode, OCR bill, vendor এবং price history।',features:['Collaborative family list','Barcode scan','OCR bill capture','Vendor contacts','Price history','Budget comparison'],stats:[['18','List items'],['12','Purchased'],['৳ 3.4K','Estimated']],action:'নতুন List'},
+  health:{icon:'🏥',title:'Health Expense',desc:'প্রতিটি family member-এর doctor, medicine, hospital ও test expense।',features:['Member-wise expense','Doctor / hospital data','Medicine ও test category','Attachment support','Annual health budget','Medical history report'],stats:[['৳ 6.8K','This month'],['3','Members'],['2','Appointments']],action:'Health Expense'},
+  education:{icon:'🎓',title:'Education Fund',desc:'Child-wise school fee, coaching, books ও future education fund।',features:['Child-specific fund','School/coaching fee','Books and supplies','Monthly target','Annual plan','Progress forecast'],stats:[['2','Children'],['৳ 12K','This month'],['38%','Fund reached']],action:'Education Entry'},
+  vehicle:{icon:'🚗',title:'Vehicle Management',desc:'Fuel, service, tax, insurance এবং cost-per-km analysis।',features:['Multiple vehicles','Fuel expense','Service reminder','Tax/insurance expiry','Mileage tracking','Cost per km report'],stats:[['2','Vehicles'],['৳ 8.2K','This month'],['1','Service due']],action:'Vehicle Expense'},
+  subscriptions:{icon:'🔁',title:'Subscriptions',desc:'Recurring digital/service subscriptions এবং renewal reminder।',features:['Monthly/yearly cycle','Auto reminder','Renewal date','Payment account','Active/paused status','Total monthly cost'],stats:[['7','Active'],['৳ 2.4K','Monthly'],['2','Due soon']],action:'Subscription যোগ'},
+  investments:{icon:'📈',title:'Investment Portfolio',desc:'DPS, FDR, savings certificate, shares ও return tracking।',features:['Principal and maturity','Return history','Profit/loss calculation','Portfolio allocation','Maturity reminder','Document attachment'],stats:[['5','Investments'],['৳ 4.5L','Portfolio'],['+11.2%','Return']],action:'Investment যোগ'},
+  property:{icon:'🏠',title:'Property Manager',desc:'House, land, shop, rental income ও maintenance cost tracking।',features:['Property master','Current valuation','Rental income','Maintenance expense','Ownership documents','Net property return'],stats:[['3','Properties'],['৳ 42L','Estimated value'],['৳ 18K','Monthly rent']],action:'Property যোগ'},
+  zakat:{icon:'🕌',title:'Zakat Calculation',desc:'Nisab, eligible wealth, liability adjustment এবং yearly history।',features:['Nisab configuration','Gold/silver rate','Eligible asset category','Deductible liability','2.5% calculation','Payment history'],stats:[['1447H','Current year'],['৳ 18.6K','Estimated due'],['5','Asset groups']],action:'Calculate Zakat'},
+  documents:{icon:'📂',title:'Document Vault',desc:'NID, passport, birth certificate, deed ও expiry reminder।',features:['Encrypted file storage','Member-wise folders','Expiry alert','Presigned secure access','Document category','Audit trail'],stats:[['24','Documents'],['3','Expiring'],['100%','Encrypted']],action:'Document Upload'},
+  reports:{icon:'📊',title:'Reports & Analytics',desc:'Monthly statement, cash flow, net worth, member reports, PDF ও Excel export।',features:['Monthly income-expense','Cash flow statement','Net worth report','Budget variance','Member-wise analytics','PDF/Excel export jobs'],stats:[['18','Reports'],['7','Saved views'],['2','Exports ready']],action:'Report Generate'},
+  notifications:{icon:'🔔',title:'Notifications',desc:'In-app, push এবং email notification with Bangla templates।',features:['Budget alert','Loan due reminder','Document expiry','Subscription renewal','Unknown device alert','Notification preferences'],stats:[['5','Unread'],['28','This month'],['3','Channels']],action:'Notification Settings'},
+  audit:{icon:'🧾',title:'Audit Logs',desc:'CREATE, UPDATE, DELETE, APPROVE, REJECT ও VOID action immutable history।',features:['Old/new value capture','Actor and device','Entity filter','Financial void audit','Approval history','Exportable log'],stats:[['1.2K','Total logs'],['42','Today'],['0','Critical flags']],action:'Audit Search'},
+  sync:{icon:'⟳',title:'Offline Sync',desc:'SQLite local save, sync queue, delta pull, retry এবং conflict resolution।',features:['Local-first write','Background sync','Exponential backoff','Delta synchronization','Financial conflict merge','Server-authoritative balance'],stats:[['92%','Sync health'],['2','Pending'],['0','Failed']],action:'Sync Now'},
+  settings:{icon:'⚙',title:'Settings',desc:'Family, currency, language, security, notification এবং backup configuration।',features:['Family profile','Currency and timezone','Bangla / English','Device sessions','Backup and restore','Security preferences'],stats:[['BDT','Base currency'],['Asia/Dubai','Timezone'],['3','Devices']],action:'Save Settings'}
+};
+
+const DEFAULT_STATE = {
+  transactions:[
+    {id:'TX-2407-006',title:'মাসিক বেতন',type:'income',category:'Salary',account:'Bank Account',date:'2026-07-21',status:'synced',amount:50000},
+    {id:'TX-2407-005',title:'সাপ্তাহিক বাজার',type:'expense',category:'Grocery',account:'Cash Wallet',date:'2026-07-20',status:'synced',amount:4280},
+    {id:'TX-2407-004',title:'বাড়ি ভাড়া',type:'income',category:'Rent',account:'Bank Account',date:'2026-07-18',status:'synced',amount:12500},
+    {id:'TX-2407-003',title:'Electricity Bill',type:'expense',category:'Utilities',account:'bKash',date:'2026-07-17',status:'pending',amount:2350},
+    {id:'TX-2407-002',title:'Cash to Bank',type:'transfer',category:'Transfer',account:'Cash → Bank',date:'2026-07-16',status:'synced',amount:10000},
+    {id:'TX-2407-001',title:'ডাক্তার ও ওষুধ',type:'expense',category:'Health',account:'Credit Card',date:'2026-07-15',status:'synced',amount:3800}
+  ],
+  budgets:[{name:'বাজার',spent:8400,total:12000},{name:'Utility Bills',spent:5300,total:7000},{name:'Health',spent:6800,total:8000},{name:'Education',spent:12000,total:18000}],
+  members:[
+    {name:'S4 Family Owner',relationship:'Main Responsible',role:'Owner',access:'Full Access',joined:'2026-01-01',status:'Active'},
+    {name:'Ayesha Rahman',relationship:'Wife',role:'Admin',access:'Manage Finance',joined:'2026-01-01',status:'Active'},
+    {name:'Rafi Rahman',relationship:'Elder Son',role:'Member',access:'Own + Shared',joined:'2026-02-12',status:'Active'},
+    {name:'Mim Rahman',relationship:'Daughter',role:'Child',access:'Pocket Money',joined:'2026-03-04',status:'Active'}
+  ],
+  joinRequests:[{name:'Karim Rahman',relationship:'Father',role:'Viewer',date:'Today'},{name:'Nusrat Jahan',relationship:'Sister',role:'Member',date:'Yesterday'}],
+  notifications:[
+    {icon:'⚠',title:'Health budget 85% ব্যবহার হয়েছে',text:'এই মাসে Health budget প্রায় শেষ।'},
+    {icon:'⏳',title:'২টি Join Request pending',text:'Owner/Admin approval প্রয়োজন।'},
+    {icon:'🔁',title:'Netflix renewal আগামীকাল',text:'৳ 650 • Bank Account'},
+    {icon:'✓',title:'Offline sync complete',text:'18 records server-এ synced হয়েছে।'}
+  ]
+};
+let state = loadState();
+let currentLang='bn';
+let currentPage='dashboard';
+
+function storageGet(key){try{return localStorage.getItem(key)}catch(e){return null}}
+function storageSet(key,value){try{localStorage.setItem(key,value);return true}catch(e){return false}}
+function loadState(){try{return JSON.parse(storageGet('s4family143-dashboard-state'))||structuredClone(DEFAULT_STATE)}catch(e){return structuredClone(DEFAULT_STATE)}}
+function saveState(){storageSet('s4family143-dashboard-state',JSON.stringify(state))}
+function money(n){return new Intl.NumberFormat(currentLang==='bn'?'bn-BD':'en-US',{maximumFractionDigits:0}).format(Number(n)||0)}
+function todayISO(){return new Date().toISOString().slice(0,10)}
+function safe(text){return String(text).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+
+function buildNav(){
+  document.getElementById('navContainer').innerHTML=NAV_GROUPS.map(g=>`<div class="nav-group"><div class="nav-label">${g.label}</div>${g.items.map(i=>`<button class="nav-item ${i[0]==='dashboard'?'active':''}" data-page="${i[0]}"><span class="nav-icon">${i[1]}</span><span class="nav-text">${i[2]}</span>${i[3]?`<span class="nav-badge">${i[3]}</span>`:''}</button>`).join('')}</div>`).join('');
+}
+
+function pageInfo(id){
+  const all=NAV_GROUPS.flatMap(g=>g.items);const found=all.find(x=>x[0]===id);return found?{icon:found[1],title:found[2]}:{icon:'▦',title:id};
+}
+
+function goPage(id){
+  currentPage=id;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const direct=document.getElementById('page-'+id);
+  if(direct){direct.classList.add('active')}else{renderModuleDetail(id);document.getElementById('page-module-detail').classList.add('active')}
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===id));
+  document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.remove('open');
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(id==='transactions')renderTransactions();if(id==='members')renderMembers();
+}
+
+function dashboardTotals(){
+  const income=state.transactions.filter(t=>t.type==='income').reduce((a,b)=>a+b.amount,0);
+  const expense=state.transactions.filter(t=>t.type==='expense').reduce((a,b)=>a+b.amount,0);
+  const wallet=6820+income-expense;
+  const loan=75000;
+  const savings=124000;
+  return {income,expense,wallet,loan,savings,net:wallet+savings+450000+4200000-loan};
+}
+
+function renderDashboard(){
+  const t=dashboardTotals();
+  const kpis=[['মোট Net Worth','৳ '+money(t.net),'↗ 6.8%','⌁'],['এই মাসের আয়','৳ '+money(t.income),'↗ 8.4%','↙'],['এই মাসের ব্যয়','৳ '+money(t.expense),'↘ 3.1%','↗'],['Wallet Balance','৳ '+money(t.wallet),'Live','💳'],['Outstanding Loan','৳ '+money(t.loan),'1 due','💸']];
+  document.getElementById('kpiGrid').innerHTML=kpis.map((k,i)=>`<div class="kpi"><div class="kpi-top"><div class="kpi-icon">${k[3]}</div><div class="kpi-change ${i===2||i===4?'down':''}">${k[2]}</div></div><div class="kpi-value">${k[1]}</div><div class="kpi-label">${k[0]}</div></div>`).join('');
+  document.getElementById('assetTotal').textContent='৳'+money(t.net+t.loan);
+  document.getElementById('budgetList').innerHTML=state.budgets.map(b=>{const p=Math.min(100,Math.round(b.spent/b.total*100));return `<div><div class="budget-row-top"><div class="budget-name">${safe(b.name)}</div><div class="budget-amount">৳${money(b.spent)} / ৳${money(b.total)}</div></div><div class="progress ${p>=90?'danger':p>=75?'warn':''}"><span style="width:${p}%"></span></div></div>`}).join('');
+  renderRecentTransactions();renderMemberSummary();renderNotifications();renderChart();
+  document.getElementById('dueList').innerHTML=[['💸','Loan installment','25 Jul 2026','৳ 5,000'],['🔁','Netflix Renewal','23 Jul 2026','৳ 650'],['📂','Passport Expiry','14 Aug 2026','Action']].map(d=>`<div class="due-row"><div class="due-icon">${d[0]}</div><div class="due-info"><div class="due-name">${d[1]}</div><div class="due-date">${d[2]}</div></div><div class="due-amount">${d[3]}</div></div>`).join('');
+}
+
+function txIcon(t){return t.type==='income'?'↙':t.type==='expense'?'↗':'⇄'}
+function txAmount(t){return `${t.type==='income'?'+':t.type==='expense'?'-':''}৳ ${money(t.amount)}`}
+function txRow(t,withId=false){return `<tr>${withId?`<td>${safe(t.id)}</td>`:''}<td><div class="tx-name"><div class="tx-icon">${txIcon(t)}</div>${safe(t.title)}</div></td>${withId?`<td>${t.type}</td>`:''}<td>${safe(t.category)}</td><td>${safe(t.account)}</td><td>${safe(t.date)}</td><td><span class="status ${t.status==='pending'?'pending':''}">${t.status==='pending'?'Pending Sync':'Synced'}</span></td><td class="amount ${t.type==='income'?'plus':t.type==='expense'?'minus':''}">${txAmount(t)}</td></tr>`}
+function renderRecentTransactions(){document.getElementById('recentTransactions').innerHTML=state.transactions.slice(0,5).map(t=>txRow(t)).join('')}
+function renderTransactions(){
+  const q=(document.getElementById('txSearch')?.value||'').toLowerCase(),type=document.getElementById('txTypeFilter')?.value||'all';
+  const rows=state.transactions.filter(t=>(type==='all'||t.type===type)&&[t.title,t.category,t.account,t.id].join(' ').toLowerCase().includes(q));
+  document.getElementById('transactionTable').innerHTML=rows.length?rows.map(t=>txRow(t,true)).join(''):`<tr><td colspan="8"><div class="empty">কোনো লেনদেন পাওয়া যায়নি</div></td></tr>`;
+  const d=dashboardTotals();const pending=state.transactions.filter(t=>t.status==='pending').length;
+  document.getElementById('transactionKpis').innerHTML=[['Income','৳ '+money(d.income),'↙'],['Expense','৳ '+money(d.expense),'↗'],['Net Cashflow','৳ '+money(d.income-d.expense),'≈'],['Pending Sync',pending,'⟳'],['Total Records',state.transactions.length,'#']].map(k=>`<div class="kpi"><div class="kpi-top"><div class="kpi-icon">${k[2]}</div></div><div class="kpi-value">${k[1]}</div><div class="kpi-label">${k[0]}</div></div>`).join('');
+}
+function renderMemberSummary(){document.getElementById('memberList').innerHTML=state.members.slice(0,3).map(m=>`<div class="member-row"><div class="member-avatar">${m.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div class="member-info"><div class="member-name">${safe(m.name)}</div><div class="member-role">${safe(m.relationship)} • ${safe(m.role)}</div></div><span class="status">Active</span></div>`).join('')+`<div class="member-row"><div class="member-avatar">+2</div><div class="member-info"><div class="member-name">Pending Join Request</div><div class="member-role">Owner approval required</div></div><button class="btn btn-sm" data-page="members">Review</button></div>`}
+function renderMembers(){
+  document.getElementById('membersTable').innerHTML=state.members.map(m=>`<tr><td><div class="tx-name"><div class="member-avatar">${m.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div>${safe(m.name)}</div></td><td>${safe(m.relationship)}</td><td>${safe(m.role)}</td><td>${safe(m.access)}</td><td>${safe(m.joined)}</td><td><span class="status">${safe(m.status)}</span></td></tr>`).join('');
+  document.getElementById('joinRequestList').innerHTML=state.joinRequests.length?state.joinRequests.map((r,i)=>`<div class="member-row"><div class="member-avatar">${r.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div class="member-info"><div class="member-name">${safe(r.name)}</div><div class="member-role">${safe(r.relationship)} • ${safe(r.role)} • ${safe(r.date)}</div></div><div style="display:flex;gap:5px"><button class="btn btn-sm btn-primary" data-approve="${i}">✓</button><button class="btn btn-sm btn-danger" data-reject="${i}">✕</button></div></div>`).join(''):`<div class="empty">কোনো pending request নেই</div>`;
+}
+
+function renderModuleGrid(){
+  const ids=NAV_GROUPS.flatMap(g=>g.items.map(i=>i[0])).filter(id=>!['dashboard','all-modules','transactions','members'].includes(id));
+  document.getElementById('moduleGrid').innerHTML=ids.map(id=>{const m=MODULES[id]||{...pageInfo(id),desc:'Architecture module',stats:[['Ready','Status']]};return `<article class="module-card" data-page="${id}"><div class="module-icon">${m.icon}</div><div class="module-title">${m.title}</div><div class="module-desc">${m.desc}</div><div class="module-meta"><span>${(m.features||[]).length} core features</span><b style="color:var(--primary)">Open →</b></div></article>`}).join('');
+}
+function renderModuleDetail(id){
+  const info=pageInfo(id),m=MODULES[id]||{icon:info.icon,title:info.title,desc:'এই module architecture অনুযায়ী production implementation-এর জন্য প্রস্তুত।',features:['API versioning','RBAC permission','Audit logging','Offline sync support','Validation and tests','Responsive UI'],stats:[['Ready','Architecture'],['v1','API'],['100%','Coverage']],action:'নতুন Record'};
+  const sampleRows=(m.features||[]).slice(0,5).map((f,i)=>`<tr><td>#${String(i+1).padStart(3,'0')}</td><td>${safe(f)}</td><td>${['Owner','Admin','Member'][i%3]}</td><td>${i%2?'2026-07-21':'2026-07-22'}</td><td><span class="status">Active</span></td></tr>`).join('');
+  document.getElementById('moduleDetail').innerHTML=`<div class="page-head"><div><div class="page-kicker">S4 FAMILY 143 Module</div><h1 class="page-title">${m.title}</h1><p class="page-sub">${m.desc}</p></div><div class="head-actions"><button class="btn" data-page="all-modules">← সব Module</button><button class="btn btn-primary" data-module-action="${id}">＋ ${m.action||'নতুন Record'}</button></div></div><div class="detail-hero"><div class="detail-icon">${m.icon}</div><div><div class="detail-title">${m.title}</div><div class="detail-desc">Offline-first • RBAC secured • Audit logged • API v1 ready</div></div><div class="detail-stats">${(m.stats||[]).map(s=>`<div class="mini-stat"><strong>${s[0]}</strong><span>${s[1]}</span></div>`).join('')}</div></div><div class="grid grid-12"><div class="card span-5"><div class="card-head"><div><div class="card-title">Architecture Features</div><div class="card-sub">Production implementation coverage</div></div></div><div class="card-body"><div class="feature-list">${(m.features||[]).map(f=>`<div class="feature"><span class="feature-check">✓</span><span>${f}</span></div>`).join('')}</div></div></div><div class="card span-7"><div class="card-head"><div><div class="card-title">Recent Records</div><div class="card-sub">Demo table • real backend integration ready</div></div><button class="card-link">View all</button></div><div class="card-body"><div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Record</th><th>Owner</th><th>Updated</th><th>Status</th></tr></thead><tbody>${sampleRows}</tbody></table></div></div></div></div>`;
+}
+
+function renderChart(){
+  const income=[42,48,51,46,58,54,66],expense=[30,35,34,39,37,42,41],max=75;
+  const pts=a=>a.map((v,i)=>`${i*(700/6)},${200-(v/max*180)}`).join(' ');
+  document.getElementById('incomeLine').setAttribute('points',pts(income));document.getElementById('expenseLine').setAttribute('points',pts(expense));
+  document.getElementById('chartPoints').innerHTML=income.map((v,i)=>`<circle cx="${i*(700/6)}" cy="${200-(v/max*180)}" r="4" fill="var(--surface)" stroke="var(--primary)" stroke-width="3"/>`).join('')+expense.map((v,i)=>`<circle cx="${i*(700/6)}" cy="${200-(v/max*180)}" r="4" fill="var(--surface)" stroke="var(--orange)" stroke-width="3"/>`).join('');
+}
+function renderNotifications(){document.getElementById('notificationList').innerHTML=state.notifications.map(n=>`<div class="notification-item"><div class="ni">${n.icon}</div><div><strong>${safe(n.title)}</strong><p>${safe(n.text)}</p></div></div>`).join('')}
+
+function openModal(id){document.getElementById(id).classList.add('open');if(id==='transactionModal')document.getElementById('formDate').value=todayISO()}
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+function toast(title,text){const el=document.createElement('div');el.className='toast';el.innerHTML=`<div class="member-avatar">✓</div><div><strong>${safe(title)}</strong><span>${safe(text)}</span></div>`;document.getElementById('toastWrap').appendChild(el);setTimeout(()=>el.remove(),3200)}
+function download(filename,content,type='text/plain'){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
+function txCsv(){const rows=[['ID','Title','Type','Category','Account','Date','Status','Amount'],...state.transactions.map(t=>[t.id,t.title,t.type,t.category,t.account,t.date,t.status,t.amount])];download('S4-FAMILY-143-transactions.csv','\ufeff'+rows.map(r=>r.map(x=>`"${String(x).replaceAll('"','""')}"`).join(',')).join('\n'),'text/csv')}
+
+function searchAll(query){
+  const q=query.trim().toLowerCase(),box=document.getElementById('searchResults');if(!q){box.classList.remove('open');return}
+  const modules=NAV_GROUPS.flatMap(g=>g.items).filter(i=>i[2].toLowerCase().includes(q)).slice(0,6).map(i=>({icon:i[1],title:i[2],sub:'Module',page:i[0]}));
+  const tx=state.transactions.filter(t=>[t.title,t.category,t.account].join(' ').toLowerCase().includes(q)).slice(0,4).map(t=>({icon:txIcon(t),title:t.title,sub:`${t.category} • ${txAmount(t)}`,page:'transactions'}));
+  const mem=state.members.filter(m=>[m.name,m.relationship,m.role].join(' ').toLowerCase().includes(q)).slice(0,3).map(m=>({icon:'👤',title:m.name,sub:`${m.relationship} • ${m.role}`,page:'members'}));
+  const all=[...modules,...tx,...mem];box.innerHTML=all.length?all.map(r=>`<div class="search-result" data-page="${r.page}"><div class="member-avatar">${r.icon}</div><div><b>${safe(r.title)}</b><small>${safe(r.sub)}</small></div></div>`).join(''):`<div class="empty">কিছু পাওয়া যায়নি</div>`;box.classList.add('open')
+}
+
+function updateLanguage(){currentLang=currentLang==='bn'?'en':'bn';document.getElementById('langBtn').textContent=currentLang==='bn'?'BN':'EN';document.documentElement.lang=currentLang;document.getElementById('globalSearch').placeholder=currentLang==='bn'?'মডিউল, লেনদেন বা সদস্য খুঁজুন...':'Search modules, transactions or members...';renderDashboard();renderTransactions();toast('Language changed',currentLang==='bn'?'বাংলা সক্রিয়':'English active')}
+
+buildNav();renderDashboard();renderTransactions();renderMembers();renderModuleGrid();renderNotifications();
+
+document.addEventListener('click',e=>{
+  const page=e.target.closest('[data-page]');if(page){goPage(page.dataset.page);document.getElementById('searchResults').classList.remove('open')}
+  const action=e.target.closest('[data-action]');if(action){const a=action.dataset.action;if(['add-transaction','income','expense','transfer'].includes(a)){openModal('transactionModal');const map={income:'income',expense:'expense',transfer:'transfer'};if(map[a])document.getElementById('formType').value=map[a]}if(a==='invite')openModal('inviteModal')}
+  const close=e.target.closest('[data-close]');if(close)closeModal(close.dataset.close);
+  const approve=e.target.closest('[data-approve]');if(approve){const r=state.joinRequests.splice(Number(approve.dataset.approve),1)[0];state.members.push({name:r.name,relationship:r.relationship,role:r.role,access:'Assigned Access',joined:todayISO(),status:'Active'});saveState();renderMembers();renderMemberSummary();toast('Member approved',r.name+' এখন family member')}
+  const reject=e.target.closest('[data-reject]');if(reject){const r=state.joinRequests.splice(Number(reject.dataset.reject),1)[0];saveState();renderMembers();renderMemberSummary();toast('Request rejected',r.name+'-এর request reject হয়েছে')}
+  const moduleAction=e.target.closest('[data-module-action]');if(moduleAction){const id=moduleAction.dataset.moduleAction;if(id==='income'||id==='expenses'||id==='transfers')openModal('transactionModal');else if(id==='invite-codes')openModal('inviteModal');else toast('Action ready',(MODULES[id]?.title||id)+' module-এর action button connected')}
+  if(!e.target.closest('#notificationBtn')&&!e.target.closest('#notificationDropdown'))document.getElementById('notificationDropdown').classList.remove('open');
+  if(!e.target.closest('.search'))document.getElementById('searchResults').classList.remove('open');
+});
+
+document.getElementById('transactionForm').addEventListener('submit',e=>{e.preventDefault();const type=document.getElementById('formType').value,amount=Number(document.getElementById('formAmount').value);const tx={id:'TX-'+Date.now().toString().slice(-9),title:document.getElementById('formTitle').value.trim(),type,category:document.getElementById('formCategory').value,account:document.getElementById('formAccount').value,date:document.getElementById('formDate').value,status:document.getElementById('formStatus').value,amount};state.transactions.unshift(tx);saveState();e.target.reset();closeModal('transactionModal');renderDashboard();renderTransactions();toast('লেনদেন save হয়েছে',type==='income'?'Balanced income journal তৈরি হয়েছে':type==='expense'?'Balanced expense journal তৈরি হয়েছে':'Balanced transfer journal তৈরি হয়েছে')});
+
+document.getElementById('inviteForm').addEventListener('submit',e=>{e.preventDefault();const code='S4-'+Math.random().toString(36).slice(2,5).toUpperCase()+'-'+Math.random().toString(36).slice(2,7).toUpperCase();const days=document.getElementById('inviteExpiry').value,uses=document.getElementById('inviteUses').value;const r=document.getElementById('inviteResult');r.style.display='flex';r.innerHTML=`🔐 Invite code: <strong style="font-family:monospace;font-size:14px">${code}</strong> • ${days} days • max ${uses} use(s). এই plain code আবার দেখানো হবে না।`;toast('Secure invite তৈরি হয়েছে','Code hash database storage flow অনুযায়ী ready')});
+
+document.getElementById('txTypeFilter').addEventListener('change',renderTransactions);document.getElementById('txSearch').addEventListener('input',renderTransactions);
+document.getElementById('transactionCsv').addEventListener('click',txCsv);document.getElementById('exportBtn').addEventListener('click',()=>download('S4-FAMILY-143-dashboard-report.json',JSON.stringify({generatedAt:new Date().toISOString(),summary:dashboardTotals(),state},null,2),'application/json'));
+document.getElementById('notificationBtn').addEventListener('click',e=>{e.stopPropagation();document.getElementById('notificationDropdown').classList.toggle('open')});
+document.getElementById('globalSearch').addEventListener('input',e=>searchAll(e.target.value));
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.getElementById('globalSearch').focus()}if(e.key==='Escape'){document.querySelectorAll('.overlay.open').forEach(x=>x.classList.remove('open'));document.getElementById('searchResults').classList.remove('open')}});
+document.getElementById('themeBtn').addEventListener('click',()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;storageSet('s4family143-theme',next);document.getElementById('themeBtn').textContent=next==='dark'?'☀':'☾'});
+const savedTheme=storageGet('s4family143-theme');if(savedTheme){document.documentElement.dataset.theme=savedTheme;document.getElementById('themeBtn').textContent=savedTheme==='dark'?'☀':'☾'}
+document.getElementById('langBtn').addEventListener('click',updateLanguage);
+document.getElementById('mobileMenu').addEventListener('click',()=>{document.getElementById('sidebar').classList.add('open');document.getElementById('sidebarBackdrop').classList.add('open')});document.getElementById('sidebarBackdrop').addEventListener('click',()=>{document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.remove('open')});
+</script>
+</body>
+</html>

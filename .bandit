@@ -1,0 +1,2 @@
+exclude_dirs: ["/tests", "/alembic/versions", "/.venv"]
+skips: ["B101"]

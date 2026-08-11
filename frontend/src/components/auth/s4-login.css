@@ -1,0 +1,203 @@
+/* Ported from login.html — scoped under .s4-login-shell */
+.s4-login-shell, .s4-login-shell * { box-sizing: border-box; }
+.s4-login-shell { min-height: 100vh; font-family: system-ui, sans-serif; background: #F4F6F8; color: #1A1A1A; margin: 0; }
+.s4-login-shell .shell{display:flex;min-height:100vh}
+
+/* ===== LEFT — brand / contextual flow panel ===== */
+.s4-login-shell .brand{
+  width:42%;min-width:360px;
+  background:linear-gradient(165deg,#1D9E75 0%,#157A5B 100%);
+  color:#fff;padding:40px 44px;
+  display:flex;flex-direction:column;justify-content:space-between;
+  position:relative;overflow:hidden;
+}
+.s4-login-shell .brand::before{content:"";position:absolute;width:520px;height:520px;border-radius:50%;background:rgba(255,255,255,.06);top:-220px;right:-180px}
+.s4-login-shell .brand::after{content:"";position:absolute;width:360px;height:360px;border-radius:50%;background:rgba(255,255,255,.05);bottom:-160px;left:-120px}
+.s4-login-shell .brand-top{position:relative;z-index:1}
+.s4-login-shell .logo-title{font-size:22px;font-weight:700;display:flex;align-items:center;gap:8px}
+.s4-login-shell .logo-sub{font-size:11px;color:rgba(255,255,255,.75);margin-top:4px;letter-spacing:.4px}
+.s4-login-shell .brand-headline{position:relative;z-index:1;margin-top:36px}
+.s4-login-shell .brand-headline h1{font-size:25px;line-height:1.42;font-weight:700;max-width:380px}
+.s4-login-shell .brand-headline p{font-size:12.5px;color:rgba(255,255,255,.85);margin-top:10px;line-height:1.8;max-width:360px}
+.s4-login-shell .flow-label{position:relative;z-index:1;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgba(255,255,255,.6);margin-top:26px;margin-bottom:10px}
+.s4-login-shell .flow{position:relative;z-index:1;display:flex;flex-direction:column;gap:0}
+.s4-login-shell .fstep{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px;color:rgba(255,255,255,.55);transition:all .25s}
+.s4-login-shell .fstep .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);flex-shrink:0;transition:all .25s}
+.s4-login-shell .fstep.done .dot{background:#fff}
+.s4-login-shell .fstep.done{color:rgba(255,255,255,.85)}
+.s4-login-shell .fstep.now{color:#fff;font-weight:700}
+.s4-login-shell .fstep.now .dot{background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.22);width:8px;height:8px}
+.s4-login-shell .fline{width:1px;height:12px;background:rgba(255,255,255,.2);margin-left:3.5px}
+.s4-login-shell .brand-bottom{position:relative;z-index:1}
+.s4-login-shell .trust-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.s4-login-shell .chip{font-size:10.5px;padding:4px 10px;border-radius:5px;font-weight:500;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2)}
+
+/* ===== RIGHT — form panel ===== */
+.s4-login-shell .formside{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 24px}
+.s4-login-shell .stagearea{width:100%;max-width:410px}
+.s4-login-shell .mobile-brand{display:none}
+
+.s4-login-shell .card{width:100%;background:#fff;border:1px solid #E8E8E8;border-radius:16px;padding:28px 30px 24px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+
+/* top row: language selector */
+.s4-login-shell .top-row{display:flex;justify-content:flex-end;margin-bottom:6px}
+.s4-login-shell .lang-select{
+  font-size:12px;font-weight:600;color:#333;background:#fff;
+  border:1px solid #E0E0E0;border-radius:7px;padding:6px 10px;cursor:pointer;
+  font-family:inherit;outline:none;
+}
+.s4-login-shell .lang-select:focus{border-color:#1D9E75}
+
+.s4-login-shell .card-eyebrow{font-size:10px;font-weight:700;color:#1D9E75;text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;justify-content:space-between}
+.s4-login-shell .back-btn{font-size:11px;color:#999;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0}
+.s4-login-shell .back-btn:hover{color:#1D9E75}
+.s4-login-shell .brand-title{font-size:21px;font-weight:800;color:#111;text-align:center;letter-spacing:.2px}
+.s4-login-shell .brand-subtitle{font-size:12px;color:#888;text-align:center;margin-top:5px;margin-bottom:20px;line-height:1.6}
+.s4-login-shell .card-title{font-size:19px;font-weight:700;color:#111;margin-top:6px}
+.s4-login-shell .card-sub{font-size:12px;color:#888;margin-top:4px;margin-bottom:20px}
+
+/* mode selector — compact, closed by default, opens only when needed */
+.s4-login-shell .mode-select-wrap{margin-bottom:20px;position:relative}
+.s4-login-shell .mode-select-label{font-size:11px;font-weight:600;color:#888;margin-bottom:6px;display:block}
+.s4-login-shell .mode-trigger{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:12px 14px;border:1.5px solid #E0E0E0;border-radius:10px;background:#FAFAFA;
+  cursor:pointer;transition:all .15s;font-family:inherit;
+}
+.s4-login-shell .mode-trigger:hover{border-color:#1D9E75}
+.s4-login-shell .mode-trigger.open{border-color:#1D9E75;background:#fff;box-shadow:0 0 0 3px rgba(29,158,117,.12)}
+.s4-login-shell .mode-trigger-left{display:flex;align-items:center;gap:9px}
+.s4-login-shell .mode-trigger-ico{font-size:16px}
+.s4-login-shell .mode-trigger-text{font-size:13px;font-weight:700;color:#111}
+.s4-login-shell .mode-trigger-caret{font-size:11px;color:#999;transition:transform .2s}
+.s4-login-shell .mode-trigger.open .mode-trigger-caret{transform:rotate(180deg)}
+
+.s4-login-shell .mode-menu{
+  position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;
+  background:#fff;border:1px solid #E8E8E8;border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.1);padding:6px;display:none;
+}
+.s4-login-shell .mode-menu.open{display:block}
+.s4-login-shell .mode-opt{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+  cursor:pointer;transition:background .12s;
+}
+.s4-login-shell .mode-opt:hover{background:#F4FBF8}
+.s4-login-shell .mode-opt.sel{background:#EDF9F4}
+.s4-login-shell .mode-opt-ico{font-size:16px;width:20px;text-align:center}
+.s4-login-shell .mode-opt-text{font-size:12.5px;font-weight:700;color:#222}
+.s4-login-shell .mode-opt-sub{font-size:10.5px;color:#999;margin-top:1px}
+
+.s4-login-shell .field{margin-bottom:14px}
+.s4-login-shell .field label{display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:6px}
+.s4-login-shell .field .hint{font-size:10.5px;color:#999;margin-top:4px;line-height:1.5}
+.s4-login-shell .input-wrap{position:relative}
+.s4-login-shell .input-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#aaa}
+.s4-login-shell input[type=email], .s4-login-shell input[type=password], .s4-login-shell input[type=text], .s4-login-shell input[type=tel], .s4-login-shell select.field-select{
+  width:100%;padding:11px 12px 11px 36px;border:1px solid #E0E0E0;border-radius:8px;
+  font-size:13px;color:#1A1A1A;background:#FAFAFA;outline:none;
+  transition:border-color .15s,background .15s;font-family:inherit;appearance:none;
+}
+.s4-login-shell select.field-select{padding-left:36px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.s4-login-shell input::placeholder{color:#B0B0B0}
+.s4-login-shell input:focus, .s4-login-shell select.field-select:focus{border-color:#1D9E75;background:#fff;box-shadow:0 0 0 3px rgba(29,158,117,.12)}
+.s4-login-shell .toggle-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:#1D9E75;cursor:pointer;user-select:none;background:#EDF9F4;border:none;padding:5px 10px;border-radius:6px;font-weight:700}
+
+.s4-login-shell .pw-meter{display:flex;gap:4px;margin-top:7px}
+.s4-login-shell .pw-meter i{flex:1;height:3px;border-radius:2px;background:#EEE;transition:background .2s}
+.s4-login-shell .pw-meter-label{font-size:10.5px;color:#999;margin-top:5px}
+
+.s4-login-shell .row-between{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.s4-login-shell .remember{display:flex;align-items:center;gap:6px;font-size:12px;color:#555}
+.s4-login-shell .remember input{width:14px;height:14px;accent-color:#1D9E75}
+.s4-login-shell .link{font-size:12px;color:#1D9E75;text-decoration:none;font-weight:600;cursor:pointer}
+.s4-login-shell .link:hover{text-decoration:underline}
+
+.s4-login-shell .btn-primary{width:100%;padding:12px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer;transition:background .15s;font-family:inherit}
+.s4-login-shell .btn-primary:hover{background:#178363}
+.s4-login-shell .btn-primary:disabled{background:#B9DFD1;cursor:not-allowed}
+.s4-login-shell .btn-secondary{width:100%;padding:11px;background:#fff;color:#1D9E75;border:1.5px solid #1D9E75;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s}
+.s4-login-shell .btn-secondary:hover{background:#F4FBF8}
+
+.s4-login-shell .err-box{background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:#991B1B;line-height:1.6;display:none}
+.s4-login-shell .err-box.show{display:block}
+.s4-login-shell .info-box{background:#EDF9F4;border:1px solid #5DCAA5;border-radius:8px;padding:11px 13px;margin-bottom:16px;font-size:11.5px;color:#0F6E56;line-height:1.65}
+.s4-login-shell .warn-box{background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:11px 13px;margin-bottom:16px;font-size:11.5px;color:#92400E;line-height:1.65}
+
+.s4-login-shell .divider{display:flex;align-items:center;gap:10px;margin:18px 0 14px}
+.s4-login-shell .divider::before, .s4-login-shell .divider::after{content:"";flex:1;height:1px;background:#EEE}
+.s4-login-shell .divider span{font-size:11px;color:#aaa}
+.s4-login-shell .rate-note{font-size:10.5px;color:#aaa;text-align:center;margin-top:6px;line-height:1.6}
+.s4-login-shell .footer-note{text-align:center;font-size:12.5px;color:#666;margin-top:16px}
+.s4-login-shell .footer-note a, .s4-login-shell .footer-note .link{color:#1D9E75;font-weight:600;text-decoration:none}
+
+/* choice / relationship / invite styling (unchanged core) */
+.s4-login-shell .choice-card{border:1.5px solid #E8E8E8;border-radius:11px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .15s;display:flex;gap:12px;align-items:flex-start}
+.s4-login-shell .choice-card:hover{border-color:#1D9E75;background:#F9FEFC}
+.s4-login-shell .choice-ico{font-size:22px;line-height:1}
+.s4-login-shell .choice-title{font-size:13.5px;font-weight:700;color:#111}
+.s4-login-shell .choice-desc{font-size:11.5px;color:#888;margin-top:3px;line-height:1.6}
+
+.s4-login-shell .pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.s4-login-shell .pill{font-size:11.5px;padding:6px 12px;border-radius:20px;border:1.5px solid #E0E0E0;color:#555;cursor:pointer;font-weight:600;transition:all .15s;background:#fff}
+.s4-login-shell .pill:hover{border-color:#1D9E75;color:#1D9E75}
+.s4-login-shell .pill.sel{background:#1D9E75;border-color:#1D9E75;color:#fff}
+
+.s4-login-shell .code-display{background:#F4F6F8;border:1.5px dashed #1D9E75;border-radius:10px;padding:16px;text-align:center;margin-bottom:14px}
+.s4-login-shell .code-display .code{font-size:26px;font-weight:800;letter-spacing:4px;color:#111;font-family:monospace}
+.s4-login-shell .code-display .copy-btn{margin-top:10px;font-size:11.5px;color:#1D9E75;font-weight:700;cursor:pointer;border:none;background:none}
+.s4-login-shell .meta-row{display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:4px}
+
+.s4-login-shell .status-badge{display:inline-flex;align-items:center;gap:6px;background:#FEF3C7;color:#92400E;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;margin-bottom:14px}
+.s4-login-shell .status-badge .p{width:7px;height:7px;border-radius:50%;background:#D97706;animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.s4-login-shell .success-icon{width:52px;height:52px;border-radius:50%;background:#EDF9F4;color:#1D9E75;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px}
+
+/* ===== step indicator (Account / Family-Invite / Approval) ===== */
+.s4-login-shell .step-indicator{margin-top:22px;padding-top:18px;border-top:1px solid #F0F0F0}
+.s4-login-shell .step-pills{display:flex;gap:6px}
+.s4-login-shell .step-pill{
+  flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:#F4F6F8;
+  font-size:10.5px;font-weight:700;color:#aaa;transition:all .2s;
+}
+.s4-login-shell .step-pill .num{display:block;font-size:9px;opacity:.8;margin-bottom:1px}
+.s4-login-shell .step-pill.active{background:#1D9E75;color:#fff}
+.s4-login-shell .step-pill.completed{background:#EDF9F4;color:#0F6E56}
+.s4-login-shell .step-dots{display:flex;justify-content:center;gap:5px;margin-top:10px}
+.s4-login-shell .step-dots span{width:5px;height:5px;border-radius:50%;background:#E0E0E0}
+.s4-login-shell .step-dots span.on{background:#1D9E75;width:14px;border-radius:3px}
+
+.s4-login-shell .view{display:none}
+.s4-login-shell .view.active{display:block}
+
+@media (max-width:860px){
+  .s4-login-shell .brand{display:none}
+  .s4-login-shell .formside{padding:0}
+  .s4-login-shell .mobile-brand{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 0 0;color:#1D9E75;font-size:18px;font-weight:700}
+}
+
+/* Host + React button resets (login.html used divs/spans for some controls) */
+.s4-auth-host{min-height:100vh;margin:0;padding:0;background:#F4F6F8}
+.s4-login-shell button.mode-opt{
+  width:100%;border:none;background:transparent;font-family:inherit;text-align:left;
+}
+.s4-login-shell button.link,
+.s4-login-shell button.back-btn{
+  width:auto;border:none;background:transparent;padding:0;font-family:inherit;
+  color:#1D9E75;font-weight:600;cursor:pointer;
+}
+.s4-login-shell button.mode-trigger{font-family:inherit}
+.s4-login-shell .pill{font-family:inherit;cursor:pointer}
+.s4-login-shell .btn-primary{
+  height:auto !important;min-height:0 !important;padding:12px !important;
+  border-radius:8px !important;font-size:13.5px !important;font-weight:700 !important;
+  background:#1D9E75 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;
+  border:none !important;transform:none !important;box-shadow:none !important;
+}
+.s4-login-shell .btn-primary:hover{background:#178363 !important}
+.s4-login-shell .btn-primary:disabled{background:#B9DFD1 !important;cursor:not-allowed}
+.s4-login-shell input,
+.s4-login-shell select.field-select,
+.s4-login-shell .lang-select{
+  height:auto !important;min-height:0 !important;
+}

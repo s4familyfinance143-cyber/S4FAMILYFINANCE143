@@ -1,0 +1,4 @@
+# Placeholder — for local HTTPS put Let's Encrypt / self-signed files here:
+#   fullchain.pem
+#   privkey.pem
+# Until then nginx may log SSL warnings on :443; HTTP :80 works.

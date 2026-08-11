@@ -1,0 +1,45 @@
+# Secrets / env
+.env
+.env.local
+.env.*.local
+.env.production
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+!**/.env.production.example
+!**/.env.staging.example
+backend/.env.sqlite.development
+backend/.env.*.cutover
+*.pem
+!.gitkeep
+
+# Python
+backend/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+backend/storage/
+**/*.db
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.ui-smoke/
+**/node_modules/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Docker / local
+nginx/certs/*
+!nginx/certs/.gitkeep
+
+# Misc
+frontend/lint-output.txt
+deploy/dist/

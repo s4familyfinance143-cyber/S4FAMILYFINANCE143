@@ -1,0 +1,342 @@
+name: S4 CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/s4-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/s4-nginx
+
+jobs:
+  backend-unit-pytest:
+    name: Backend pytest (unit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: development
+      AUTO_CREATE_TABLES: "true"
+      DATABASE_URL: sqlite:///./ci_pytest.db
+      JWT_SECRET_KEY: ci_test_secret_key_at_least_32_chars_long
+      NOTIFICATION_FCM_ENABLED: "false"
+      NOTIFICATION_EMAIL_ENABLED: "false"
+      AUTH_EMAIL_ENABLED: "true"
+      DOCUMENT_VAULT_BACKEND: local
+      CELERY_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Pytest (unit)
+        run: python -m pytest -m "not integration"
+
+  backend-integration-pytest:
+    name: Backend pytest (integration / PostgreSQL)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: s4_ci
+          POSTGRES_PASSWORD: ci_postgres_password
+          POSTGRES_DB: s4_family_finance_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U s4_ci -d s4_family_finance_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      INTEGRATION_TESTS: "true"
+      ENVIRONMENT: development
+      AUTO_CREATE_TABLES: "false"
+      DATABASE_URL: postgresql+psycopg://s4_ci:ci_postgres_password@localhost:5432/s4_family_finance_ci
+      JWT_SECRET_KEY: ci_test_secret_key_at_least_32_chars_long
+      NOTIFICATION_FCM_ENABLED: "false"
+      NOTIFICATION_EMAIL_ENABLED: "false"
+      AUTH_EMAIL_ENABLED: "true"
+      DOCUMENT_VAULT_BACKEND: local
+      CELERY_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Pytest (integration)
+        run: python -m pytest -m integration
+
+  backend-bandit:
+    name: Backend bandit (security)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install bandit
+        run: python -m pip install -r requirements-dev.txt
+      - name: Bandit scan
+        run: bandit -r app -c ../.bandit -lll
+
+  frontend-eslint:
+    name: Frontend ESLint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install + lint
+        run: |
+          npm ci
+          npm run lint
+
+  frontend-audit:
+    name: Frontend npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install + audit
+        run: |
+          npm ci
+          npm run audit:ci
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install + build
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_BASE: /api
+
+  packaging-validate:
+    name: Production packaging validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose + deploy artifacts
+        run: bash deploy/scripts/validate_production_packaging.sh
+
+  docker-build:
+    name: Docker build (+ push on develop/main)
+    runs-on: ubuntu-latest
+    needs:
+      - backend-unit-pytest
+      - backend-integration-pytest
+      - backend-bandit
+      - frontend-eslint
+      - frontend-audit
+      - frontend-build
+      - packaging-validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (backend)
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.backend
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker metadata (frontend/nginx)
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+      - name: Build frontend/nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.frontend
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            VITE_API_BASE=/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy → Staging (develop)
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.s4family.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_PATH,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH:-/opt/s4-family-finance}"
+            export S4_BACKEND_IMAGE="${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+            export S4_FRONTEND_IMAGE="${{ env.FRONTEND_IMAGE }}:${{ github.sha }}"
+            export S4_IMAGE_TAG="${{ github.sha }}"
+            export SENTRY_RELEASE="${{ github.sha }}"
+            export GHCR_USERNAME
+            export GHCR_TOKEN
+            bash deploy/scripts/remote_ghcr_deploy.sh staging
+
+      - name: Verify staging health
+        run: bash deploy/scripts/verify_live.sh https://staging.s4family.app
+
+      - name: Sentry deployment marker (staging)
+        if: ${{ vars.SENTRY_ORG != '' }}
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        with:
+          environment: staging
+          version: ${{ github.sha }}
+
+  deploy-production:
+    name: Deploy → Production (main, manual approval)
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    environment:
+      name: production
+      url: https://app.s4family.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: DEPLOY_PATH,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH:-/opt/s4-family-finance}"
+            export S4_BACKEND_IMAGE="${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+            export S4_FRONTEND_IMAGE="${{ env.FRONTEND_IMAGE }}:${{ github.sha }}"
+            export S4_IMAGE_TAG="${{ github.sha }}"
+            export SENTRY_RELEASE="${{ github.sha }}"
+            export GHCR_USERNAME
+            export GHCR_TOKEN
+            bash deploy/scripts/remote_ghcr_deploy.sh production
+
+      - name: Verify production health
+        run: bash deploy/scripts/verify_live.sh https://app.s4family.app
+
+      - name: Sentry deployment marker (production)
+        if: ${{ vars.SENTRY_ORG != '' }}
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        with:
+          environment: production
+          version: ${{ github.sha }}

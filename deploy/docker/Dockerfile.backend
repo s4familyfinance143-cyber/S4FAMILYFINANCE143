@@ -1,0 +1,27 @@
+﻿# Production backend image — used by API + Celery (command overridden in compose)
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements*.txt /app/
+
+RUN python -m pip install --upgrade pip && \
+    if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install -r requirements-production.lock.txt; fi
+
+COPY backend/app /app/app
+COPY backend/alembic /app/alembic
+COPY backend/alembic.ini /app/alembic.ini
+
+ENV ENVIRONMENT=production
+ENV AUTO_CREATE_TABLES=false
+ENV ENABLE_RECURRING_WORKER=false
+ENV ENABLE_AUTO_BACKUP_WORKER=false
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# API default; celery_worker / celery_beat override `command` in compose
+CMD ["sh", "-c", "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]

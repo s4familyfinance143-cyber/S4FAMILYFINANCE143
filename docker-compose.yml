@@ -1,0 +1,232 @@
+# S4 Family Finance — Infrastructure Architecture (WSL local / full stack)
+# Spec: postgres, redis, backend(--reload), celery_worker, celery_beat, flower, nginx, minio
+#
+# First-time setup:
+#   cp .env.example .env
+#   docker compose up --build
+#   docker exec s4_backend alembic upgrade head
+#   API docs: http://localhost:8000/docs
+#   via nginx: http://localhost/docs  (proxied)
+#   Flower:   http://localhost:5555
+#   MinIO:    http://localhost:9001
+
+name: s4-family
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: s4_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-s4family}
+      POSTGRES_USER: ${POSTGRES_USER:-s4user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-s4pass_dev}
+    ports:
+      # Host 5433 avoids clash with other local stacks; inside network still postgres:5432
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: s4_redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-s4redis_dev}"]
+    ports:
+      # Host 6380 avoids clash with other local stacks; inside network still redis:6379
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-s4redis_dev} ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio
+    container_name: s4_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-s4minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-s4minio_dev}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.backend
+    container_name: s4_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://s4user:s4pass_dev@postgres:5432/s4family}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me-at-least-32-chars!!}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      REDIS_URL: ${REDIS_URL:-redis://:s4redis_dev@redis:6379/0}
+      CELERY_ENABLED: ${CELERY_ENABLED:-true}
+      AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-true}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-s4family-dev}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-s4minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-s4minio_dev}
+      DOCUMENT_VAULT_BACKEND: ${DOCUMENT_VAULT_BACKEND:-s3}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost","http://127.0.0.1","http://localhost:5173","http://127.0.0.1:5173"]}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost}
+    ports:
+      - "8000:8000"
+    # Hot-reload volume needs Docker Desktop File Sharing for this drive.
+    # Until S: is shared, code is baked into the image (rebuild after code changes).
+    # volumes:
+    #   - ./backend:/app
+    command:
+      [
+        "sh",
+        "-c",
+        "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.backend
+    container_name: s4_celery_worker
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://s4user:s4pass_dev@postgres:5432/s4family}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me-at-least-32-chars!!}
+      REDIS_URL: ${REDIS_URL:-redis://:s4redis_dev@redis:6379/0}
+      CELERY_ENABLED: "true"
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-s4family-dev}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-s4minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-s4minio_dev}
+      DOCUMENT_VAULT_BACKEND: ${DOCUMENT_VAULT_BACKEND:-s3}
+    # volumes:
+    #   - ./backend:/app
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=2",
+      ]
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.backend
+    container_name: s4_celery_beat
+    restart: unless-stopped
+    depends_on:
+      celery_worker:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://s4user:s4pass_dev@postgres:5432/s4family}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-me-at-least-32-chars!!}
+      REDIS_URL: ${REDIS_URL:-redis://:s4redis_dev@redis:6379/0}
+      CELERY_ENABLED: "true"
+      ENABLE_RECURRING_WORKER: "false"
+      ENABLE_AUTO_BACKUP_WORKER: "false"
+    # volumes:
+    #   - ./backend:/app
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app.celery_app",
+        "beat",
+        "--loglevel=info",
+      ]
+
+  flower:
+    image: mher/flower:2.0
+    container_name: s4_flower
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    environment:
+      CELERY_BROKER_URL: ${REDIS_URL:-redis://:s4redis_dev@redis:6379/0}
+      FLOWER_UNAUTHENTICATED_API: "true"
+    ports:
+      - "5555:5555"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.nginx.dev
+    container_name: s4_nginx
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

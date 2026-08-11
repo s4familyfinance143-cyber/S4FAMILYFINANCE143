@@ -1,0 +1,19 @@
+# GHCR image deploy override — used by deploy/scripts/remote_ghcr_deploy.sh
+# Requires: S4_BACKEND_IMAGE, S4_FRONTEND_IMAGE (full ghcr.io/...:tag refs)
+# Use with: docker compose pull && up -d --no-build
+
+services:
+  backend:
+    image: ${S4_BACKEND_IMAGE:?Set S4_BACKEND_IMAGE to ghcr.io/owner/repo/s4-backend:tag}
+
+  celery_worker:
+    image: ${S4_BACKEND_IMAGE:?Set S4_BACKEND_IMAGE}
+
+  celery_beat:
+    image: ${S4_BACKEND_IMAGE:?Set S4_BACKEND_IMAGE}
+
+  nginx:
+    image: ${S4_FRONTEND_IMAGE:?Set S4_FRONTEND_IMAGE to ghcr.io/owner/repo/s4-nginx:tag}
+
+  frontend:
+    image: ${S4_FRONTEND_IMAGE:?Set S4_FRONTEND_IMAGE}

@@ -1,0 +1,22 @@
+services:
+  s4-minio:
+    image: minio/minio:latest
+    container_name: s4-family-finance-minio-local
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: s4minio
+      MINIO_ROOT_PASSWORD: s4_minio_local_2026
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - s4_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  s4_minio_data:
