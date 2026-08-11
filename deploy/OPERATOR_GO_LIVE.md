@@ -2,26 +2,35 @@
 
 Code/CI can ship without these. **Live `app.s4family.app` needs this list completed by you.**
 
+Related: `deploy/BUILD_ORDER_GAPS_CLOSED.md` · `deploy/SECURITY_AUDIT_REPORT.md` · `deploy/BETA_TESTING_PLAN.md`
+
+## 0) Before production (Step 18)
+
+1. Read `deploy/SECURITY_AUDIT_REPORT.md` (PASS — no High findings).
+2. Run beta with 2–3 families using `deploy/BETA_TESTING_PLAN.md`.
+3. File bugs via GitHub **Beta feedback** issue template.
+4. Clear P0 / accept remaining P1 in writing.
+
 ## 1) Ubuntu VPS
 
 1. Create Ubuntu 22.04/24.04 VPS (2 vCPU / 4GB+ RAM recommended).
 2. Install Docker + Compose plugin.
 3. Clone or copy release to `/opt/s4-family-finance`.
 4. Copy `deploy/docker/.env.production.example` → `.env.production` and fill secrets.
-5. Run:
+5. Deploy:
 
 ```bash
-cd /opt/s4-family-finance/deploy/docker
-docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+bash deploy/scripts/vps_go_live_deploy.sh
 # optional monitoring:
+cd deploy/docker
 docker compose --env-file .env.production \
   -f docker-compose.production.yml \
   -f ../monitoring/docker-compose.monitoring.prod.yml up -d --build
 ```
 
-Or GHCR path after CI pushes images: `deploy/scripts/remote_ghcr_deploy.sh production`.
+Or GHCR path: `deploy/scripts/remote_ghcr_deploy.sh production`.
 
-## 2) DNS (Cloudflare / registrar)
+## 2) DNS
 
 | Hostname | Type | Points to |
 |----------|------|-----------|
@@ -29,11 +38,21 @@ Or GHCR path after CI pushes images: `deploy/scripts/remote_ghcr_deploy.sh produ
 | `staging.s4family.app` | A/AAAA | Staging VPS (or same) |
 | `grafana.s4family.app` | A/AAAA | VPS public IP |
 
-Then issue TLS (Certbot / Cloudflare proxy).
+## 3) TLS (SSL)
 
-## 3) GitHub Environment secrets
+```bash
+sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4family.app grafana.s4family.app you@email.com
+```
 
-Repo → Settings → Environments → **production** (and **staging**):
+Then enable `deploy/nginx/s4_family_finance_nginx.ssl.example.conf` (or Cloudflare proxy).
+
+## 4) Daily backup
+
+```bash
+sudo bash deploy/scripts/vps_backup_cron.sh
+```
+
+## 5) GitHub Environment secrets
 
 | Secret | Purpose |
 |--------|---------|
@@ -41,31 +60,36 @@ Repo → Settings → Environments → **production** (and **staging**):
 | `PRODUCTION_USER` | SSH user |
 | `PRODUCTION_SSH_KEY` | Private key PEM |
 | `PRODUCTION_DEPLOY_PATH` | e.g. `/opt/s4-family-finance` |
-| `STAGING_HOST` / `STAGING_USER` / `STAGING_SSH_KEY` | Staging SSH |
+| `STAGING_*` | Staging SSH |
 
-Until these exist, CI **skips** remote deploy (build still green).
+Until set, CI **skips** remote deploy (build still green).
 
-## 4) Sentry (operator account)
-
-1. Create project at https://sentry.io
-2. Set on VPS `.env.production`:
+## 6) Sentry
 
 ```
 SENTRY_DSN=https://...@o....ingest.sentry.io/...
 SENTRY_ENVIRONMENT=production
-```
-
-3. Frontend build arg / env:
-
-```
 VITE_SENTRY_DSN=https://...@o....ingest.sentry.io/...
 ```
 
-4. Optional GitHub vars/secrets for release markers: `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`
+## 7) FCM push (Step 12 live)
 
-## 5) Alert webhooks (Slack / PagerDuty / Email bridge)
+1. Firebase Console → service account JSON on VPS (e.g. `/secrets/firebase.json`).
+2. In `.env.production`:
 
-Set in `.env.production` (monitoring overlay):
+```
+NOTIFICATION_FCM_ENABLED=true
+FCM_PROJECT_ID=your-project
+FCM_CREDENTIALS_PATH=/secrets/firebase.json
+```
+
+3. Verify:
+
+```bash
+bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production
+```
+
+## 8) Alert webhooks
 
 ```
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
@@ -75,18 +99,26 @@ EMAIL_WEBHOOK_URL=https://your-email-bridge/...
 
 Rebuild alertmanager after changing webhooks.
 
-Until set, alerts still evaluate in Prometheus UI; notifications are discarded.
+## 9) SQLCipher mobile (Step 6 runtime)
 
-## 6) Verify
+```bash
+cd mobile
+npm run verify:sqlcipher
+npm run eas:build:dev   # or android:native — not Expo Go
+```
+
+Confirm Sync status shows **SQLCipher ON**.
+
+## 10) Verify live
 
 ```bash
 bash deploy/scripts/verify_live.sh https://app.s4family.app
 curl -fsS http://127.0.0.1:8000/metrics | head
-docker logs s4-family-finance-postgres 2>&1 | grep duration  # slow queries ≥500ms
+docker logs s4-family-finance-postgres 2>&1 | grep duration
 ```
 
-## 7) App login (users)
+## 11) App login (users)
 
 - Production: https://app.s4family.app  
 - Local: http://127.0.0.1:5173  
-- Grafana (ops only): https://grafana.s4family.app (or http://localhost:3000)
+- Grafana (ops): https://grafana.s4family.app  

@@ -74,5 +74,9 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=40 nginx ||
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=20 frontend || true
 
 echo "DEPLOY SCRIPT COMPLETE"
-echo "Next: bash deploy/scripts/verify_live.sh https://YOUR_DOMAIN"
-echo "Then configure host TLS (see deploy/README_RELEASE_KIT.md)."
+echo "Next:"
+echo "  1) bash deploy/scripts/verify_live.sh https://YOUR_DOMAIN"
+echo "  2) sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4family.app grafana.s4family.app you@email.com"
+echo "  3) sudo bash deploy/scripts/vps_backup_cron.sh"
+echo "  4) bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production"
+echo "Full checklist: deploy/OPERATOR_GO_LIVE.md"

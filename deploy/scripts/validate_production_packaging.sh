@@ -31,6 +31,12 @@ checks=(
   "deploy/monitoring/prometheus/alerts.yml"
   "deploy/monitoring/grafana/provisioning/datasources/datasource.yml"
   "deploy/OPERATOR_GO_LIVE.md"
+  "deploy/SECURITY_AUDIT_REPORT.md"
+  "deploy/BETA_TESTING_PLAN.md"
+  "deploy/BUILD_ORDER_GAPS_CLOSED.md"
+  "deploy/scripts/verify_fcm_ready.sh"
+  "deploy/scripts/vps_ssl_certbot.sh"
+  "deploy/scripts/vps_backup_cron.sh"
 )
 
 for rel in "${checks[@]}"; do

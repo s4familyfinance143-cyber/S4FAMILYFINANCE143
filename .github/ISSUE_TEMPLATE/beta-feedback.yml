@@ -1,0 +1,61 @@
+name: Beta feedback
+description: Report a bug or feedback from architecture Step 18 beta testing
+title: "[Beta] "
+labels: ["beta", "feedback"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 blocker
+        - P1 high
+        - P2 medium
+        - P3 low
+        - Feedback only
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / URL
+      placeholder: staging.s4family.app or http://127.0.0.1:5173
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: 1. Login… 2. Open grocery…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: devices
+    attributes:
+      label: Device / browser
+      placeholder: Chrome Windows / Android 14
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Area
+      options:
+        - label: Auth / login
+        - label: Family / invite
+        - label: Transactions
+        - label: Grocery
+        - label: Sync / offline
+        - label: Reports
+        - label: Notifications
+        - label: Other
