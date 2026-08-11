@@ -103,8 +103,10 @@ From Windows (NAT 2222/8088):
 
 Before running any `vm_*.py` SSH script, set one authentication method:
 
-- `S4_VM_PASSWORD` — VM login password (also used for sudo commands), or
+- `S4_VM_PASSWORD` — VM login password (also used for sudo -S), or
 - `S4_VM_SSH_KEY` — path to the VM user's private SSH key.
+
+Key-only auth is supported: if `S4_VM_PASSWORD` is unset, scripts use `sudo -n` (NOPASSWD). If your VM still prompts for a sudo password, set `S4_VM_PASSWORD`.
 
 Optional connection settings are `S4_VM_HOST`, `S4_VM_PORT`, `S4_VM_USER`, and
 `S4_VM_KNOWN_HOSTS`. Scripts default to the local-lab host, forwarded port, and

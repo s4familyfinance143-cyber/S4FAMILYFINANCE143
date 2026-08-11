@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell
 
 ROOT = Path(__file__).resolve().parents[2]
 SYNC = ROOT / "deploy" / "scripts" / "vm_sync_rebuild_staging.py"

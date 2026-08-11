@@ -3,13 +3,13 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 def run(client, cmd, sudo=False, timeout=300):
-    full = f"sudo -S {cmd}" if sudo else cmd
+    full = sudo_shell(cmd) if sudo else cmd
     print(f"\n>>> {cmd[:120]}...")
     stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
     if sudo:
@@ -19,9 +19,7 @@ def run(client, cmd, sudo=False, timeout=300):
     print(out, end="")
     return stdout.channel.recv_exit_status()
 
-pwd = vm_password()
-if not pwd:
-    raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during owner bootstrap.")
+require_vm_auth(need_sudo_password=False)
 c = connect_vm(timeout=30)
 
 run(c, "docker cp /home/s4family/s4/backend/scripts/bootstrap_owner_on_postgres.py s4-family-finance-backend:/tmp/bootstrap_owner.py", sudo=True)

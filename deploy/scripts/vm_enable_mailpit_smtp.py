@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -24,7 +24,7 @@ COMPOSE_DIR = "/home/s4family/s4/deploy/docker"
 
 
 def run(client, cmd, sudo=False, timeout=900):
-    full = f"sudo -S {cmd}" if sudo else cmd
+    full = sudo_shell(cmd) if sudo else cmd
     print(f"\n>>> {full[:160]}")
     stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
     if sudo:
@@ -57,9 +57,7 @@ def http_json(method, url, body=None, timeout=30):
 
 
 def main():
-    pwd = vm_password()
-    if not pwd:
-        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo when enabling Mailpit SMTP.")
+    require_vm_auth(need_sudo_password=False)
     c = connect_vm(timeout=30)
 
     with c.open_sftp() as sftp:

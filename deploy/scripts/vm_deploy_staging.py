@@ -10,7 +10,7 @@ from pathlib import Path
 import paramiko
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -68,9 +68,7 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
 
 
 def main() -> int:
-    pwd = vm_password()
-    if not pwd:
-        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during staging deploy.")
+    require_vm_auth(need_sudo_password=False)
     if not os.path.isfile(TAR_PATH):
         print(f"Missing tar: {TAR_PATH}", file=sys.stderr)
         return 1
@@ -101,7 +99,7 @@ def main() -> int:
     ]
 
     for cmd, sudo in steps:
-        full = f"sudo -S {cmd}" if sudo else cmd
+        full = sudo_shell(cmd) if sudo else cmd
         code = run(client, full, sudo=sudo)
         if code != 0 and "curl" not in cmd:
             print(f"Failed ({code}): {cmd}", file=sys.stderr)

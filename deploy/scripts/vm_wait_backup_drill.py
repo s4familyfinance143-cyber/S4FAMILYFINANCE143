@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell
 
 from vm_backup_drill import main as drill_main
 

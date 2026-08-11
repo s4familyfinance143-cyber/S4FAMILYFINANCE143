@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -37,10 +37,8 @@ def http_json(method, url, body=None):
 
 
 def ssh_run(cmd, sudo=False):
-    if sudo and not vm_password():
-        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo in the email E2E check.")
     c = connect_vm(timeout=30)
-    full = f"sudo -S {cmd}" if sudo else cmd
+    full = sudo_shell(cmd) if sudo else cmd
     stdin, stdout, _ = c.exec_command(full, get_pty=True, timeout=60)
     if sudo:
         time.sleep(0.3)

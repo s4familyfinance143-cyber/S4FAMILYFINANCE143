@@ -108,3 +108,28 @@ def write_sudo_password(stdin) -> None:
         return
     stdin.write(password + "\n")
     stdin.flush()
+
+
+def require_vm_auth(*, need_sudo_password: bool = False) -> None:
+    """Fail fast when neither password nor key is configured."""
+    password = vm_password()
+    key_path = _env("S4_VM_SSH_KEY")
+    if not password and not key_path:
+        print(
+            "ERROR: Set S4_VM_PASSWORD or S4_VM_SSH_KEY before running VM staging scripts.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if need_sudo_password and not password:
+        print(
+            "WARN: S4_VM_PASSWORD unset — using passwordless sudo (-n). "
+            "Set S4_VM_PASSWORD if the VM requires a sudo password.",
+            file=sys.stderr,
+        )
+
+
+def sudo_shell(cmd: str) -> str:
+    """Wrap a remote command with sudo -S (password) or sudo -n (key-only / NOPASSWD)."""
+    if vm_password():
+        return f"sudo -S {cmd}"
+    return f"sudo -n {cmd}"

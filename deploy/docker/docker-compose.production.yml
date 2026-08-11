@@ -107,6 +107,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL before production deploy}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY before production deploy}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      JWT_RSA_KEYS_MOUNTED: ${JWT_RSA_KEYS_MOUNTED:-false}
       ENABLE_RECURRING_WORKER: ${ENABLE_RECURRING_WORKER:-false}
       ENABLE_AUTO_BACKUP_WORKER: ${ENABLE_AUTO_BACKUP_WORKER:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-["https://example.com"]}
@@ -165,6 +168,10 @@ services:
       AUTO_CREATE_TABLES: "false"
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL before production deploy}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY before production deploy}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      JWT_RSA_KEYS_MOUNTED: ${JWT_RSA_KEYS_MOUNTED:-false}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       CELERY_ENABLED: "true"
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
@@ -202,6 +209,10 @@ services:
       AUTO_CREATE_TABLES: "false"
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL before production deploy}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY before production deploy}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      JWT_RSA_KEYS_MOUNTED: ${JWT_RSA_KEYS_MOUNTED:-false}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       CELERY_ENABLED: "true"
       ENABLE_RECURRING_WORKER: "false"

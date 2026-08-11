@@ -10,7 +10,7 @@ from pathlib import Path
 import paramiko
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -54,9 +54,7 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
 
 
 def main() -> int:
-    pwd = vm_password()
-    if not pwd:
-        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during staging rebuild.")
+    require_vm_auth(need_sudo_password=False)
     tar = latest_tar()
     print(f"Using tar: {tar} ({tar.stat().st_size / 1e6:.1f} MB)", flush=True)
 
@@ -132,14 +130,13 @@ PY
 """
     run(client, ensure_smtp, timeout=60)
 
-    rebuild = f"""
-sudo -S bash -lc '
+    rebuild_inner = f"""
 cd /home/{USER}/s4/deploy/docker
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging build --pull=false
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging up -d
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging ps
-'
 """
+    rebuild = sudo_shell("bash -lc " + repr(rebuild_inner))
     code, _ = run(client, rebuild, sudo=True, timeout=7200)
     client.close()
     return code

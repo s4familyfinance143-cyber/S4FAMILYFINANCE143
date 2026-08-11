@@ -3,13 +3,13 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+from vm_ssh_common import connect_vm, require_vm_auth, sudo_shell, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 def run(client, cmd, need_sudo=False, timeout=120):
-    full = f"sudo -S {cmd}" if need_sudo else cmd
+    full = sudo_shell(cmd) if need_sudo else cmd
     print(f"\n>>> {full}")
     stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
     if need_sudo:
@@ -19,9 +19,7 @@ def run(client, cmd, need_sudo=False, timeout=120):
     print(out, end="")
     return stdout.channel.recv_exit_status()
 
-pwd = vm_password()
-if not pwd:
-    raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo when verifying owner email.")
+require_vm_auth(need_sudo_password=False)
 for attempt in range(3):
     try:
         c = connect_vm(timeout=60)
