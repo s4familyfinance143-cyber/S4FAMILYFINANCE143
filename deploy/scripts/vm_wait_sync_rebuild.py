@@ -7,25 +7,16 @@ import sys
 import time
 from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm
 
 ROOT = Path(__file__).resolve().parents[2]
 SYNC = ROOT / "deploy" / "scripts" / "vm_sync_rebuild_staging.py"
 
 
 def ssh_ok() -> bool:
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        c.connect(
-            "127.0.0.1",
-            port=2222,
-            username="s4family",
-            password="root",
-            timeout=15,
-            banner_timeout=30,
-            auth_timeout=20,
-        )
+        c = connect_vm(timeout=15)
         _, o, _ = c.exec_command("echo OK", timeout=10)
         ok = b"OK" in o.read()
         c.close()

@@ -1,7 +1,7 @@
 ﻿from contextlib import asynccontextmanager
 import asyncio
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -207,6 +207,8 @@ def health_check():
 
 @app.get("/debug/ws-routes")
 def debug_ws_routes():
+    if settings.IS_PRODUCTION or settings.ENVIRONMENT.lower() in {"staging", "prod"}:
+        raise HTTPException(status_code=404, detail="Not found")
     return [
         {"path": getattr(route, "path", None), "type": type(route).__name__}
         for route in app.routes

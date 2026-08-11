@@ -47,7 +47,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Pytest (unit)
-        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=30
+        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=35
 
   backend-integration-pytest:
     name: Backend pytest (integration / PostgreSQL)
@@ -151,17 +151,28 @@ jobs:
           npm run audit:ci
 
   mobile-detox-scaffold:
-    name: Mobile Detox scaffold validate
+    name: Mobile lint + Detox scaffold
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
     steps:
       - uses: actions/checkout@v4
+      - name: Detect mobile tree
+        id: mobile
+        run: |
+          if [ -f mobile/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::mobile/ is a local nested checkout (gitlink); not present on CI — skip mobile jobs"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.mobile.outputs.present == 'true'
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
       - name: Validate Detox config + e2e specs exist
+        if: steps.mobile.outputs.present == 'true'
+        working-directory: mobile
         run: |
           test -f .detoxrc.js
           test -f e2e/config.json
@@ -169,7 +180,21 @@ jobs:
           test -f e2e/auth.e2e.js
           node -e "const c=require('./.detoxrc.js'); if(!c.configurations['android.emu.debug']) process.exit(1); console.log('detox scaffold OK')"
       - name: SQLCipher verify script
+        if: steps.mobile.outputs.present == 'true'
+        working-directory: mobile
         run: node ./scripts/verify-sqlcipher.mjs
+      - name: Install + lint + unit selfcheck
+        if: steps.mobile.outputs.present == 'true'
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run lint
+          npm run test:unit
+      - name: npm audit (high+)
+        if: steps.mobile.outputs.present == 'true'
+        working-directory: mobile
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
   frontend-build:
     name: Frontend build

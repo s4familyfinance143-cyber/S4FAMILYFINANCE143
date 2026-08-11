@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 from pydantic import computed_field, model_validator, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -151,9 +153,28 @@ class Settings(BaseSettings):
             )
 
         if (self.JWT_ALGORITHM or "").upper().startswith("RS"):
-            if not (self.JWT_PRIVATE_KEY and self.JWT_PUBLIC_KEY):
-                # Allow file-based keys under secrets/; security.py generates in non-prod.
-                pass
+            has_inline = bool(
+                (self.JWT_PRIVATE_KEY or "").strip() and (self.JWT_PUBLIC_KEY or "").strip()
+            )
+            keys_mounted = (os.getenv("JWT_RSA_KEYS_MOUNTED") or "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            secrets_dir = Path(__file__).resolve().parents[2] / "secrets"
+            has_files = (
+                keys_mounted
+                and (secrets_dir / "jwt_rs256_private.pem").is_file()
+                and (secrets_dir / "jwt_rs256_public.pem").is_file()
+            )
+            if not (has_inline or has_files):
+                raise ValueError(
+                    "Production safety error: RS256 requires JWT_PRIVATE_KEY + JWT_PUBLIC_KEY "
+                    "(or mount PEMs and set JWT_RSA_KEYS_MOUNTED=true). "
+                    "Or set JWT_ALGORITHM=HS256 and use JWT_SECRET_KEY only."
+                )
+            object.__setattr__(self, "REFRESH_COOKIE_SECURE", True)
+        else:
             object.__setattr__(self, "REFRESH_COOKIE_SECURE", True)
 
         return self

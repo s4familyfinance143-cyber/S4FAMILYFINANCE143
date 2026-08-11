@@ -1,13 +1,13 @@
-# Build Order gaps closed — Steps 6 / 12 / 18 / 19
+# Build Order gaps — code vs operator
 
-This file records how architecture leftovers are completed **in-repo**.
+In-repo packaging/code status. **Live production still needs operator spend/accounts.**
 
-| Step | Was | Now | How to prove |
-|------|-----|-----|----------------|
-| **6** SQLite / SQLCipher | PARTIAL | **Code COMPLETE** | `cd mobile && npm run verify:sqlcipher` then native/EAS build per `mobile/docs/SQLCIPHER_NATIVE_BUILD.md`. Runtime ON = custom binary (not Expo Go). |
-| **12** Push / FCM | PARTIAL | **Code COMPLETE** | Templates + Celery + outbox + `pipeline_status`. Live device: `bash deploy/scripts/verify_fcm_ready.sh` + Firebase JSON. |
-| **18** Security + Beta | MISSING | **COMPLETE (process artifacts)** | `deploy/SECURITY_AUDIT_REPORT.md` + `deploy/BETA_TESTING_PLAN.md` + GitHub beta issue template. Run beta with 2–3 families; fix P0/P1. |
-| **19** Production Live | PARTIAL | **Packaging COMPLETE** | `deploy/OPERATOR_GO_LIVE.md` + `vps_go_live_deploy.sh` + `vps_ssl_certbot.sh` + `vps_backup_cron.sh`. Live URL needs your VPS/DNS. |
+| Step | Code / packaging | Operator / paid | How to prove |
+|------|------------------|-----------------|--------------|
+| **6** SQLite / SQLCipher | **Code COMPLETE** (config + verify script) | Native/EAS binary + device runtime `cipher_version` | `cd mobile && npm run verify:sqlcipher` then native build per `mobile/docs/SQLCIPHER_NATIVE_BUILD.md` |
+| **12** Push / FCM | **Code COMPLETE** (templates + Celery + outbox) | Firebase project JSON + real device | `bash deploy/scripts/verify_fcm_ready.sh` + credentials |
+| **18** Security + Beta | **Artifacts COMPLETE** (audit report + beta plan + issue template) | Real 2–3 family beta run | `deploy/SECURITY_AUDIT_REPORT.md` + `deploy/BETA_TESTING_PLAN.md` |
+| **19** Production Live | **Packaging COMPLETE** (compose, nginx, scripts, CI images) | VPS + DNS + SSL + filled secrets | `deploy/OPERATOR_GO_LIVE.md` |
 
 ## Operator-only (cannot be invented by code)
 

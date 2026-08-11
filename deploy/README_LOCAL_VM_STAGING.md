@@ -99,6 +99,17 @@ Full operator spine (package → VPS): [`README_RELEASE_KIT.md`](README_RELEASE_
 
 From Windows (NAT 2222/8088):
 
+#### SSH environment variables
+
+Before running any `vm_*.py` SSH script, set one authentication method:
+
+- `S4_VM_PASSWORD` — VM login password (also used for sudo commands), or
+- `S4_VM_SSH_KEY` — path to the VM user's private SSH key.
+
+Optional connection settings are `S4_VM_HOST`, `S4_VM_PORT`, `S4_VM_USER`, and
+`S4_VM_KNOWN_HOSTS`. Scripts default to the local-lab host, forwarded port, and
+user; setting `S4_VM_KNOWN_HOSTS` enables host-key verification by default.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File deploy\scripts\package_release.ps1
 $env:PYTHONUNBUFFERED=1

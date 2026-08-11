@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import time
+import os
+import sys
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm
 
-HOST, PORT, USER, PASSWORD = "127.0.0.1", 2222, "s4family", "root"
+USER = os.environ.get("S4_VM_USER", "s4family")
 
 
 def main() -> int:
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=25, banner_timeout=40, auth_timeout=25)
+    c = connect_vm(timeout=25)
     cmd = f"""
 set -e
 CERT_DIR=/home/{USER}/s4/deploy/nginx/certs

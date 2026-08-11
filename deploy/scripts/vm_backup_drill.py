@@ -2,20 +2,24 @@
 """Postgres backup drill on Ubuntu VM staging."""
 from __future__ import annotations
 
+import os
 import sys
 import time
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
-HOST, PORT, USER, PASSWORD = "127.0.0.1", 2222, "s4family", "root"
+USER = os.environ.get("S4_VM_USER", "s4family")
 
 
 def main() -> int:
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=25, banner_timeout=40, auth_timeout=25)
+    pwd = vm_password()
+    if not pwd:
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo in the backup drill.")
+    c = connect_vm(timeout=25)
     cmd = f"""
-echo {PASSWORD} | sudo -S bash -lc '
+sudo -S bash -lc '
 set -e
 PGUSER=$(docker exec s4-family-finance-postgres printenv POSTGRES_USER)
 PGDB=$(docker exec s4-family-finance-postgres printenv POSTGRES_DB)
@@ -31,6 +35,7 @@ echo BACKUP_DRILL_PASS
 """
     stdin, stdout, stderr = c.exec_command(cmd, get_pty=True, timeout=180)
     time.sleep(0.3)
+    write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     print(out)
     code = stdout.channel.recv_exit_status()

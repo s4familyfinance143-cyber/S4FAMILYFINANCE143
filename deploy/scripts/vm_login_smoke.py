@@ -8,6 +8,7 @@ import urllib.request
 
 BASE = os.environ.get("S4_VERIFY_BASE_URL", "http://127.0.0.1:8088").rstrip("/")
 EMAIL = os.environ.get("S4_VERIFY_EMAIL", "owner@s4family.com")
+# Local-lab bootstrap credential; override with S4_VERIFY_PASSWORD later.
 PASSWORD = os.environ.get("S4_VERIFY_PASSWORD", "S4Family143!")
 
 

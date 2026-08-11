@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-PWD = "root"
 ROOT = r"S:\S4-FAMILY-FINANCE-143-FINAL"
 REMOTE = "/home/s4family/s4"
 FILES = [
@@ -31,19 +32,19 @@ def run(c, cmd, sudo=False, timeout=1200):
     stdin, stdout, _ = c.exec_command(full, get_pty=True, timeout=timeout)
     if sudo:
         time.sleep(0.3)
-        stdin.write(PWD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     print(out[-3000:] if len(out) > 3000 else out, end="")
     return stdout.channel.recv_exit_status()
 
 
 def main():
+    pwd = vm_password()
+    if not pwd:
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during rate-limit deploy.")
     for attempt in range(4):
         try:
-            c = paramiko.SSHClient()
-            c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            c.connect("127.0.0.1", port=2222, username="s4family", password=PWD, timeout=30, banner_timeout=30, auth_timeout=30)
+            c = connect_vm(timeout=30)
             break
         except Exception as e:
             print(f"ssh retry {attempt+1}: {e}")

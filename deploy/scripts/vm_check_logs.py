@@ -1,24 +1,26 @@
-import paramiko
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-PWD = "root"
-
 def run(client, cmd):
-    print(f"\n>>> {cmd}")
-    stdin, stdout, _ = client.exec_command(cmd, get_pty=True, timeout=120)
+    full = f"sudo -S {cmd}"
+    print(f"\n>>> {full}")
+    stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=120)
     time.sleep(0.3)
-    stdin.write(PWD + "\n")
-    stdin.flush()
+    write_sudo_password(stdin)
     print(stdout.read().decode("utf-8", errors="replace"), end="")
 
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("127.0.0.1", port=2222, username="s4family", password="root", timeout=30)
-run(c, "echo root | sudo -S docker ps --format 'table {{.Names}}\t{{.Status}}'")
-run(c, "echo root | sudo -S docker logs s4-family-finance-frontend --tail 15 2>&1")
-run(c, "echo root | sudo -S docker exec s4-family-finance-frontend head -c 8 /etc/nginx/conf.d/default.conf | xxd")
+pwd = vm_password()
+if not pwd:
+    raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo when checking logs.")
+c = connect_vm(timeout=30)
+run(c, "docker ps --format 'table {{.Names}}\t{{.Status}}'")
+run(c, "docker logs s4-family-finance-frontend --tail 15 2>&1")
+run(c, "docker exec s4-family-finance-frontend head -c 8 /etc/nginx/conf.d/default.conf | xxd")
 c.close()

@@ -9,13 +9,15 @@ from pathlib import Path
 
 import paramiko
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 HOST = os.environ.get("S4_VM_HOST", "127.0.0.1")
 PORT = int(os.environ.get("S4_VM_PORT", "2222"))
 USER = os.environ.get("S4_VM_USER", "s4family")
-PASSWORD = os.environ.get("S4_VM_PASSWORD", "root")
 ROOT = Path(__file__).resolve().parents[2]
 DIST = ROOT / "deploy" / "dist"
 
@@ -35,8 +37,7 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
     stdin, stdout, stderr = client.exec_command(cmd, get_pty=True, timeout=timeout)
     if sudo:
         time.sleep(0.4)
-        stdin.write(PASSWORD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     text = (out or "") + (err or "")
@@ -53,13 +54,14 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
 
 
 def main() -> int:
+    pwd = vm_password()
+    if not pwd:
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during staging rebuild.")
     tar = latest_tar()
     print(f"Using tar: {tar} ({tar.stat().st_size / 1e6:.1f} MB)", flush=True)
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     print(f"Connecting {USER}@{HOST}:{PORT} ...", flush=True)
-    client.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=30, banner_timeout=45, auth_timeout=30)
+    client = connect_vm(timeout=30)
     print("SSH_OK", flush=True)
 
     remote_tar = f"/home/{USER}/s4-release-sync.tar.gz"
@@ -131,14 +133,14 @@ PY
     run(client, ensure_smtp, timeout=60)
 
     rebuild = f"""
-echo {PASSWORD} | sudo -S bash -lc '
+sudo -S bash -lc '
 cd /home/{USER}/s4/deploy/docker
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging build --pull=false
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging up -d
 docker compose --env-file .env.production -f docker-compose.production.yml --profile staging ps
 '
 """
-    code, _ = run(client, rebuild, timeout=7200)
+    code, _ = run(client, rebuild, sudo=True, timeout=7200)
     client.close()
     return code
 

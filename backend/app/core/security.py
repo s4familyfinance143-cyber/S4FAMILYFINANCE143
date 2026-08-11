@@ -27,7 +27,7 @@ _PUBLIC_PATH = _KEY_DIR / "jwt_rs256_public.pem"
 
 
 def _ensure_rsa_keys() -> tuple[str, str]:
-    """Load or generate RS256 PEM key pair for JWT."""
+    """Load RS256 PEM key pair for JWT. Generate only outside production."""
     private_pem = (getattr(settings, "JWT_PRIVATE_KEY", None) or "").strip()
     public_pem = (getattr(settings, "JWT_PUBLIC_KEY", None) or "").strip()
     if private_pem and public_pem:
@@ -35,6 +35,12 @@ def _ensure_rsa_keys() -> tuple[str, str]:
 
     if _PRIVATE_PATH.exists() and _PUBLIC_PATH.exists():
         return _PRIVATE_PATH.read_text(encoding="utf-8"), _PUBLIC_PATH.read_text(encoding="utf-8")
+
+    if getattr(settings, "IS_PRODUCTION", False):
+        raise RuntimeError(
+            "RS256 JWT keys missing in production. Set JWT_PRIVATE_KEY/JWT_PUBLIC_KEY "
+            "or mount secrets/jwt_rs256_*.pem (or switch JWT_ALGORITHM=HS256)."
+        )
 
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -58,7 +64,10 @@ def _ensure_rsa_keys() -> tuple[str, str]:
         _PRIVATE_PATH.write_text(private_pem, encoding="utf-8")
         _PUBLIC_PATH.write_text(public_pem, encoding="utf-8")
     except Exception:
-        pass
+        # Dev-only: in-memory keys if secrets/ is not writable.
+        import logging
+
+        logging.getLogger(__name__).warning("Could not persist generated JWT RSA keys to disk")
     return private_pem, public_pem
 
 

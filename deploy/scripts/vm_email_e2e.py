@@ -7,14 +7,13 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-PWD = "root"
-
 
 def http_json(method, url, body=None):
     data = None if body is None else json.dumps(body).encode()
@@ -38,15 +37,14 @@ def http_json(method, url, body=None):
 
 
 def ssh_run(cmd, sudo=False):
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect("127.0.0.1", port=2222, username="s4family", password=PWD, timeout=30)
+    if sudo and not vm_password():
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo in the email E2E check.")
+    c = connect_vm(timeout=30)
     full = f"sudo -S {cmd}" if sudo else cmd
     stdin, stdout, _ = c.exec_command(full, get_pty=True, timeout=60)
     if sudo:
         time.sleep(0.3)
-        stdin.write(PWD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     c.close()
     return out

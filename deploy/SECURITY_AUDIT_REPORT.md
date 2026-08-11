@@ -13,7 +13,7 @@
 | Production secrets in git | Blocked by `.gitignore` / examples only |
 | Go-live blockers | Operator VPS/DNS/TLS (not code defects) |
 
-**Verdict:** No High findings. Medium findings are low-confidence / reviewed patterns. App is cleared for **beta** and production packaging; live hosting remains an operator step.
+**Verdict:** No High findings in static gates. Cleared for **local/staging packaging and paid-beta prep**; a real multi-family beta and live hosting are still **operator** steps (see `OPERATOR_GO_LIVE.md`).
 
 ## Automated results
 

@@ -7,15 +7,16 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-HOST, PORT, USER, PASSWORD = "127.0.0.1", 2222, "s4family", "root"
 COMPOSE_LOCAL = r"S:\S4-FAMILY-FINANCE-143-FINAL\deploy\docker\docker-compose.production.yml"
 COMPOSE_REMOTE = "/home/s4family/s4/deploy/docker/docker-compose.production.yml"
 ENV_REMOTE = "/home/s4family/s4/deploy/docker/.env.production"
@@ -28,8 +29,7 @@ def run(client, cmd, sudo=False, timeout=900):
     stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
     if sudo:
         time.sleep(0.3)
-        stdin.write(PASSWORD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     print(out[-5000:] if len(out) > 5000 else out, end="")
     return stdout.channel.recv_exit_status(), out
@@ -57,9 +57,10 @@ def http_json(method, url, body=None, timeout=30):
 
 
 def main():
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=30, banner_timeout=30, auth_timeout=30)
+    pwd = vm_password()
+    if not pwd:
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo when enabling Mailpit SMTP.")
+    c = connect_vm(timeout=30)
 
     with c.open_sftp() as sftp:
         sftp.put(COMPOSE_LOCAL, COMPOSE_REMOTE)

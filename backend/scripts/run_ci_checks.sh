@@ -17,8 +17,8 @@ export AUTH_EMAIL_ENABLED=true
 export DOCUMENT_VAULT_BACKEND=local
 export CELERY_ENABLED=false
 
-echo "== pytest (unit) =="
-python -m pytest -m "not integration"
+echo "== pytest (unit + coverage floor) =="
+python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=35
 
 echo "== bandit (high severity) =="
 bandit -r app -c ../.bandit -lll

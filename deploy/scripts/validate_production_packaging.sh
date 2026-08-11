@@ -81,6 +81,7 @@ export MINIO_ROOT_USER=validate_minio
 export MINIO_ROOT_PASSWORD=validate_only_minio
 export DATABASE_URL='postgresql+psycopg://s4_user:validate_only_postgres@postgres:5432/s4_family_finance_production'
 export JWT_SECRET_KEY='validate_only_jwt_secret_key_32chars_min_xx'
+export JWT_ALGORITHM=HS256
 
 if docker compose -f "$ROOT/deploy/docker/docker-compose.production.yml" \
   --env-file "$ROOT/deploy/docker/.env.production.example" config --quiet; then
@@ -90,7 +91,7 @@ else
   FAILED=$((FAILED + 1))
 fi
 
-unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY
+unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY JWT_ALGORITHM
 
 export POSTGRES_PASSWORD=validate_only_postgres
 export REDIS_PASSWORD=validate_only_redis
@@ -98,6 +99,7 @@ export MINIO_ROOT_USER=validate_minio
 export MINIO_ROOT_PASSWORD=validate_only_minio
 export DATABASE_URL='postgresql+psycopg://s4_user:validate_only_postgres@postgres:5432/s4_family_finance_production'
 export JWT_SECRET_KEY='validate_only_jwt_secret_key_32chars_min_xx'
+export JWT_ALGORITHM=HS256
 export GRAFANA_ADMIN_PASSWORD=validate_only_grafana
 export POSTGRES_DB=s4_family_finance_production
 export POSTGRES_USER=s4_user
@@ -111,8 +113,11 @@ else
   FAILED=$((FAILED + 1))
 fi
 
-unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY
+unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY JWT_ALGORITHM
 unset GRAFANA_ADMIN_PASSWORD POSTGRES_DB POSTGRES_USER
+
+# Image build is covered by the docker-build CI job (not duplicated here).
+echo "NOTE: backend/frontend image build is asserted in CI docker-build job."
 
 if [[ "$FAILED" -gt 0 ]]; then
   echo "FAIL production_packaging_validate ($FAILED)"

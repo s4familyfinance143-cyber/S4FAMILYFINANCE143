@@ -1,34 +1,38 @@
-import paramiko
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-PWD = "root"
-
-def run(client, cmd, timeout=300):
+def run(client, cmd, sudo=False, timeout=300):
+    full = f"sudo -S {cmd}" if sudo else cmd
     print(f"\n>>> {cmd[:120]}...")
-    stdin, stdout, _ = client.exec_command(cmd, get_pty=True, timeout=timeout)
-    time.sleep(0.3)
-    stdin.write(PWD + "\n")
-    stdin.flush()
+    stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
+    if sudo:
+        time.sleep(0.3)
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     print(out, end="")
     return stdout.channel.recv_exit_status()
 
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("127.0.0.1", port=2222, username="s4family", password="root", timeout=30)
+pwd = vm_password()
+if not pwd:
+    raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during owner bootstrap.")
+c = connect_vm(timeout=30)
 
-run(c, "echo root | sudo -S docker cp /home/s4family/s4/backend/scripts/bootstrap_owner_on_postgres.py s4-family-finance-backend:/tmp/bootstrap_owner.py")
-run(c, "echo root | sudo -S docker exec s4-family-finance-backend python /tmp/bootstrap_owner.py", timeout=120)
+run(c, "docker cp /home/s4family/s4/backend/scripts/bootstrap_owner_on_postgres.py s4-family-finance-backend:/tmp/bootstrap_owner.py", sudo=True)
+run(c, "docker exec s4-family-finance-backend python /tmp/bootstrap_owner.py", sudo=True, timeout=120)
 
 # test via nginx path from guest host network namespace
 test = r"""python3 - <<'PY'
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+# Local-lab bootstrap credential; override it after bootstrap.
 body=json.dumps({"email":"owner@s4family.com","password":"S4Family143!"}).encode()
 req=Request("http://127.0.0.1/api/auth/login", data=body, headers={"Content-Type":"application/json"}, method="POST")
 try:

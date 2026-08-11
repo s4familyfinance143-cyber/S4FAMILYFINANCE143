@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import time
+import sys
+from pathlib import Path
 
-import paramiko
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm
 
 from vm_backup_drill import main as drill_main
 
-HOST, PORT, USER, PASSWORD = "127.0.0.1", 2222, "s4family", "root"
-
-
 def wait_ssh(tries: int = 18) -> bool:
     for i in range(tries):
-        c = paramiko.SSHClient()
-        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
-            c.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=15, banner_timeout=30, auth_timeout=20)
+            c = connect_vm(timeout=15)
             _, o, _ = c.exec_command("echo OK", timeout=10)
             ok = b"OK" in o.read()
             c.close()

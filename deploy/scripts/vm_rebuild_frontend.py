@@ -1,11 +1,13 @@
-import paramiko
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-PWD = "root"
 CONF_LOCAL = r"S:\S4-FAMILY-FINANCE-143-FINAL\deploy\nginx\s4_family_finance_nginx.conf"
 CONF_REMOTE = "/home/s4family/s4/deploy/nginx/s4_family_finance_nginx.conf"
 UPLOADS = [
@@ -27,16 +29,16 @@ def run(client, cmd, sudo=False, timeout=1800):
     stdin, stdout, _ = client.exec_command(full, get_pty=True, timeout=timeout)
     if sudo:
         time.sleep(0.3)
-        stdin.write(PWD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     print(out, end="")
     return stdout.channel.recv_exit_status()
 
 
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("127.0.0.1", port=2222, username="s4family", password="root", timeout=30)
+pwd = vm_password()
+if not pwd:
+    raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during frontend rebuild.")
+c = connect_vm(timeout=30)
 
 with c.open_sftp() as sftp:
     sftp.put(CONF_LOCAL, CONF_REMOTE)

@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 import sys
 import time
+from pathlib import Path
 
 import paramiko
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vm_ssh_common import connect_vm, vm_password, write_sudo_password
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -16,7 +20,6 @@ if hasattr(sys.stderr, "reconfigure"):
 HOST = os.environ.get("S4_VM_HOST", "127.0.0.1")
 PORT = int(os.environ.get("S4_VM_PORT", "2222"))
 USER = os.environ.get("S4_VM_USER", "s4family")
-PASSWORD = os.environ.get("S4_VM_PASSWORD", "root")
 TAR_PATH = os.environ.get("S4_STAGING_TAR", r"S:\s4-staging.tar.gz")
 
 ENV_CONTENT = """POSTGRES_DB=s4_family_finance_production
@@ -54,8 +57,7 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
     stdin, stdout, stderr = client.exec_command(cmd, get_pty=True, timeout=timeout)
     if sudo:
         time.sleep(0.3)
-        stdin.write(PASSWORD + "\n")
-        stdin.flush()
+        write_sudo_password(stdin)
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     if out:
@@ -66,14 +68,15 @@ def run(client: paramiko.SSHClient, cmd: str, sudo: bool = False, timeout: int =
 
 
 def main() -> int:
+    pwd = vm_password()
+    if not pwd:
+        raise SystemExit("ERROR: S4_VM_PASSWORD is required for sudo during staging deploy.")
     if not os.path.isfile(TAR_PATH):
         print(f"Missing tar: {TAR_PATH}", file=sys.stderr)
         return 1
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     print(f"Connecting {USER}@{HOST}:{PORT} ...")
-    client.connect(HOST, port=PORT, username=USER, password=PASSWORD, timeout=30)
+    client = connect_vm(timeout=30)
 
     remote_tar = "/home/s4family/s4-staging.tar.gz"
     print(f"Uploading {TAR_PATH} ...")
