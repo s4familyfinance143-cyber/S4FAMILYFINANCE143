@@ -49,6 +49,10 @@ celery_app.conf.update(
             "task": "app.workers.celery_tasks.process_scheduled_reminders_task",
             "schedule": 60.0,
         },
+        "due-notification-scan": {
+            "task": "app.workers.celery_tasks.scan_due_notifications_task",
+            "schedule": float(settings.LOAN_REMINDER_SCAN_HOURS * 3600),
+        },
     },
 )
 

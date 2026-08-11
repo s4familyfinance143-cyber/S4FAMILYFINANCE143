@@ -141,4 +141,4 @@ def decode_token(token: str) -> dict[str, Any]:
     )
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")

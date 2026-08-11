@@ -86,6 +86,7 @@ class Settings(BaseSettings):
 
     REDIS_URL: str | None = None
     CELERY_ENABLED: bool = False
+    LOAN_REMINDER_SCAN_HOURS: int = 6
     GOOGLE_VISION_ENABLED: bool = False
     GOOGLE_APPLICATION_CREDENTIALS: str | None = None
     S3_ENDPOINT_URL: str | None = None

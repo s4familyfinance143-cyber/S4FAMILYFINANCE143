@@ -111,34 +111,69 @@ def generate_report_task(family_id: str, report_type: str = "overview") -> dict:
 
 @celery_app.task(name="app.workers.celery_tasks.process_sync_outbox_task")
 def process_sync_outbox_task(limit: int = 50) -> dict:
-    from sqlalchemy import text
-
     from app.core.database import SessionLocal
+    from app.models.sync_tables import SyncOutbox
 
     db = SessionLocal()
     try:
-        rows = db.execute(
-            text(
-                "SELECT id FROM sync_outbox WHERE status = 'PENDING' "
-                "ORDER BY created_at ASC LIMIT :limit"
-            ),
-            {"limit": max(1, min(limit, 200))},
-        ).fetchall()
-        processed = 0
+        rows = (
+            db.query(SyncOutbox)
+            .filter(SyncOutbox.status == "PENDING")
+            .order_by(SyncOutbox.created_at.asc())
+            .limit(max(1, min(limit, 200)))
+            .all()
+        )
+        updated_at = datetime.now(timezone.utc)
         for row in rows:
-            db.execute(
-                text(
-                    "UPDATE sync_outbox SET status = 'PROCESSED', updated_at = CURRENT_TIMESTAMP "
-                    "WHERE id = :id"
-                ),
-                {"id": row[0]},
-            )
-            processed += 1
+            row.status = "PROCESSED"
+            row.updated_at = updated_at
         db.commit()
-        return {"ok": True, "task": "sync_processor", "processed": processed}
+        return {"ok": True, "task": "sync_processor", "processed": len(rows)}
     except Exception as exc:
         db.rollback()
         return {"ok": False, "task": "sync_processor", "error": str(exc)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.celery_tasks.scan_due_notifications_task")
+def scan_due_notifications_task(limit: int = 200) -> dict:
+    """Scan active families for due budget, recurring, and loan notifications."""
+    from app.core.database import SessionLocal
+    from app.models.family import Family
+    from app.services.notification_scan_service import run_family_notification_scan
+
+    db = SessionLocal()
+    scanned = 0
+    created_count = 0
+    created_ids: list[str] = []
+    failures: list[dict[str, str]] = []
+    try:
+        families = (
+            db.query(Family)
+            .filter(Family.is_active.is_(True), Family.deleted_at.is_(None))
+            .order_by(Family.id)
+            .limit(max(1, min(limit, 200)))
+            .all()
+        )
+        for family in families:
+            try:
+                result = run_family_notification_scan(db, family.id)
+                db.commit()
+                scanned += 1
+                created_count += result["created_count"]
+                created_ids.extend(result["created_ids"])
+            except Exception as exc:
+                db.rollback()
+                failures.append({"family_id": family.id, "error": str(exc)[:500]})
+        return {
+            "ok": not failures,
+            "task": "notification_scan",
+            "families_scanned": scanned,
+            "created_count": created_count,
+            "created_ids": created_ids,
+            "failures": failures,
+        }
     finally:
         db.close()
 
@@ -147,6 +182,7 @@ def process_sync_outbox_task(limit: int = 50) -> dict:
 def process_scheduled_reminders_task() -> dict:
     from app.core.database import SessionLocal
     from app.models.infra_jobs import ReminderSchedule
+    from app.models.notification import Notification
 
     db = SessionLocal()
     try:
@@ -162,6 +198,16 @@ def process_scheduled_reminders_task() -> dict:
             .all()
         )
         for row in due:
+            db.add(
+                Notification(
+                    family_id=row.family_id,
+                    notification_type="SCHEDULED_REMINDER",
+                    title=row.title,
+                    message=row.title,
+                    severity="INFO",
+                    is_read=False,
+                )
+            )
             row.status = "SENT"
         db.commit()
         return {"ok": True, "task": "reminders", "sent": len(due)}

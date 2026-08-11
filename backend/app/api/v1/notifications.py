@@ -8,11 +8,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.architecture_auth import PushToken
-from app.models.budget import Budget
-from app.models.loan import Loan
-from app.models.missing_features import LoanInstallment
 from app.models.notification import Notification
-from app.models.recurring import RecurringTransaction
 from app.models.savings import SavingsGoal
 from app.models.user import User
 from app.services.audit_service import write_audit_log
@@ -201,133 +197,13 @@ def scan_notifications(
         permission="notification.read",
     )
 
-    created_count = 0
-    created_ids: list[str] = []
+    from app.services.notification_scan_service import run_family_notification_scan
 
-    budgets = (
-        db.query(Budget)
-        .filter(
-            Budget.family_id == family_id,
-            Budget.status == "ACTIVE",
-            Budget.deleted_at.is_(None),
-        )
-        .all()
-    )
+    scan_result = run_family_notification_scan(db, family_id)
+    created_count = scan_result["created_count"]
+    created_ids = scan_result["created_ids"]
 
-    for budget in budgets:
-        budget_amount = Decimal(budget.budget_amount or 0)
-        spent_amount = Decimal(budget.spent_amount or 0)
-
-        if budget_amount <= 0:
-            continue
-
-        used = (spent_amount / budget_amount) * Decimal("100")
-
-        if used >= 100:
-            item = create_template_notification(
-                db=db,
-                family_id=family_id,
-                notification_type="BUDGET_OVER",
-                name=budget.name,
-            )
-            if item:
-                created_count += 1
-                created_ids.append(item.id)
-
-        elif used >= 80:
-            item = create_template_notification(
-                db=db,
-                family_id=family_id,
-                notification_type="BUDGET_WARNING",
-                name=budget.name,
-                percent=str(used.quantize(Decimal("0.01"))),
-            )
-            if item:
-                created_count += 1
-                created_ids.append(item.id)
-
-    recurring_due = (
-        db.query(RecurringTransaction)
-        .filter(
-            RecurringTransaction.family_id == family_id,
-            RecurringTransaction.status == "ACTIVE",
-            RecurringTransaction.next_due_date <= date.today() + timedelta(days=7),
-            RecurringTransaction.deleted_at.is_(None),
-        )
-        .all()
-    )
-
-    for recurring in recurring_due:
-        item = create_template_notification(
-            db=db,
-            family_id=family_id,
-            notification_type="RECURRING_DUE",
-            name=recurring.title,
-            due_date=str(recurring.next_due_date),
-        )
-        if item:
-            created_count += 1
-            created_ids.append(item.id)
-
-    active_loans = (
-        db.query(Loan)
-        .filter(
-            Loan.family_id == family_id,
-            Loan.status == "ACTIVE",
-            Loan.remaining_amount > 0,
-            Loan.deleted_at.is_(None),
-        )
-        .all()
-    )
-
-    for loan in active_loans:
-        item = create_template_notification(
-            db=db,
-            family_id=family_id,
-            notification_type="LOAN_ACTIVE",
-            name=loan.person_name,
-            amount=str(Decimal(loan.remaining_amount or 0).quantize(Decimal("0.01"))),
-            currency=loan.currency,
-        )
-        if item:
-            created_count += 1
-            created_ids.append(item.id)
-
-    # Architecture: due reminders tied to installment schedule
     horizon = date.today() + timedelta(days=7)
-    due_installments = (
-        db.query(LoanInstallment)
-        .filter(
-            LoanInstallment.family_id == family_id,
-            LoanInstallment.deleted_at.is_(None),
-            LoanInstallment.status.in_(["PENDING", "PARTIAL"]),
-        )
-        .all()
-    )
-    for inst in due_installments:
-        try:
-            due = date.fromisoformat(str(inst.due_date)[:10])
-        except ValueError:
-            continue
-        if due > horizon:
-            continue
-        loan = db.query(Loan).filter(Loan.id == inst.loan_id, Loan.deleted_at.is_(None)).first()
-        if not loan or loan.status != "ACTIVE":
-            continue
-        due_left = Decimal(inst.total_due or 0) - Decimal(inst.paid_amount or 0)
-        item = create_template_notification(
-            db=db,
-            family_id=family_id,
-            notification_type="LOAN_INSTALLMENT_DUE",
-            name=loan.person_name,
-            installment_no=str(inst.installment_no),
-            amount=str(due_left.quantize(Decimal("0.01"))),
-            currency=loan.currency,
-            due_date=str(inst.due_date),
-        )
-        if item:
-            created_count += 1
-            created_ids.append(item.id)
 
     savings_goals = (
         db.query(SavingsGoal)

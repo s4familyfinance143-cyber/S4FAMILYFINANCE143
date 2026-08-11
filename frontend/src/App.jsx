@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import "./styles/architecture-shell.css";
 import "./styles/design-polish.css";
+import arMessages from "./i18n/messages/ar.json";
+import bnMessages from "./i18n/messages/bn.json";
+import enMessages from "./i18n/messages/en.json";
+import hiMessages from "./i18n/messages/hi.json";
+import urMessages from "./i18n/messages/ur.json";
 import { SplashScreen } from "./components/auth/SplashScreen";
 import { FamilyAuthGate } from "./components/auth/FamilyAuthGate";
 import {
@@ -58,7 +63,19 @@ try {
   /* ignore */
 }
 
-const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+function normalizeApiBase(value) {
+  const cleaned = String(value || "").trim().replace(/\/+$/, "");
+  if (!cleaned) return "";
+  // Relative /api remains the nginx gateway; direct backend origins use the sole v1 API path.
+  if (/^https?:\/\//i.test(cleaned) && !/\/api\/v1$/i.test(cleaned)) {
+    return `${cleaned}/api/v1`;
+  }
+  return cleaned;
+}
+
+const DEFAULT_API_BASE = normalizeApiBase(
+  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000",
+);
 const API_BASE_STORAGE_KEY = "s4_api_base";
 const AUTO_SYNC_STORAGE_KEY = "s4_auto_sync";
 const AUTO_SYNC_INTERVAL_MS = 45000;
@@ -71,23 +88,23 @@ function readStoredApiBase() {
   try {
     const saved = localStorage.getItem(API_BASE_STORAGE_KEY);
     if (saved && String(saved).trim()) {
-      return String(saved).trim().replace(/\/$/, "");
+      return normalizeApiBase(saved);
     }
   } catch {
     /* ignore */
   }
-  return String(DEFAULT_API_BASE).replace(/\/$/, "");
+  return DEFAULT_API_BASE;
 }
 
 function persistApiBase(url) {
-  const cleaned = String(url || "").trim().replace(/\/$/, "");
+  const cleaned = normalizeApiBase(url);
   try {
     if (cleaned) localStorage.setItem(API_BASE_STORAGE_KEY, cleaned);
     else localStorage.removeItem(API_BASE_STORAGE_KEY);
   } catch {
     /* ignore */
   }
-  return cleaned || String(DEFAULT_API_BASE).replace(/\/$/, "");
+  return cleaned || DEFAULT_API_BASE;
 }
 
 function readAutoSyncEnabled() {
@@ -122,6 +139,22 @@ const LANGUAGE_LABELS = {
   ur: "اردو",
   en: "English",
 };
+const LOCALE_MESSAGES = {
+  bn: bnMessages,
+  en: enMessages,
+  ar: arMessages,
+  hi: hiMessages,
+  ur: urMessages,
+};
+
+function localizedPack(messages, englishPack) {
+  return Object.fromEntries(
+    Object.keys(englishPack).map((key) => {
+      if (!(key in messages)) throw new Error(`Missing localized UI text: ${key}`);
+      return [key, messages[key]];
+    }),
+  );
+}
 const LANGUAGE_DIGITS = {
   bn: ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"],
   ar: ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"],
@@ -1599,9 +1632,11 @@ const PHASE1516_UI_TEXT = {
     encryptedAtRest: "Encrypted",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  PHASE1516_UI_TEXT[languageCode] = { ...PHASE1516_UI_TEXT.en };
-}
+Object.assign(PHASE1516_UI_TEXT, {
+  ar: localizedPack(arMessages, PHASE1516_UI_TEXT.en),
+  hi: localizedPack(hiMessages, PHASE1516_UI_TEXT.en),
+  ur: localizedPack(urMessages, PHASE1516_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(PHASE1516_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -1647,9 +1682,11 @@ const SETTINGS_UI_TEXT = {
     emailNotSent: "Email not sent",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  SETTINGS_UI_TEXT[languageCode] = { ...SETTINGS_UI_TEXT.en };
-}
+Object.assign(SETTINGS_UI_TEXT, {
+  ar: localizedPack(arMessages, SETTINGS_UI_TEXT.en),
+  hi: localizedPack(hiMessages, SETTINGS_UI_TEXT.en),
+  ur: localizedPack(urMessages, SETTINGS_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(SETTINGS_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -1795,9 +1832,11 @@ const GROCERY_UI_TEXT = {
     cameraBarcodeScan: "Camera barcode scan",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  GROCERY_UI_TEXT[languageCode] = { ...GROCERY_UI_TEXT.en };
-}
+Object.assign(GROCERY_UI_TEXT, {
+  ar: localizedPack(arMessages, GROCERY_UI_TEXT.en),
+  hi: localizedPack(hiMessages, GROCERY_UI_TEXT.en),
+  ur: localizedPack(urMessages, GROCERY_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(GROCERY_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -1841,9 +1880,11 @@ const SYNC_UI_TEXT = {
     pcOfflineDbNote: "PC uses IndexedDB outbox. SQLCipher applies on native mobile builds.",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  SYNC_UI_TEXT[languageCode] = { ...SYNC_UI_TEXT.en };
-}
+Object.assign(SYNC_UI_TEXT, {
+  ar: localizedPack(arMessages, SYNC_UI_TEXT.en),
+  hi: localizedPack(hiMessages, SYNC_UI_TEXT.en),
+  ur: localizedPack(urMessages, SYNC_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(SYNC_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -2207,9 +2248,11 @@ const TOAST_UI_TEXT = {
     smtpOff: "SMTP off",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  TOAST_UI_TEXT[languageCode] = { ...TOAST_UI_TEXT.en };
-}
+Object.assign(TOAST_UI_TEXT, {
+  ar: localizedPack(arMessages, TOAST_UI_TEXT.en),
+  hi: localizedPack(hiMessages, TOAST_UI_TEXT.en),
+  ur: localizedPack(urMessages, TOAST_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(TOAST_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -2309,9 +2352,11 @@ const AUTH_GATE_UI_TEXT = {
     flowStep3: "3. Approval",
   },
 };
-for (const languageCode of ["ar", "hi", "ur"]) {
-  AUTH_GATE_UI_TEXT[languageCode] = { ...AUTH_GATE_UI_TEXT.en };
-}
+Object.assign(AUTH_GATE_UI_TEXT, {
+  ar: localizedPack(arMessages, AUTH_GATE_UI_TEXT.en),
+  hi: localizedPack(hiMessages, AUTH_GATE_UI_TEXT.en),
+  ur: localizedPack(urMessages, AUTH_GATE_UI_TEXT.en),
+});
 for (const [languageCode, text] of Object.entries(AUTH_GATE_UI_TEXT)) {
   Object.assign(UI_TEXT[languageCode], text);
 }
@@ -2740,7 +2785,7 @@ function App() {
   }
 
   function t(key) {
-    return UI_TEXT[appLanguage]?.[key] || UI_TEXT.en[key] || key;
+    return LOCALE_MESSAGES[appLanguage]?.[key] || LOCALE_MESSAGES.en[key] || key;
   }
 
   function digits(value) {

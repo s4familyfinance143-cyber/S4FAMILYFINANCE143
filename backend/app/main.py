@@ -121,6 +121,18 @@ register_exception_handlers(app)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 setup_metrics(app)
 
+
+@app.middleware("http")
+async def mark_unversioned_api_deprecated(request, call_next):
+    """Keep legacy mounts working while directing API clients to /api/v1."""
+    response = await call_next(request)
+    path = request.url.path
+    infrastructure_paths = {"/", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
+    if path not in infrastructure_paths and not path.startswith(("/api/v1", "/api/v2")):
+        response.headers["Deprecation"] = "true"
+        response.headers["Link"] = '</api/v1>; rel="successor-version"'
+    return response
+
 # Middleware order: last added = first executed on request.
 # Desired outer→inner: CORS → RequestLogger → Auth → RateLimit → Audit → ResponseFormatter → GlobalError → app
 app.add_middleware(GlobalErrorHandler)
@@ -138,6 +150,7 @@ app.add_middleware(
 )
 
 app.include_router(family_governance_hardened_router)
+# Compatibility-only unversioned mount: remove after legacy clients have migrated.
 app.include_router(api_router)
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(api_router, prefix="/api/v2")
@@ -153,6 +166,7 @@ def root():
 
 
 @app.get("/health")
+@app.get("/api/v1/health")
 def health_check():
     from app.models.base import Base
     from app.services.redis_cache import cache_status
