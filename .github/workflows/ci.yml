@@ -258,7 +258,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check staging SSH secrets
+        id: gate
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+        run: |
+          if [ -z "${STAGING_HOST}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::STAGING_HOST not set — skipping remote deploy (CI build still OK). Add GitHub Environment secrets when the Ubuntu VPS is ready."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy via SSH
+        if: steps.gate.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
@@ -281,10 +294,11 @@ jobs:
             bash deploy/scripts/remote_ghcr_deploy.sh staging
 
       - name: Verify staging health
+        if: steps.gate.outputs.configured == 'true'
         run: bash deploy/scripts/verify_live.sh https://staging.s4family.app
 
       - name: Sentry deployment marker (staging)
-        if: ${{ vars.SENTRY_ORG != '' }}
+        if: steps.gate.outputs.configured == 'true' && vars.SENTRY_ORG != ''
         uses: getsentry/action-release@v1
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -305,7 +319,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check production SSH secrets
+        id: gate
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+        run: |
+          if [ -z "${PRODUCTION_HOST}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PRODUCTION_HOST not set — skipping remote deploy (CI build still OK). Add GitHub Environment secrets when the Ubuntu VPS is ready."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy via SSH
+        if: steps.gate.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
@@ -328,10 +355,11 @@ jobs:
             bash deploy/scripts/remote_ghcr_deploy.sh production
 
       - name: Verify production health
+        if: steps.gate.outputs.configured == 'true'
         run: bash deploy/scripts/verify_live.sh https://app.s4family.app
 
       - name: Sentry deployment marker (production)
-        if: ${{ vars.SENTRY_ORG != '' }}
+        if: steps.gate.outputs.configured == 'true' && vars.SENTRY_ORG != ''
         uses: getsentry/action-release@v1
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
