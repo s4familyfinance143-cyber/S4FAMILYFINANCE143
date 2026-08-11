@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.timeutil import utc_now
+from app.models.account import Account
 
 try:
     from app.api.v1.family_governance_hardened import (
@@ -364,14 +365,15 @@ def phase8b_account_ledger(
     if not all([tx_id, line_tx, line_account, debit, credit, account_pk]):
         raise HTTPException(status_code=500, detail="Required ledger columns missing")
 
-    account_check = db.execute(
-        text(
-            f"SELECT * FROM accounts "
-            f"WHERE {_phase8b_q(account_pk)} = :account_id "
-            f"AND {_phase8b_q('family_id')} = :family_id"
-        ),
-        {"account_id": account_id, "family_id": family_id},
-    ).first()
+    account_check = (
+        db.query(Account)
+        .filter(
+            Account.id == account_id,
+            Account.family_id == family_id,
+            Account.deleted_at.is_(None),
+        )
+        .first()
+    )
 
     if not account_check:
         raise HTTPException(status_code=404, detail="Account not found in this family")
@@ -422,13 +424,12 @@ def phase8b_account_ledger(
         f"Viewed Phase 8B account ledger report for account {account_id}",
     )
 
-    account_data = dict(account_check._mapping)
     return {
         "status": "ok",
         "family_id": family_id,
         "account": {
-            "id": account_data.get(account_pk),
-            "name": account_data.get(account_name) if account_name else None,
+            "id": account_check.id,
+            "name": account_check.name,
         },
         "filters": {"start_date": start_date, "end_date": end_date, "limit": limit},
         "rows": _phase8b_json(ledger_rows),

@@ -47,8 +47,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Pytest (unit)
-        # Measured unit coverage is 38%; keep a one-point anti-regression margin.
-        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=37
+        # Measured unit coverage is 42.9%; keep a two-point anti-regression margin.
+        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=40.9
 
   backend-integration-pytest:
     name: Backend pytest (integration / PostgreSQL)
@@ -217,7 +217,7 @@ jobs:
           npm run i18n:check
           npm run build
         env:
-          VITE_API_BASE: /api
+          VITE_API_BASE: /api/v1
 
   packaging-validate:
     name: Production packaging validate
@@ -293,7 +293,7 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
-            VITE_API_BASE=/api
+            VITE_API_BASE=/api/v1
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
             VITE_SENTRY_ENVIRONMENT=production
             VITE_SENTRY_RELEASE=${{ github.sha }}

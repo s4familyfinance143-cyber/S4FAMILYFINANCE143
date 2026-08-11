@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.timeutil import utc_now
+from app.models.family_member import FamilyMember
 
 try:
     from app.api.v1.family_governance_hardened import (
@@ -106,34 +107,19 @@ def _phase9b_get_current_member_id(
     family_id: str,
     current_user: Any,
 ) -> Optional[str]:
-    if "family_members" not in _phase9b_tables(db):
-        return None
-
-    cols = _phase9b_columns(db, "family_members")
-    member_id_col = _phase9b_first(cols, ["id", "member_id"])
-    family_col = _phase9b_first(cols, ["family_id"])
-    user_col = _phase9b_first(cols, ["user_id", "uid"])
-
     user_id = getattr(current_user, "id", None) or getattr(current_user, "user_id", None)
-
-    if not member_id_col or not family_col or not user_col or not user_id:
+    if not user_id:
         return None
 
-    row = db.execute(
-        text(
-            f"SELECT {_phase9b_q(member_id_col)} "
-            f"FROM family_members "
-            f"WHERE {_phase9b_q(family_col)} = :family_id "
-            f"AND {_phase9b_q(user_col)} = :user_id "
-            f"LIMIT 1"
-        ),
-        {"family_id": str(family_id), "user_id": str(user_id)},
-    ).first()
-
-    if not row:
-        return None
-
-    return str(row[0])
+    member_id = (
+        db.query(FamilyMember.id)
+        .filter(
+            FamilyMember.family_id == str(family_id),
+            FamilyMember.user_id == str(user_id),
+        )
+        .scalar()
+    )
+    return str(member_id) if member_id else None
 
 
 def _phase9b_insert_audit_evidence(

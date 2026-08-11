@@ -8,7 +8,7 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import text
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, engine
@@ -301,17 +301,11 @@ def database_integrity_check(
         }
 
     if backend == "postgresql":
-        row = db.execute(
-            text(
-                "SELECT current_database() AS db, COUNT(*) AS table_count "
-                "FROM information_schema.tables "
-                "WHERE table_schema = 'public'"
-            )
-        ).mappings().first()
+        public_tables = inspect(db.get_bind()).get_table_names(schema="public")
         return {
             "database_backend": backend,
-            "database": row["db"] if row else None,
-            "public_table_count": row["table_count"] if row else None,
+            "database": engine.url.database,
+            "public_table_count": len(public_tables),
             "integrity_check": "reachable",
             "ok": True,
             "note": "PostgreSQL integrity uses connectivity + public table count (not PRAGMA).",

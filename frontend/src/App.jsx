@@ -66,9 +66,9 @@ try {
 function normalizeApiBase(value) {
   const cleaned = String(value || "").trim().replace(/\/+$/, "");
   if (!cleaned) return "";
-  // Relative /api remains the nginx gateway; direct backend origins use the sole v1 API path.
-  if (/^https?:\/\//i.test(cleaned) && !/\/api\/v1$/i.test(cleaned)) {
-    return `${cleaned}/api/v1`;
+  // Direct backend origins always use the sole v1 API path.
+  if (/^https?:\/\//i.test(cleaned)) {
+    return `${cleaned.replace(/\/api(?:\/v\d+)?$/i, "")}/api/v1`;
   }
   return cleaned;
 }

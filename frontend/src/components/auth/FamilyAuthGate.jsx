@@ -36,6 +36,14 @@ function relText(lang, value) {
   return value;
 }
 
+function normalizeApiBase(value) {
+  const cleaned = String(value || "").trim().replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(cleaned)) {
+    return `${cleaned.replace(/\/api(?:\/v\d+)?$/i, "")}/api/v1`;
+  }
+  return cleaned;
+}
+
 const UI = {
   bn: {
     logoSub: "Full Architecture v2.1 · Family Finance Platform",
@@ -588,7 +596,7 @@ export function FamilyAuthGate({
   }, [apiBase]);
 
   function saveApiBase() {
-    const next = String(apiBaseDraft || "").trim().replace(/\/$/, "");
+    const next = normalizeApiBase(apiBaseDraft);
     if (!next) {
       setMessage(lang === "bn" ? "API URL প্রয়োজন" : "API URL required", "error");
       return;

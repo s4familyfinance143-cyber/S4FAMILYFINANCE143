@@ -150,7 +150,7 @@ app.add_middleware(
 )
 
 app.include_router(family_governance_hardened_router)
-# Compatibility-only unversioned mount: remove after legacy clients have migrated.
+# DEPRECATED: compatibility-only unversioned mount; remove after legacy clients migrate to /api/v1.
 app.include_router(api_router)
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(api_router, prefix="/api/v2")
@@ -165,8 +165,8 @@ def root():
     }
 
 
-@app.get("/health")
 @app.get("/api/v1/health")
+@app.get("/health")  # DEPRECATED: infrastructure compatibility alias.
 def health_check():
     from app.models.base import Base
     from app.services.redis_cache import cache_status

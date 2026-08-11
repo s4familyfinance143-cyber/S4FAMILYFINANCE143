@@ -6,7 +6,7 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
-ARG VITE_API_BASE=/api
+ARG VITE_API_BASE=/api/v1
 ARG VITE_SENTRY_DSN=
 ARG VITE_SENTRY_ENVIRONMENT=production
 ARG VITE_SENTRY_RELEASE=
