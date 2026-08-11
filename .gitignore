@@ -43,3 +43,7 @@ nginx/certs/*
 # Misc
 frontend/lint-output.txt
 deploy/dist/
+
+.coverage
+htmlcov/
+.pytest_cache/
