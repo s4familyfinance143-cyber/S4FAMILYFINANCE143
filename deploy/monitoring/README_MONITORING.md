@@ -43,9 +43,10 @@ DNS: point `grafana.s4family.app` → VPS. Nginx `server_name` is already in
 
 Rules: `deploy/monitoring/prometheus/alerts.yml`
 
-Wire Slack / PagerDuty / Email in `deploy/monitoring/alertmanager/alertmanager.yml`,
-then rebuild alertmanager. Placeholders currently discard notifications; firing
-alerts still appear in the Prometheus UI.
+Set webhook env vars (`SLACK_WEBHOOK_URL`, `PAGERDUTY_WEBHOOK_URL`, `EMAIL_WEBHOOK_URL`)
+then rebuild alertmanager. Template file:
+`deploy/monitoring/alertmanager/alertmanager.yml.template`.
+Until set, notifications are discarded; firing alerts still appear in Prometheus UI.
 
 ## What is scraped
 
