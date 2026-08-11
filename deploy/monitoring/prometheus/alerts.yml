@@ -57,14 +57,14 @@ groups:
           description: "Filesystem free space below 15% (usage > 85%)."
 
       - alert: CeleryQueueBacklog
-        expr: flower_worker_tasks_active > 500
+        expr: flower_worker_number_of_currently_executing_tasks > 500
         for: 5m
         labels:
           severity: critical
           channel: slack
         annotations:
-          summary: "Celery queue / active tasks > 500"
-          description: "Flower reports more than 500 active tasks."
+          summary: "Celery active tasks > 500"
+          description: "Flower reports more than 500 currently executing tasks."
 
   - name: s4_warning
     rules:

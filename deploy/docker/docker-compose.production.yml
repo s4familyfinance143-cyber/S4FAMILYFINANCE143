@@ -206,6 +206,10 @@ services:
       CELERY_ENABLED: "true"
       ENABLE_RECURRING_WORKER: "false"
       ENABLE_AUTO_BACKUP_WORKER: "false"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
     command:
       [
         "celery",
@@ -237,6 +241,9 @@ services:
       dockerfile: deploy/docker/Dockerfile.frontend
       args:
         VITE_API_BASE: ${VITE_API_BASE:-/api}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+        VITE_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     container_name: s4-family-finance-nginx
     restart: unless-stopped
     depends_on:
@@ -254,6 +261,9 @@ services:
       dockerfile: deploy/docker/Dockerfile.frontend
       args:
         VITE_API_BASE: ${VITE_API_BASE:-/api}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+        VITE_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     container_name: s4-family-finance-frontend
     restart: unless-stopped
     profiles: ["legacy-frontend-name"]

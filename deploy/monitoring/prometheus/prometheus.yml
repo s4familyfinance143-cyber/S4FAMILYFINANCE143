@@ -23,11 +23,12 @@ scrape_configs:
         labels:
           service: s4-backend
 
-  - job_name: node
-    static_configs:
-      - targets: ["node-exporter:9100"]
-        labels:
-          service: host
+  # Uncomment on Linux VPS after: docker compose ... --profile host-metrics up -d
+  # - job_name: node
+  #   static_configs:
+  #     - targets: ["node-exporter:9100"]
+  #       labels:
+  #         service: host
 
   - job_name: postgres
     static_configs:
