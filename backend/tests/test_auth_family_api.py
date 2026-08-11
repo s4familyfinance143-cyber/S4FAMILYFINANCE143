@@ -43,13 +43,35 @@ def test_register_rejects_weak_password():
     assert res.status_code == 422
 
 
-def test_login_requires_email_verification():
-    email = f"unver-{uuid4().hex[:8]}@s4family.com"
+def test_register_auto_verifies_in_development():
+    """Non-production register marks email verified so local login works without SMTP."""
+    email = f"devreg-{uuid4().hex[:8]}@s4family.com"
     reg = client.post(
         "/api/v1/auth/register",
-        json={"full_name": "Unverified", "email": email, "password": PASSWORD},
+        json={"full_name": "Dev User", "email": email, "password": PASSWORD},
     )
     assert reg.status_code == 201
+    login = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+
+
+def test_login_blocks_unverified_email():
+    email = f"unver-{uuid4().hex[:8]}@s4family.com"
+    db = SessionLocal()
+    try:
+        user = User(
+            full_name="Unverified",
+            email=email,
+            password_hash=hash_password(PASSWORD),
+            preferred_language="bn",
+            is_active=True,
+            is_email_verified=False,
+        )
+        db.add(user)
+        db.commit()
+    finally:
+        db.close()
+
     login = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 403
     body = login.json()
