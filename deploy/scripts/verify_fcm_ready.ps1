@@ -1,4 +1,4 @@
-# Verify FCM / push pipeline readiness (Step 12) — Windows
+# Verify FCM / push pipeline readiness (Step 12) - Windows
 param(
   [string]$EnvFile = ""
 )
@@ -41,5 +41,5 @@ if ($creds) {
 }
 
 Write-Host "OK: push delivery service present (code)"
-Write-Host "Code pipeline: DONE — live device push needs Firebase JSON + enabled flag"
+Write-Host "Code pipeline: DONE - live device push needs Firebase JSON + enabled flag"
 Write-Host "Docs: deploy/OPERATOR_GO_LIVE.md"
