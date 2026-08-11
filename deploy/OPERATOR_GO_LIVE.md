@@ -46,11 +46,16 @@ sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4family.app grafana.s4family.ap
 
 Then enable `deploy/nginx/s4_family_finance_nginx.ssl.example.conf` (or Cloudflare proxy).
 
-## 4) Daily backup
+## 4) Daily backup (local + optional S3)
 
 ```bash
 sudo bash deploy/scripts/vps_backup_cron.sh
 ```
+
+Dumps gzip locally under `/var/backups/s4-family`. When `S3_*` (and optional
+`BACKUP_S3_BUCKET`) are set in `.env.production`, the same job uploads
+`backups/postgres/<stamp>/postgres.sql.gz` to MinIO/S3. Local dump is kept even
+if upload fails.
 
 ## 5) GitHub Environment secrets
 

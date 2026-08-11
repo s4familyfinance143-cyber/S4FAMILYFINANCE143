@@ -67,7 +67,8 @@ def _create_invite_row(
         invitee_email=(invitee_email or "").strip().lower() or None,
         invite_link_token=link_token,
         invite_channel=channel,
-        raw_code_hint=raw_code[:12],
+        # Never persist plaintext invite code (architecture: hash only; plain shown once in API response).
+        raw_code_hint=None,
     )
     db.add(invite)
     db.flush()
