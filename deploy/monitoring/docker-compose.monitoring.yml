@@ -1,0 +1,107 @@
+# Monitoring stack overlay — Grafana + Prometheus + exporters + Alertmanager
+# Paths are relative to the repo root (first -f compose file directory).
+# Configs are baked into images (reliable on Docker Desktop / S: drive).
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml up -d --build
+# Production (from deploy/docker):
+#   docker compose --env-file .env.production \
+#     -f docker-compose.production.yml \
+#     -f ../monitoring/docker-compose.monitoring.prod.yml up -d --build
+
+services:
+  prometheus:
+    build:
+      context: ./deploy/monitoring/prometheus
+    image: s4-family-prometheus:local
+    container_name: s4_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+      - alertmanager
+
+  alertmanager:
+    build:
+      context: ./deploy/monitoring/alertmanager
+    image: s4-family-alertmanager:local
+    container_name: s4_alertmanager
+    restart: unless-stopped
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      PAGERDUTY_WEBHOOK_URL: ${PAGERDUTY_WEBHOOK_URL:-}
+      EMAIL_WEBHOOK_URL: ${EMAIL_WEBHOOK_URL:-}
+    volumes:
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+
+  grafana:
+    build:
+      context: ./deploy/monitoring/grafana
+    image: s4-family-grafana:local
+    container_name: s4_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-s4grafana_dev}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: s4_node_exporter
+    restart: unless-stopped
+    # Linux VPS / WSL2 only — skip on Docker Desktop Windows:
+    #   docker compose ... --profile host-metrics up -d
+    profiles: ["host-metrics"]
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+    pid: host
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: s4_postgres_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:-postgresql://s4user:s4pass_dev@postgres:5432/s4family?sslmode=disable}
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: s4_redis_exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis://:s4redis_dev@redis:6379}
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

@@ -1,0 +1,126 @@
+# Architecture alert thresholds — routes via Alertmanager (Slack/PagerDuty/Email when configured).
+groups:
+  - name: s4_critical
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total[5m])), 0.001)
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "API error rate > 1%"
+          description: "5xx rate is above 1% for 5 minutes."
+
+      - alert: HighAPIP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: critical
+          channel: slack
+        annotations:
+          summary: "API p95 latency > 1s"
+          description: "p95 request latency exceeded 1 second for 5 minutes."
+
+      - alert: HighDBPoolUtilization
+        expr: s4_db_pool_utilization_ratio > 0.90
+        for: 3m
+        labels:
+          severity: critical
+          channel: slack
+        annotations:
+          summary: "DB connection pool > 90%"
+          description: "SQLAlchemy pool utilization is above 90%."
+
+      - alert: HighDiskUsage
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}
+          ) < 0.15
+        for: 5m
+        labels:
+          severity: critical
+          channel: email
+        annotations:
+          summary: "Disk usage > 85%"
+          description: "Filesystem free space below 15% (usage > 85%)."
+
+      - alert: CeleryQueueBacklog
+        expr: flower_worker_tasks_active > 500
+        for: 5m
+        labels:
+          severity: critical
+          channel: slack
+        annotations:
+          summary: "Celery queue / active tasks > 500"
+          description: "Flower reports more than 500 active tasks."
+
+  - name: s4_warning
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            1 - (
+              node_memory_MemAvailable_bytes
+              /
+              node_memory_MemTotal_bytes
+            )
+          ) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Memory usage > 80%"
+          description: "Host memory utilization above 80%."
+
+      - alert: ExportJobStuck
+        expr: s4_export_jobs_stuck > 0
+        for: 2m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Export job stuck > 10min"
+          description: "One or more export jobs have been PENDING/RUNNING longer than 10 minutes."
+
+      - alert: SyncFailureRateHigh
+        expr: s4_sync_failure_rate > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Sync failure rate > 5%"
+          description: "Recent sync_logs failure ratio exceeded 5%."
+
+      - alert: PostgresExporterDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Postgres exporter down"
+          description: "Cannot scrape postgres-exporter."
+
+      - alert: BackendDown
+        expr: up{job="s4-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          channel: slack
+        annotations:
+          summary: "S4 backend metrics unreachable"
+          description: "Prometheus cannot scrape backend /metrics."

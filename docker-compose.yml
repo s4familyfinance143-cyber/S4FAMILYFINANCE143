@@ -1,5 +1,6 @@
 # S4 Family Finance — Infrastructure Architecture (WSL local / full stack)
 # Spec: postgres, redis, backend(--reload), celery_worker, celery_beat, flower, nginx, minio
+# Monitoring (optional overlay): Grafana + Prometheus — see deploy/monitoring/README_MONITORING.md
 #
 # First-time setup:
 #   cp .env.example .env
@@ -9,6 +10,8 @@
 #   via nginx: http://localhost/docs  (proxied)
 #   Flower:   http://localhost:5555
 #   MinIO:    http://localhost:9001
+#   Grafana:  docker compose -f docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#             → http://localhost:3000
 
 name: s4-family
 
@@ -17,6 +20,17 @@ services:
     image: postgres:16-alpine
     container_name: s4_postgres
     restart: unless-stopped
+    # Slow query log: statements ≥ 500ms → docker logs s4_postgres
+    command:
+      [
+        "postgres",
+        "-c",
+        "log_min_duration_statement=500",
+        "-c",
+        "log_checkpoints=on",
+        "-c",
+        "log_lock_waits=on",
+      ]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-s4family}
       POSTGRES_USER: ${POSTGRES_USER:-s4user}
@@ -151,6 +165,10 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-s4minio}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-s4minio_dev}
       DOCUMENT_VAULT_BACKEND: ${DOCUMENT_VAULT_BACKEND:-s3}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
     # volumes:
     #   - ./backend:/app
     command:

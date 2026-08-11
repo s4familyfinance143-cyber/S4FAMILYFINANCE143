@@ -1,0 +1,49 @@
+# Alertmanager — wire real webhooks in production (see README_MONITORING.md).
+# Default receiver is a no-op so the stack starts without Slack/PagerDuty secrets.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: blackhole
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - channel="pagerduty"
+      receiver: pagerduty
+    - matchers:
+        - channel="slack"
+      receiver: slack
+    - matchers:
+        - channel="email"
+      receiver: email
+
+receivers:
+  - name: blackhole
+
+  - name: slack
+    # Set SLACK_WEBHOOK_URL via deploy/monitoring/alertmanager/alertmanager.secrets.yml
+    # or replace api_url after copy. Until then alerts stay in Prometheus UI only.
+    webhook_configs:
+      - url: "http://127.0.0.1:9/slack-placeholder"
+        send_resolved: true
+
+  - name: pagerduty
+    webhook_configs:
+      - url: "http://127.0.0.1:9/pagerduty-placeholder"
+        send_resolved: true
+
+  - name: email
+    webhook_configs:
+      - url: "http://127.0.0.1:9/email-placeholder"
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ["alertname"]

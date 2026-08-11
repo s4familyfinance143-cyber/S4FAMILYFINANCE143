@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.architecture_system import DeviceRegistry, NotificationTemplate, SyncLog
+from app.models.architecture_system import ApiLog, DeviceRegistry, NotificationTemplate, SyncLog
+from app.models.family_member import FamilyMember
 from app.models.user import User
 from app.services.architecture_bridge import ensure_user_preference
 from app.services.permission_service import require_permission
@@ -81,18 +82,87 @@ def list_sync_logs(
         .limit(max(1, min(limit, 200)))
         .all()
     )
-    return [
-        {
-            "id": r.id,
-            "device_id": r.device_id,
-            "family_id": r.family_id,
-            "synced_at": r.synced_at,
-            "items_synced": r.items_synced,
-            "success": r.success,
-            "error_msg": r.error_msg,
-        }
-        for r in rows
+    total = len(rows)
+    success_count = sum(1 for r in rows if r.success)
+    fail_count = total - success_count
+    failure_rate = (fail_count / total) if total else 0.0
+    return {
+        "family_id": family_id,
+        "summary": {
+            "total": total,
+            "success_count": success_count,
+            "fail_count": fail_count,
+            "success_rate": round(1.0 - failure_rate, 4),
+            "failure_rate": round(failure_rate, 4),
+        },
+        "rows": [
+            {
+                "id": r.id,
+                "device_id": r.device_id,
+                "family_id": r.family_id,
+                "synced_at": r.synced_at,
+                "items_synced": r.items_synced,
+                "success": r.success,
+                "error_msg": r.error_msg,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/api-logs")
+def list_api_logs(
+    family_id: str,
+    min_ms: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Slow / recent API calls for family member users (Reports module)."""
+    require_permission(db, family_id, user.id, "report.read")
+    member_ids = [
+        row[0]
+        for row in db.query(FamilyMember.user_id)
+        .filter(
+            FamilyMember.family_id == family_id,
+            FamilyMember.deleted_at.is_(None),
+        )
+        .all()
     ]
+    query = db.query(ApiLog).filter(ApiLog.deleted_at.is_(None))
+    if member_ids:
+        query = query.filter(ApiLog.user_id.in_(member_ids))
+    else:
+        query = query.filter(ApiLog.user_id == user.id)
+    if min_ms > 0:
+        query = query.filter(ApiLog.duration_ms >= min_ms)
+    rows = query.order_by(ApiLog.duration_ms.desc(), ApiLog.created_at.desc()).limit(
+        max(1, min(limit, 200))
+    ).all()
+    slow = [r for r in rows if (r.duration_ms or 0) >= 500]
+    avg_ms = int(sum((r.duration_ms or 0) for r in rows) / len(rows)) if rows else 0
+    return {
+        "family_id": family_id,
+        "filters": {"min_ms": min_ms, "limit": limit},
+        "summary": {
+            "row_count": len(rows),
+            "slow_count_ge_500ms": len(slow),
+            "avg_duration_ms": avg_ms,
+            "max_duration_ms": max((r.duration_ms or 0) for r in rows) if rows else 0,
+        },
+        "rows": [
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "endpoint": r.endpoint,
+                "method": r.method,
+                "status_code": r.status_code,
+                "duration_ms": r.duration_ms,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/device-registry")

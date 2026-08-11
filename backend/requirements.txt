@@ -45,6 +45,7 @@ slowapi==0.1.9
 redis==6.4.0
 celery==5.5.3
 sentry-sdk[fastapi,celery]==2.25.1
+prometheus-client==0.21.1
 # Optional OCR engines (install when enabling image OCR):
 # pytesseract  (also install Tesseract OCR binary on the host)
 # google-cloud-vision>=3.7.0  (when GOOGLE_VISION_ENABLED=true)

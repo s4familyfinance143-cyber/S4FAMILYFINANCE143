@@ -37,7 +37,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
                 getattr(request.state, "user_id", None),
             )
             path = request.url.path or ""
-            if path not in ("/docs", "/openapi.json", "/redoc", "/health", "/"):
+            if path not in ("/docs", "/openapi.json", "/redoc", "/health", "/metrics", "/"):
                 try:
                     from app.core.database import SessionLocal
                     from app.models.architecture_system import ApiLog

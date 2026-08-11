@@ -1,4 +1,4 @@
-const SYNC_TABS = ["status", "push", "conflicts", "pull"];
+const SYNC_TABS = ["status", "push", "conflicts", "pull", "logs"];
 
 function PayloadPreview({ title, payload }) {
   if (!payload) return <p className="settings-empty">{title}: —</p>;
@@ -41,6 +41,9 @@ export function SyncPanel({
   onPull,
   onPush,
   onResolve,
+  syncLogs = null,
+  syncLogsLoading = false,
+  onLoadSyncLogs,
 }) {
   const pending = Number(syncStatus?.pending_outbox || 0) + Number(localOutboxPending || 0);
   const openConflicts = Number(syncStatus?.open_conflicts || syncConflicts.length || 0);
@@ -68,7 +71,10 @@ export function SyncPanel({
             role="tab"
             aria-selected={syncTab === tab}
             className={syncTab === tab ? "settings-tab active" : "settings-tab"}
-            onClick={() => setSyncTab(tab)}
+            onClick={() => {
+              setSyncTab(tab);
+              if (tab === "logs") onLoadSyncLogs?.();
+            }}
           >
             {t(`syncTab_${tab}`)}
           </button>
@@ -341,6 +347,42 @@ export function SyncPanel({
               <p className="settings-empty">{t("noPullPreview")}</p>
             </div>
           )}
+        </div>
+      )}
+
+      {syncTab === "logs" && (
+        <div className="settings-stack">
+          <div className="settings-block">
+            <div className="settings-block-head">
+              <div>
+                <h4>{t("syncTab_logs") || "Sync history"}</h4>
+                <p>
+                  {t("syncSuccessRate") || "Success rate"}:{" "}
+                  {digits(Math.round(Number(syncLogs?.summary?.success_rate || 0) * 100))}% ·{" "}
+                  {t("failCount") || "Fails"}: {digits(syncLogs?.summary?.fail_count || 0)}
+                </p>
+              </div>
+              <button type="button" className="btn" disabled={syncLogsLoading} onClick={onLoadSyncLogs}>
+                {syncLogsLoading ? t("loading") : t("refreshSyncStatus")}
+              </button>
+            </div>
+            {(syncLogs?.rows || []).length ? (
+              <div className="table" style={{ marginTop: 12 }}>
+                {(syncLogs.rows || []).map((row) => (
+                  <div className="row" key={row.id}>
+                    <span>{formatWhen(row.synced_at, t, digits)}</span>
+                    <span>{row.device_id || "—"}</span>
+                    <span>{digits(row.items_synced || 0)}</span>
+                    <strong style={{ color: row.success ? undefined : "#b45309" }}>
+                      {row.success ? "OK" : row.error_msg || "FAIL"}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="settings-empty">{syncLogsLoading ? t("loading") : t("noData") || "No data"}</p>
+            )}
+          </div>
         </div>
       )}
     </section>

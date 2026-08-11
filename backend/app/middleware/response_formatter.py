@@ -16,6 +16,7 @@ SKIP_PREFIXES = (
     "/redoc",
     "/openapi",
     "/health",
+    "/metrics",
     "/favicon",
 )
 

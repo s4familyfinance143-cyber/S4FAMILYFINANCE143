@@ -821,7 +821,10 @@ const EXTRA_UI_TEXT = {
     reportTab_budget: "বাজেট",
     reportTab_loans: "ঋণ",
     reportTab_savings: "সঞ্চয় ট্রেন্ড",
+    reportTab_apilogs: "API লগ",
     reportTab_export: "এক্সপোর্ট",
+    apiLogsHint: "ধীর এন্ডপয়েন্ট (≥৫০০ms হাইলাইট). গড়",
+    slowCount: "ধীর",
     ledgerAccount: "লেজার অ্যাকাউন্ট",
     selectLedgerAccount: "লেজার অ্যাকাউন্ট নির্বাচন",
     totalDebit: "মোট ডেবিট",
@@ -1220,7 +1223,10 @@ const EXTRA_UI_TEXT = {
     reportTab_budget: "Budget",
     reportTab_loans: "Loans",
     reportTab_savings: "Savings trend",
+    reportTab_apilogs: "API logs",
     reportTab_export: "Export",
+    apiLogsHint: "Slow endpoints (≥500ms highlighted). Avg",
+    slowCount: "Slow",
     ledgerAccount: "Ledger account",
     selectLedgerAccount: "Select ledger account",
     totalDebit: "Total Debit",
@@ -1800,6 +1806,9 @@ const SYNC_UI_TEXT = {
     syncTab_status: "স্ট্যাটাস",
     syncTab_conflicts: "কনফ্লিক্ট",
     syncTab_pull: "পুল",
+    syncTab_logs: "সিঙ্ক লগ",
+    syncSuccessRate: "সফলতার হার",
+    failCount: "ব্যর্থ",
     conflictResolveHelp: "লোকাল vs সার্ভার ডিফ দেখে resolve করুন",
     localPayload: "লোকাল ডেটা",
     remotePayload: "সার্ভার ডেটা",
@@ -1816,6 +1825,9 @@ const SYNC_UI_TEXT = {
     syncTab_status: "Status",
     syncTab_conflicts: "Conflicts",
     syncTab_pull: "Pull",
+    syncTab_logs: "Sync logs",
+    syncSuccessRate: "Success rate",
+    failCount: "Fails",
     conflictResolveHelp: "Compare local vs server and resolve",
     localPayload: "Local payload",
     remotePayload: "Server payload",
@@ -2413,6 +2425,7 @@ function App() {
   const [budgetReport, setBudgetReport] = useState(null);
   const [loanReport, setLoanReport] = useState(null);
   const [savingsTrendReport, setSavingsTrendReport] = useState(null);
+  const [apiLogsReport, setApiLogsReport] = useState(null);
   const [reportAccountId, setReportAccountId] = useState("");
   const [reportsLoading, setReportsLoading] = useState(false);
   const [backupIntegrity, setBackupIntegrity] = useState(null);
@@ -2425,6 +2438,8 @@ function App() {
   const [syncConflicts, setSyncConflicts] = useState([]);
   const [syncResolvedConflicts, setSyncResolvedConflicts] = useState([]);
   const [syncPullPreview, setSyncPullPreview] = useState(null);
+  const [syncLogs, setSyncLogs] = useState(null);
+  const [syncLogsLoading, setSyncLogsLoading] = useState(false);
   const [syncLastToken, setSyncLastToken] = useState("");
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncPullLoading, setSyncPullLoading] = useState(false);
@@ -5056,6 +5071,10 @@ function App() {
         setLoanReport(await apiGet(`/reports/loans/${activeFamilyId}`));
       } else if (tab === "savings") {
         setSavingsTrendReport(await apiGet(`/reports/savings-trend/${activeFamilyId}`));
+      } else if (tab === "apilogs") {
+        setApiLogsReport(
+          await apiGet(`/api-logs?family_id=${encodeURIComponent(activeFamilyId)}&min_ms=0&limit=80`),
+        );
       }
     } catch (err) {
       setMessage(err.message || "Report load failed", "error");
@@ -5449,6 +5468,21 @@ function App() {
       setMessage(err.message || "Sync status load failed", "error");
     } finally {
       setSyncLoading(false);
+    }
+  }
+
+  async function loadSyncLogs() {
+    if (!token || !activeFamilyId) return;
+    setSyncLogsLoading(true);
+    try {
+      setSyncLogs(
+        await apiGet(`/sync-logs?family_id=${encodeURIComponent(activeFamilyId)}&limit=80`),
+      );
+    } catch (err) {
+      setSyncLogs(null);
+      setMessage(err.message || "Sync logs load failed", "error");
+    } finally {
+      setSyncLogsLoading(false);
     }
   }
 
@@ -8713,6 +8747,7 @@ function App() {
             budgetReport={budgetReport}
             loanReport={loanReport}
             savingsTrendReport={savingsTrendReport}
+            apiLogsReport={apiLogsReport}
             reportAccountId={reportAccountId}
             setReportAccountId={setReportAccountId}
             reportsLoading={reportsLoading}
@@ -9033,6 +9068,9 @@ function App() {
             onPull={pullSyncPreview}
             onPush={() => pushLocalSyncOutbox()}
             onResolve={resolveSyncConflict}
+            syncLogs={syncLogs}
+            syncLogsLoading={syncLogsLoading}
+            onLoadSyncLogs={loadSyncLogs}
           />
         )}
 

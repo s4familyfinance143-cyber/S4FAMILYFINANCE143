@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 import { create } from "zustand";
+import { captureWebException, initWebSentry } from "./lib/sentry.js";
+
+initWebSentry();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +31,7 @@ class AppErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error("AppErrorBoundary", error, info);
+    captureWebException(error, { componentStack: info?.componentStack });
   }
 
   render() {

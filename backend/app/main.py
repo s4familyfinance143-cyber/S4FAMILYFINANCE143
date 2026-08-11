@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.sentry_init import init_sentry
 from app.core.database import engine
 from app.core.errors import register_exception_handlers
+from app.core.metrics import setup_metrics
 from app.core.rate_limit import limiter
 from app.middleware.audit_middleware import AuditLogMiddleware
 from app.middleware.auth_middleware import AuthContextMiddleware
@@ -118,6 +119,7 @@ app = FastAPI(
 app.state.limiter = limiter
 register_exception_handlers(app)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+setup_metrics(app)
 
 # Middleware order: last added = first executed on request.
 # Desired outer→inner: CORS → RequestLogger → Auth → RateLimit → Audit → ResponseFormatter → GlobalError → app
@@ -167,6 +169,7 @@ def health_check():
         "orm_table_count": len(Base.metadata.tables),
         "celery_enabled": bool(settings.CELERY_ENABLED),
         "google_vision_enabled": bool(settings.GOOGLE_VISION_ENABLED),
+        "metrics_endpoint": "/metrics",
         "layers": {
             "middleware": [
                 "CORSMiddleware",
@@ -183,6 +186,7 @@ def health_check():
             "audit_middleware": True,
             "response_formatter": True,
             "global_error_handler": True,
+            "prometheus_metrics": True,
             "dependency_injection": True,
             "service_layer": True,
             "repository_pattern": True,

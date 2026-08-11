@@ -24,6 +24,13 @@ checks=(
   "backend/.env.production.example"
   "backend/requirements.txt"
   "backend/alembic.ini"
+  "deploy/monitoring/README_MONITORING.md"
+  "deploy/monitoring/docker-compose.monitoring.yml"
+  "deploy/monitoring/docker-compose.monitoring.prod.yml"
+  "deploy/monitoring/prometheus/prometheus.yml"
+  "deploy/monitoring/prometheus/alerts.yml"
+  "deploy/monitoring/grafana/provisioning/datasources/datasource.yml"
+  "deploy/OPERATOR_GO_LIVE.md"
 )
 
 for rel in "${checks[@]}"; do
@@ -78,6 +85,28 @@ else
 fi
 
 unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY
+
+export POSTGRES_PASSWORD=validate_only_postgres
+export REDIS_PASSWORD=validate_only_redis
+export MINIO_ROOT_USER=validate_minio
+export MINIO_ROOT_PASSWORD=validate_only_minio
+export DATABASE_URL='postgresql+psycopg://s4_user:validate_only_postgres@postgres:5432/s4_family_finance_production'
+export JWT_SECRET_KEY='validate_only_jwt_secret_key_32chars_min_xx'
+export GRAFANA_ADMIN_PASSWORD=validate_only_grafana
+export POSTGRES_DB=s4_family_finance_production
+export POSTGRES_USER=s4_user
+
+if docker compose -f "$ROOT/deploy/docker/docker-compose.production.yml" \
+  -f "$ROOT/deploy/monitoring/docker-compose.monitoring.prod.yml" \
+  --env-file "$ROOT/deploy/docker/.env.production.example" config --quiet; then
+  echo "OK  docker compose production + monitoring overlay"
+else
+  echo "FAIL docker compose production + monitoring overlay"
+  FAILED=$((FAILED + 1))
+fi
+
+unset POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD DATABASE_URL JWT_SECRET_KEY
+unset GRAFANA_ADMIN_PASSWORD POSTGRES_DB POSTGRES_USER
 
 if [[ "$FAILED" -gt 0 ]]; then
   echo "FAIL production_packaging_validate ($FAILED)"

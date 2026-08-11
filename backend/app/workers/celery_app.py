@@ -8,6 +8,10 @@ from __future__ import annotations
 from celery import Celery
 
 from app.core.config import settings
+from app.core.sentry_init import init_sentry
+
+# Worker/beat processes do not import app.main — init Sentry here when DSN is set.
+init_sentry()
 
 
 def _broker_url() -> str:

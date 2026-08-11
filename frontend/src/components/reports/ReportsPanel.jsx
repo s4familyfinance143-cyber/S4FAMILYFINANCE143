@@ -2,7 +2,7 @@ import { useState } from "react";
 import { MoneyPill, TypeChip } from "../ui/FinanceChips";
 import { BarChart, LineChart, PieChart } from "../ui/Charts";
 
-const REPORT_TABS = ["overview", "ledger", "networth", "categories", "budget", "loans", "savings", "export"];
+const REPORT_TABS = ["overview", "ledger", "networth", "categories", "budget", "loans", "savings", "apilogs", "export"];
 const EXPORT_TYPES = ["transactions", "cashflow", "goals"];
 
 function reportMaxValue(rows, keys) {
@@ -30,6 +30,7 @@ export function ReportsPanel({
   budgetReport,
   loanReport,
   savingsTrendReport,
+  apiLogsReport,
   reportAccountId,
   setReportAccountId,
   reportsLoading,
@@ -82,7 +83,7 @@ export function ReportsPanel({
             className={reportTab === tab ? "settings-tab active" : "settings-tab"}
             onClick={() => {
               setReportTab(tab);
-              if (["networth", "categories", "budget", "loans", "savings"].includes(tab)) {
+              if (["networth", "categories", "budget", "loans", "savings", "apilogs"].includes(tab)) {
                 onLoadExtraReport?.(tab);
               }
             }}
@@ -475,6 +476,35 @@ export function ReportsPanel({
                 ))}
               </div>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {reportTab === "apilogs" ? (
+        <div className="settings-stack">
+          <div className="settings-block">
+            <h4>{t("reportTab_apilogs") || "API performance"}</h4>
+            <p className="budget-hero-sub">
+              {(t("apiLogsHint") || "Slow endpoints (≥500ms highlighted). Avg")}:{" "}
+              {digits(apiLogsReport?.summary?.avg_duration_ms || 0)}ms ·{" "}
+              {t("slowCount") || "Slow"}: {digits(apiLogsReport?.summary?.slow_count_ge_500ms || 0)}
+            </p>
+            {(apiLogsReport?.rows || []).length ? (
+              <div className="table" style={{ marginTop: 12 }}>
+                {(apiLogsReport.rows || []).map((row) => (
+                  <div className="row" key={row.id}>
+                    <span>{row.method}</span>
+                    <span>{row.endpoint}</span>
+                    <span>{row.status_code}</span>
+                    <strong style={{ color: Number(row.duration_ms) >= 500 ? "#b45309" : undefined }}>
+                      {digits(row.duration_ms)}ms
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="settings-empty">{reportsLoading ? t("loadingReports") : t("noData") || "No data"}</p>
+            )}
           </div>
         </div>
       ) : null}
