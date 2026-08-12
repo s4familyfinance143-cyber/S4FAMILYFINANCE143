@@ -46,9 +46,9 @@ limiter = Limiter(
     headers_enabled=True,
 )
 
-# Architecture exact numbers
+# Architecture exact numbers (production). Local/dev allows more register attempts for phone testing.
 AUTH_LOGIN_LIMIT = "5/minute"
-AUTH_REGISTER_LIMIT = "3/hour"
+AUTH_REGISTER_LIMIT = "3/hour" if settings.IS_PRODUCTION else "30/hour"
 AUTH_PASSWORD_EMAIL_LIMIT = "5/minute"
 API_USER_LIMIT = "60/minute"
 JOIN_REQUEST_LIMIT = "10/minute"

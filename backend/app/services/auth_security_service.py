@@ -80,6 +80,17 @@ class AuthSecurityService:
 
         if len(password or "") < 8:
             errors.append("Password must be at least 8 characters long.")
+
+        # Local/dev: keep signup usable on phone; production keeps full policy.
+        try:
+            from app.core.config import settings
+
+            if not settings.IS_PRODUCTION:
+                if len(errors) == 0 and len(password or "") >= 8:
+                    return []
+        except Exception:
+            pass
+
         if not any(ch.islower() for ch in password):
             errors.append("Password must contain a lowercase letter.")
         if not any(ch.isupper() for ch in password):

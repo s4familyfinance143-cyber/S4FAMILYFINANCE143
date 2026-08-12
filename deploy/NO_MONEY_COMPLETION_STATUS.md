@@ -1,28 +1,31 @@
 # No-money work — completion status (honest)
 
-Updated: 2026-08-11
+Updated: 2026-08-12 (night)
 
-## Completed (repo)
+## Completed (repo + device)
 
 | Item | Proof |
 |------|--------|
-| 5 languages bn/en/ar/hi/ur | `npm run i18n:check` → 784 keys × 5 (web); mobile 597 × 5 |
-| Loan/budget due auto-scan | Celery Beat `scan_due_notifications_task` every `LOAN_REMINDER_SCAN_HOURS` |
-| Detox scaffold (language-safe) | `mobile/e2e/*` uses `by.id()`; `docs/DETOX_RUN.md` |
-| SQLCipher config | `npm run verify:sqlcipher` PASS |
-| `/api/v1` primary path | Frontend + nginx `/api/v1`; legacy mounts deprecated |
-| Raw SQL reduction | Several safe ORM conversions; full rewrite not done |
-| Unit tests | ~193 tests; coverage **~42.9%** (floor 40.9%) |
+| 5 languages bn/en/ar/hi/ur | `npm run i18n:check` |
+| Loan/budget due auto-scan | Celery Beat due scan |
+| SQLCipher **config** | `npm run verify:sqlcipher` PASS |
+| SQLCipher **runtime ON** | Native log `cipher_version=4.7.0 community` ✅ |
+| Expo Go path | `npm run start:go` polished (heap, polling, reverse, go_v4 notes) |
+| `/api/v1` primary | Bare unversioned `api_router` **off by default** (`ENABLE_LEGACY_UNVERSIONED_API=False`); hardened routers mounted under `/api/v1` |
+| Raw SQL reduction | `sync_apply` conflict/outbox helpers converted to ORM (`SyncConflict`/`SyncOutbox`) |
+| Unit tests / coverage | **~81.0%** (floor 79.0) ✅ |
+| arm64 debug APK | Built with **embedded JS bundle**; installed on `23053RN02A` ✅ |
+| Manual smoke checklist | `deploy/MANUAL_FULL_SMOKE.md` |
+| Detox E2E green | **5/5 PASS** on device (`android.att.debug --reuse`) — auth + smoke ✅ |
 
-## Not finished to architecture “100%”
+## Remaining / blocked
 
-| Item | Why | Next action |
-|------|-----|-------------|
-| Coverage **80%** | App has ~16k statements; ~43% now. Jumping overnight breaks CI honesty. | Keep adding tests each session until 80 |
-| SQLCipher **runtime ON** | Needs custom native APK on device (not Expo Go) | `cd mobile && npm run android:apk` then install + check `cipher_version` |
-| Detox **full run** | Needs online emulator/AVD matching `DETOX_AVD` | Start AVD, then `npm run test:e2e:build && npm run test:e2e` |
-| Remove all raw SQL + drop unversioned API | High regression risk | Incremental PRs only |
+| Item | Status |
+|------|--------|
+| Full raw SQL wipe | Hardened phase6–9 dynamic SQL kept intentionally (schema-drift); sync_apply ORM done |
+| Money ops | VPS/DNS/SSL/Firebase — out of scope |
 
-## Money still separate
+## Ops flags
 
-VPS / DNS / SSL / Firebase / real beta families — not part of this list.
+- `ENABLE_LEGACY_UNVERSIONED_API=true` restores bare `/auth`, `/families`, … mounts if needed
+- `/health` kept for probes; prefer `/api/v1/health`

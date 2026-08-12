@@ -42,7 +42,7 @@ def _get_active_family_member_id(db: Session, family_id: str) -> str | None:
         .filter(
             FamilyMember.family_id == family_id,
             FamilyMember.role == "OWNER",
-            FamilyMember.is_active.is_(True),
+            FamilyMember.status == "ACTIVE",
             FamilyMember.deleted_at.is_(None),
         )
         .first()
@@ -55,7 +55,7 @@ def _get_active_family_member_id(db: Session, family_id: str) -> str | None:
         db.query(FamilyMember)
         .filter(
             FamilyMember.family_id == family_id,
-            FamilyMember.is_active.is_(True),
+            FamilyMember.status == "ACTIVE",
             FamilyMember.deleted_at.is_(None),
         )
         .first()

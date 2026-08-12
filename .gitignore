@@ -47,3 +47,18 @@ deploy/dist/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Local release staging / APKs / backups (install via GitHub Releases)
+.release-stage/
+**/*.apk
+backend/backups/
+backend/exports/
+backend/coverage_*.txt
+backend/pytest_*.txt
+mobile/*.log
+mobile/detox-*-out.txt
+
+
+_mobile_git_bak/
+_mobile_git_bak_file
+mobile/.git.nested.bak/

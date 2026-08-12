@@ -33,8 +33,8 @@
 .s4-login-shell .chip{font-size:10.5px;padding:4px 10px;border-radius:5px;font-weight:500;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2)}
 
 /* ===== RIGHT — form panel ===== */
-.s4-login-shell .formside{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 24px}
-.s4-login-shell .stagearea{width:100%;max-width:410px}
+.s4-login-shell .formside{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:40px 28px 48px;overflow:auto}
+.s4-login-shell .stagearea{width:100%;max-width:460px}
 .s4-login-shell .mobile-brand{display:none}
 
 .s4-login-shell .card{width:100%;background:#fff;border:1px solid #E8E8E8;border-radius:16px;padding:28px 30px 24px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -169,6 +169,16 @@
 
 .s4-login-shell .view{display:none}
 .s4-login-shell .view.active{display:block}
+
+.s4-login-shell .advanced-block{margin-bottom:14px}
+.s4-login-shell .advanced-toggle{font-size:12px;margin-bottom:8px}
+.s4-login-shell .choice-row{display:flex;gap:8px;margin-top:10px}
+.s4-login-shell .choice-mini{
+  flex:1;border:1.5px solid #1D9E75;background:#EDF9F4;color:#0F6E56;
+  border-radius:10px;padding:10px 8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
+}
+.s4-login-shell .choice-mini:hover{background:#dff3eb}
+.s4-login-shell .choice-mini:disabled{opacity:.6;cursor:not-allowed}
 
 @media (max-width:860px){
   .s4-login-shell .brand{display:none}

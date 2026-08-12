@@ -1,0 +1,24 @@
+S4 Family Finance 143 — where to install (no money needed for local)
+
+1) MOBILE APK (offline after first login)
+   Path:
+     mobile\android\app\build\outputs\apk\debug\app-debug.apk
+   Install:
+     adb install -r -t mobile\android\app\build\outputs\apk\debug\app-debug.apk
+   Or copy the APK to the phone and open it.
+
+2) WINDOWS / PC
+   Not a single offline “finance .exe app” like mobile.
+   Options:
+     A) Browser UI + local backend:
+        deploy\windows\02_run_backend_local_sqlite.bat
+        deploy\windows\04_run_frontend_preview.bat
+        Then open http://127.0.0.1:4173
+     B) Docker stack (Docker Desktop):
+        docker compose up
+     C) Optional installer scaffold:
+        deploy\installer\Output\S4-FAMILY-FINANCE-143-Setup.exe
+        (sets up local project helpers — not a Play-Store-style desktop app)
+
+3) MONEY later (only for public online)
+   VPS + domain + DNS + SSL + Firebase

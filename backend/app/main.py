@@ -141,18 +141,29 @@ app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RateLimitMiddleware)  # SlowAPI
 app.add_middleware(AuthContextMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Development: allow Expo Go / LAN web origins. Production keeps explicit allowlist.
+if settings.IS_PRODUCTION:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(family_governance_hardened_router)
-# DEPRECATED: compatibility-only unversioned mount; remove after legacy clients migrate to /api/v1.
-app.include_router(api_router)
-app.include_router(api_router, prefix="/api/v1")
+# Primary versioned API. Bare mount is opt-in via ENABLE_LEGACY_UNVERSIONED_API.
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(api_router)
+app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 app.include_router(api_router, prefix="/api/v2")
 
 
@@ -232,7 +243,9 @@ def debug_ws_routes():
 
 # === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE ===
 from app.api.v1.accounts_wallets_hardened import router as accounts_wallets_hardened_router
-app.include_router(accounts_wallets_hardened_router)
+app.include_router(accounts_wallets_hardened_router, prefix=settings.API_V1_PREFIX)
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(accounts_wallets_hardened_router)
 # === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE END ===
 
 
@@ -243,26 +256,37 @@ _phase7b_replace = {
     ("/families/{family_id}/transactions", "GET"),
     ("/families/{family_id}/transactions", "POST"),
     ("/families/{family_id}/transactions/{transaction_id}", "GET"),
+    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "GET"),
+    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "POST"),
+    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions/{{transaction_id}}", "GET"),
 }
 app.router.routes = [
     r for r in app.router.routes
     if not any((getattr(r, "path", "") == p and m in (getattr(r, "methods", set()) or set())) for p, m in _phase7b_replace)
 ]
-app.include_router(double_entry_transactions_hardened_router)
+app.include_router(double_entry_transactions_hardened_router, prefix=settings.API_V1_PREFIX)
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(double_entry_transactions_hardened_router)
 # === PHASE 7B DOUBLE-ENTRY TRANSACTIONS ROUTER INCLUDE END ===
 
 
 # === PHASE 8B REPORTS AUDIT INTEGRATION ROUTER INCLUDE ===
 from app.api.v1.reports_audit_integration_hardened import router as phase8b_reports_audit_integration_router
-app.include_router(phase8b_reports_audit_integration_router)
+app.include_router(phase8b_reports_audit_integration_router, prefix=settings.API_V1_PREFIX)
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(phase8b_reports_audit_integration_router)
 # === END PHASE 8B REPORTS AUDIT INTEGRATION ROUTER INCLUDE ===
 
 # === PHASE 9B AUDIT TRAIL ROUTER INCLUDE ===
 from app.api.v1.audit_trail_hardened import router as phase9b_audit_trail_router
-app.include_router(phase9b_audit_trail_router)
+app.include_router(phase9b_audit_trail_router, prefix=settings.API_V1_PREFIX)
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(phase9b_audit_trail_router)
 # === END PHASE 9B AUDIT TRAIL ROUTER INCLUDE ===
 
 # === PHASE 10B OFFLINE SYNC ROUTER INCLUDE ===
 from app.api.v1.offline_sync_hardened import router as phase10b_offline_sync_router
-app.include_router(phase10b_offline_sync_router)
+app.include_router(phase10b_offline_sync_router, prefix=settings.API_V1_PREFIX)
+if settings.ENABLE_LEGACY_UNVERSIONED_API:
+    app.include_router(phase10b_offline_sync_router)
 # === END PHASE 10B OFFLINE SYNC ROUTER INCLUDE ===

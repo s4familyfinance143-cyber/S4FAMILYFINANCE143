@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import text
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
 from app.models.grocery import GroceryItem, GroceryList, GroceryVendor
+from app.models.sync_tables import SyncConflict, SyncOutbox
 from app.services.finance_posting import (
     post_expense_flush,
     post_income_flush,
     post_transfer_flush,
 )
-from fastapi import HTTPException
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 ALLOWED_ENTITY_TYPES = frozenset(
     {
@@ -148,21 +153,18 @@ def _open_conflict(
             local_blob = {**local_blob, "conflict_reason": reason}
         if isinstance(remote_blob, dict):
             remote_blob = {**remote_blob, "conflict_reason": reason}
-    db.execute(
-        text(
-            "INSERT INTO sync_conflicts "
-            "(id, family_id, device_id, entity_type, entity_id, local_payload, remote_payload, status, created_at) "
-            "VALUES (:id, :family_id, :device_id, :entity_type, :entity_id, :local_payload, :remote_payload, 'OPEN', CURRENT_TIMESTAMP)"
-        ),
-        {
-            "id": conflict_id,
-            "family_id": family_id,
-            "device_id": device_id,
-            "entity_type": entity_type,
-            "entity_id": str(entity_id) if entity_id else None,
-            "local_payload": _json_text(local_blob),
-            "remote_payload": _json_text(remote_blob),
-        },
+    db.add(
+        SyncConflict(
+            id=conflict_id,
+            family_id=family_id,
+            device_id=device_id,
+            entity_type=entity_type,
+            entity_id=str(entity_id) if entity_id else None,
+            local_payload=_json_text(local_blob),
+            remote_payload=_json_text(remote_blob),
+            status="OPEN",
+            created_at=_utcnow(),
+        )
     )
     if notify or reason == "DELETE_EDIT_RACE":
         try:
@@ -187,20 +189,14 @@ def _set_outbox_status(
     status: str,
     error_message: Optional[str] = None,
 ) -> None:
-    db.execute(
-        text(
-            "UPDATE sync_outbox "
-            "SET status = :status, error_message = :error_message, "
-            "synced_at = CASE WHEN :status = 'SYNCED' THEN CURRENT_TIMESTAMP ELSE synced_at END, "
-            "updated_at = CURRENT_TIMESTAMP "
-            "WHERE id = :id"
-        ),
-        {
-            "id": outbox_id,
-            "status": status,
-            "error_message": error_message,
-        },
-    )
+    row = db.query(SyncOutbox).filter(SyncOutbox.id == outbox_id).first()
+    if not row:
+        return
+    row.status = status
+    row.error_message = error_message
+    row.updated_at = _utcnow()
+    if status == "SYNCED":
+        row.synced_at = _utcnow()
 
 
 def _find_grocery_list(db: Session, family_id: str, entity_id: Optional[str], payload: dict) -> Optional[GroceryList]:
@@ -2259,26 +2255,15 @@ def process_pending_outbox(
     outbox_ids: Optional[list[str]] = None,
     limit: int = 500,
 ) -> dict[str, Any]:
-    params: dict[str, Any] = {"family_id": family_id, "limit": limit}
-    clauses = ["family_id = :family_id", "status = 'PENDING'"]
+    q = db.query(SyncOutbox).filter(
+        SyncOutbox.family_id == family_id,
+        SyncOutbox.status == "PENDING",
+    )
     if device_id:
-        clauses.append("device_id = :device_id")
-        params["device_id"] = device_id
+        q = q.filter(SyncOutbox.device_id == device_id)
     if outbox_ids:
-        placeholders = []
-        for i, oid in enumerate(outbox_ids):
-            key = f"oid_{i}"
-            placeholders.append(f":{key}")
-            params[key] = oid
-        clauses.append(f"id IN ({', '.join(placeholders)})")
-
-    rows = db.execute(
-        text(
-            f"SELECT * FROM sync_outbox WHERE {' AND '.join(clauses)} "
-            f"ORDER BY created_at ASC LIMIT :limit"
-        ),
-        params,
-    ).mappings().all()
+        q = q.filter(SyncOutbox.id.in_(list(outbox_ids)))
+    rows = q.order_by(SyncOutbox.created_at.asc()).limit(limit).all()
 
     synced: list[str] = []
     failed: list[dict[str, Any]] = []
@@ -2286,26 +2271,23 @@ def process_pending_outbox(
     conflicted_outbox: list[str] = []
 
     for row in rows:
-        outbox_id = str(row["id"])
-        payload = _load_json(row.get("payload"))
+        outbox_id = str(row.id)
+        payload = _load_json(row.payload)
         result = apply_one_change(
             db,
             family_id=family_id,
-            device_id=str(row.get("device_id") or device_id or "default-device"),
-            entity_type=str(row.get("entity_type") or ""),
-            operation=str(row.get("operation") or ""),
-            entity_id=str(row["entity_id"]) if row.get("entity_id") else None,
+            device_id=str(row.device_id or device_id or "default-device"),
+            entity_type=str(row.entity_type or ""),
+            operation=str(row.operation or ""),
+            entity_id=str(row.entity_id) if row.entity_id else None,
             payload=payload,
             member_id=member_id,
         )
         status = result.get("status")
         if status == "SYNCED":
             _set_outbox_status(db, outbox_id, "SYNCED")
-            if result.get("entity_id") and not row.get("entity_id"):
-                db.execute(
-                    text("UPDATE sync_outbox SET entity_id = :entity_id WHERE id = :id"),
-                    {"entity_id": str(result["entity_id"]), "id": outbox_id},
-                )
+            if result.get("entity_id") and not row.entity_id:
+                row.entity_id = str(result["entity_id"])
             synced.append(outbox_id)
             if result.get("conflict_id"):
                 conflicts.append(str(result["conflict_id"]))

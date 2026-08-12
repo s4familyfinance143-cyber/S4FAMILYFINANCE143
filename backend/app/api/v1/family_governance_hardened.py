@@ -1606,6 +1606,7 @@ def _phase5b_set_permission(
 
 
 @router.get("/families/{family_id}/permissions/me")
+@router.get("/api/v1/families/{family_id}/permissions/me")
 def phase5b_my_family_permissions(
     family_id: str,
     db: _Phase5BSession = _Phase5BDepends(get_db),
@@ -1644,6 +1645,7 @@ def phase5b_my_family_permissions(
 
 
 @router.get("/families/{family_id}/members/{member_id}/permissions")
+@router.get("/api/v1/families/{family_id}/members/{member_id}/permissions")
 def phase5b_get_member_permissions(
     family_id: str,
     member_id: str,
@@ -1716,6 +1718,7 @@ def phase5b_set_member_permission(
 
 
 @router.post("/families/{family_id}/permissions/check")
+@router.post("/api/v1/families/{family_id}/permissions/check")
 def phase5b_check_permission(
     family_id: str,
     payload: Phase5BPermissionCheckRequest,
@@ -1737,6 +1740,7 @@ def phase5b_check_permission(
 
 
 @router.post("/families/{family_id}/permissions/protected-action")
+@router.post("/api/v1/families/{family_id}/permissions/protected-action")
 def phase5b_protected_action(
     family_id: str,
     payload: Phase5BPermissionCheckRequest,

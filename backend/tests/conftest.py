@@ -18,7 +18,8 @@ if os.getenv("INTEGRATION_TESTS") == "true":
     os.environ.setdefault("CELERY_ENABLED", "false")
 else:
     # Isolate unit tests from live Postgres / Mailpit / MinIO cutover .env
-    _TEST_DB = Path(__file__).resolve().parent.parent / "storage" / "pytest_tmp.db"
+    _db_suffix = os.getenv("PYTEST_DB_SUFFIX", "tmp")
+    _TEST_DB = Path(__file__).resolve().parent.parent / "storage" / f"pytest_{_db_suffix}.db"
     _TEST_DB.parent.mkdir(parents=True, exist_ok=True)
     # Fresh schema each pytest process so model columns always match.
     if _TEST_DB.exists():
@@ -42,3 +43,19 @@ else:
     os.environ.pop("SMTP_FROM_EMAIL", None)
     os.environ.pop("REDIS_URL", None)
     os.environ["CELERY_ENABLED"] = "false"
+
+import pytest
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_sqlite_schema():
+    """Create tables for unit tests that use SessionLocal without importing app.main."""
+    if os.getenv("INTEGRATION_TESTS") == "true":
+        yield
+        return
+    import app.models  # noqa: F401 — register ORM tables
+    from app.core.database import engine
+    from app.models.base import Base
+
+    Base.metadata.create_all(bind=engine)
+    yield

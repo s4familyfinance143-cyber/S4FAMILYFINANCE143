@@ -343,7 +343,16 @@ export function FamilyAuthGate({
   const [relationshipNote, setRelationshipNote] = useState("");
   const [linkedMemberId, setLinkedMemberId] = useState("");
   const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
+  const [showAdvancedServer, setShowAdvancedServer] = useState(false);
   const menuRef = useRef(null);
+  const TIMEZONE_PRESETS = ["Asia/Dhaka", "Asia/Dubai", "Asia/Kolkata", "UTC"];
+  const CURRENCY_PRESETS = [
+    { value: "BDT", label: "BDT — বাংলাদেশি টাকা" },
+    { value: "AED", label: "AED — UAE Dirham" },
+    { value: "USD", label: "USD — US Dollar" },
+    { value: "INR", label: "INR — Indian Rupee" },
+    { value: "SAR", label: "SAR — Saudi Riyal" },
+  ];
 
   const flow = useMemo(() => FLOWS[view]?.[lang] || FLOWS.login[lang], [view, lang]);
   const mode = MODE_META[view] || MODE_META.login;
@@ -677,27 +686,45 @@ export function FamilyAuthGate({
                 <div className="brand-title">{digits("S4 FAMILY FINANCE 143")}</div>
                 <div className="brand-subtitle">{L.subtitle}</div>
 
-                <div className="field">
-                  <label>{lang === "bn" ? "API URL (LAN / backend)" : "API URL (LAN / backend)"}</label>
-                  <div className="input-wrap">
-                    <span className="input-icon">🌐</span>
-                    <input
-                      type="url"
-                      placeholder="http://192.168.0.10:8000"
-                      value={apiBaseDraft}
-                      disabled={authLoading}
-                      onChange={(e) => setApiBaseDraft(e.target.value)}
-                    />
-                  </div>
+                <div className="advanced-block">
                   <button
                     type="button"
-                    className="link"
-                    style={{ marginTop: 6 }}
+                    className="link advanced-toggle"
                     disabled={authLoading}
-                    onClick={saveApiBase}
+                    onClick={() => setShowAdvancedServer((v) => !v)}
                   >
-                    {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
+                    {showAdvancedServer
+                      ? lang === "bn"
+                        ? "সার্ভার সেটিংস লুকান"
+                        : "Hide server settings"
+                      : lang === "bn"
+                        ? "সার্ভার সেটিংস (উন্নত)"
+                        : "Server settings (advanced)"}
                   </button>
+                  {showAdvancedServer ? (
+                    <div className="field">
+                      <label>{lang === "bn" ? "API URL (LAN / backend)" : "API URL (LAN / backend)"}</label>
+                      <div className="input-wrap">
+                        <span className="input-icon">🌐</span>
+                        <input
+                          type="url"
+                          placeholder="http://127.0.0.1:8000"
+                          value={apiBaseDraft}
+                          disabled={authLoading}
+                          onChange={(e) => setApiBaseDraft(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="link"
+                        style={{ marginTop: 6 }}
+                        disabled={authLoading}
+                        onClick={saveApiBase}
+                      >
+                        {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mode-select-wrap" ref={menuRef}>
@@ -832,6 +859,14 @@ export function FamilyAuthGate({
                       <span>{L.or}</span>
                     </div>
                     <div className="footer-note">{L.noAccount}</div>
+                    <div className="choice-row">
+                      <button type="button" className="choice-mini" disabled={authLoading} onClick={() => setMode("createFamily")}>
+                        {L.btnCreate}
+                      </button>
+                      <button type="button" className="choice-mini" disabled={authLoading} onClick={() => setMode("join")}>
+                        {L.btnJoin}
+                      </button>
+                    </div>
                   </>
                 ) : null}
 
@@ -842,6 +877,21 @@ export function FamilyAuthGate({
 
             {view === "createFamily" ? (
               <div className="card">
+                <div className="top-row">
+                  <select
+                    className="lang-select"
+                    value={appLanguage}
+                    disabled={authLoading}
+                    aria-label={t("languageLock")}
+                    onChange={(e) => onChangeLanguage(e.target.value)}
+                  >
+                    {lockedLanguages.map((language) => (
+                      <option key={language.code} value={language.code}>
+                        {language.nativeName || languageLabels[language.code] || language.code}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="card-eyebrow">
                   <span>{L.stepAccFam}</span>
                   <button type="button" className="back-btn" disabled={authLoading} onClick={() => setMode("login")}>
@@ -850,6 +900,41 @@ export function FamilyAuthGate({
                 </div>
                 <div className="card-title">{L.createTitle}</div>
                 <div className="card-sub">{L.createSub}</div>
+
+                <div className="advanced-block">
+                  <button
+                    type="button"
+                    className="link advanced-toggle"
+                    disabled={authLoading}
+                    onClick={() => setShowAdvancedServer((v) => !v)}
+                  >
+                    {showAdvancedServer
+                      ? lang === "bn"
+                        ? "সার্ভার সেটিংস লুকান"
+                        : "Hide server settings"
+                      : lang === "bn"
+                        ? "সার্ভার সেটিংস (উন্নত)"
+                        : "Server settings (advanced)"}
+                  </button>
+                  {showAdvancedServer ? (
+                    <div className="field">
+                      <label>API URL</label>
+                      <div className="input-wrap">
+                        <span className="input-icon">🌐</span>
+                        <input
+                          type="url"
+                          placeholder="http://127.0.0.1:8000"
+                          value={apiBaseDraft}
+                          disabled={authLoading}
+                          onChange={(e) => setApiBaseDraft(e.target.value)}
+                        />
+                      </div>
+                      <button type="button" className="link" style={{ marginTop: 6 }} disabled={authLoading} onClick={saveApiBase}>
+                        {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
 
                 <form onSubmit={handleCreateFamily}>
                   <div className="field">
@@ -950,8 +1035,11 @@ export function FamilyAuthGate({
                         disabled={authLoading}
                         onChange={(e) => setCurrency(e.target.value)}
                       >
-                        <option value="BDT">BDT — বাংলাদেশি টাকা</option>
-                        <option value="USD">USD — US Dollar</option>
+                        {CURRENCY_PRESETS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -959,12 +1047,23 @@ export function FamilyAuthGate({
                     <label>{L.lblTimezone}</label>
                     <div className="input-wrap">
                       <span className="input-icon">🌐</span>
-                      <input
-                        type="text"
+                      <select
+                        className="field-select"
                         value={timezone}
                         disabled={authLoading}
                         onChange={(e) => setTimezone(e.target.value)}
-                      />
+                      >
+                        {TIMEZONE_PRESETS.map((tz) => (
+                          <option key={tz} value={tz}>
+                            {tz}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="hint">
+                      {lang === "bn"
+                        ? "Asia/Dhaka = বাংলাদেশ, Asia/Dubai = সংযুক্ত আরব আমিরাত — তৈরির সময় বেছে নিন"
+                        : "Asia/Dhaka = Bangladesh, Asia/Dubai = UAE — pick when creating the family"}
                     </div>
                   </div>
                   <div className="field">
