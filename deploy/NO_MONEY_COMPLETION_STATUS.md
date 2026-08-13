@@ -25,8 +25,9 @@ Updated: 2026-08-13 (evening)
 | Item | Status |
 |------|--------|
 | Fresh APK install on phone | **Built** + GitHub release `v1.0.6-icons-family` (install when phone connected) |
-| Local Docker stack smoke | Optional: `docker compose up` (Postgres/Redis/MinIO/Nginx) |
-| Local Mailpit / Tesseract | Optional pipeline smoke without paid cloud |
+| Local Docker stack smoke | **PASS** 2026-08-13 — Postgres + Redis + MinIO + Nginx + Celery + `/api/v1`+`/api/v2` healthy |
+| Local Mailpit | **PASS** — http://127.0.0.1:8025 (SMTP :1025) |
+| Local Tesseract OCR | Optional PC install if image OCR needed without Vision |
 
 ## Remaining / blocked (money)
 
