@@ -47,8 +47,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Pytest (unit)
-        # Measured unit coverage is 42.9%; keep a two-point anti-regression margin.
-        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=40.9
+        # Measured unit coverage is ~81%; keep an anti-regression floor near the documented no-money target.
+        run: python -m pytest -m "not integration" --cov=app --cov-report=term --cov-fail-under=79.0
 
   backend-integration-pytest:
     name: Backend pytest (integration / PostgreSQL)

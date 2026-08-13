@@ -57,11 +57,36 @@ class FakeSession:
 
 def test_versioned_and_legacy_health_routes_work():
     versioned = client.get("/api/v1/health")
+    v2 = client.get("/api/v2/health")
     legacy = client.get("/health")
     assert versioned.status_code == 200
+    assert v2.status_code == 200
     assert legacy.status_code == 200
-    assert versioned.json()["status"] == legacy.json()["status"] == "ok"
+    assert versioned.json()["status"] == v2.json()["status"] == legacy.json()["status"] == "ok"
+    assert versioned.json()["api_versions"] == ["/api/v1", "/api/v2"]
+    assert versioned.headers.get("X-API-Version") == "1"
+    assert v2.headers.get("X-API-Version") == "2"
     assert "Deprecation" not in legacy.headers
+
+
+def test_api_v1_and_v2_auth_and_version_endpoints():
+    v1_login = client.post("/api/v1/auth/login", json={})
+    v2_login = client.post("/api/v2/auth/login", json={})
+    assert v1_login.status_code == 422
+    assert v2_login.status_code == 422
+    assert v1_login.headers.get("X-API-Version") == "1"
+    assert v2_login.headers.get("X-API-Version") == "2"
+    assert "Deprecation" not in v1_login.headers
+    assert "Deprecation" not in v2_login.headers
+
+    v1_info = client.get("/api/v1/version")
+    v2_info = client.get("/api/v2/version")
+    assert v1_info.status_code == 200
+    assert v2_info.status_code == 200
+    assert v1_info.json()["api_version"] == "1"
+    assert v2_info.json()["api_version"] == "2"
+    assert v1_info.json()["supported_versions"] == ["1", "2"]
+    assert v2_info.json()["prefixes"]["v2"] == "/api/v2"
 
 
 def test_unversioned_api_route_is_removed_by_default():
@@ -85,7 +110,8 @@ def test_legacy_unversioned_api_can_be_reenabled(monkeypatch):
     from app.core.config import settings as s
 
     assert hasattr(s, "ENABLE_LEGACY_UNVERSIONED_API")
-
+    assert s.API_V1_PREFIX == "/api/v1"
+    assert s.API_V2_PREFIX == "/api/v2"
 
 def test_notification_scan_task_runs_in_eager_mode(monkeypatch):
     assert celery_app.conf.task_always_eager is True

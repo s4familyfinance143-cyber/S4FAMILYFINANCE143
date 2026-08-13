@@ -1,12 +1,13 @@
 ﻿from contextlib import asynccontextmanager
 import asyncio
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.router import api_router
+from app.core.api_versioning import ApiVersionHeaderMiddleware, api_version_payload
 from app.core.config import settings
 from app.core.sentry_init import init_sentry
 from app.core.database import engine
@@ -27,6 +28,14 @@ from app.api.v1.family_governance_hardened import router as family_governance_ha
 
 
 init_sentry()
+
+
+def _mount_versioned(router, *, include_legacy: bool = False) -> None:
+    """Mount a router on /api/v1 and /api/v2 (and bare path when legacy enabled)."""
+    app.include_router(router, prefix=settings.API_V1_PREFIX)
+    app.include_router(router, prefix=settings.API_V2_PREFIX)
+    if include_legacy and settings.ENABLE_LEGACY_UNVERSIONED_API:
+        app.include_router(router)
 
 
 def create_development_tables() -> None:
@@ -134,13 +143,14 @@ async def mark_unversioned_api_deprecated(request, call_next):
     return response
 
 # Middleware order: last added = first executed on request.
-# Desired outer→inner: CORS → RequestLogger → Auth → RateLimit → Audit → ResponseFormatter → GlobalError → app
+# Desired outer→inner: CORS → ApiVersion → RequestLogger → Auth → RateLimit → Audit → ResponseFormatter → GlobalError → app
 app.add_middleware(GlobalErrorHandler)
 app.add_middleware(ResponseFormatterMiddleware)
 app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RateLimitMiddleware)  # SlowAPI
 app.add_middleware(AuthContextMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
+app.add_middleware(ApiVersionHeaderMiddleware)
 # Development: allow Expo Go / LAN web origins. Production keeps explicit allowlist.
 if settings.IS_PRODUCTION:
     app.add_middleware(
@@ -160,11 +170,10 @@ else:
     )
 
 app.include_router(family_governance_hardened_router)
-# Primary versioned API. Bare mount is opt-in via ENABLE_LEGACY_UNVERSIONED_API.
+# Primary versioned API on both /api/v1 and /api/v2. Bare mount is opt-in.
 if settings.ENABLE_LEGACY_UNVERSIONED_API:
     app.include_router(api_router)
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-app.include_router(api_router, prefix="/api/v2")
+_mount_versioned(api_router)
 
 
 @app.get("/")
@@ -173,12 +182,11 @@ def root():
         "message": "S4 FAMILY FINANCE API Running",
         "environment": settings.ENVIRONMENT,
         "database": "sqlite" if settings.IS_SQLITE else "postgresql",
+        **api_version_payload("1"),
     }
 
 
-@app.get("/api/v1/health")
-@app.get("/health")  # DEPRECATED: infrastructure compatibility alias.
-def health_check():
+def _health_payload() -> dict:
     from app.models.base import Base
     from app.services.redis_cache import cache_status
     from app.services.redis_session import redis_stack_status
@@ -188,7 +196,7 @@ def health_check():
         "service": "s4-family-finance-api",
         "environment": settings.ENVIRONMENT,
         "database": "sqlite" if settings.IS_SQLITE else "postgresql",
-        "api_versions": ["/api/v1", "/api/v2"],
+        "api_versions": [settings.API_V1_PREFIX, settings.API_V2_PREFIX],
         "cache": cache_status(),
         "redis_stack": redis_stack_status(),
         "orm_table_count": len(Base.metadata.tables),
@@ -198,6 +206,7 @@ def health_check():
         "layers": {
             "middleware": [
                 "CORSMiddleware",
+                "ApiVersionHeaderMiddleware",
                 "RequestLoggerMiddleware",
                 "AuthContextMiddleware",
                 "RateLimitMiddleware",
@@ -230,6 +239,24 @@ def health_check():
     }
 
 
+@app.get("/api/v1/health")
+@app.get("/api/v2/health")
+@app.get("/health")  # DEPRECATED: infrastructure compatibility alias.
+def health_check():
+    return _health_payload()
+
+
+@app.get("/api/v1/version")
+@app.get("/api/v2/version")
+def api_version_info(request: Request):
+    path = request.url.path or ""
+    version = "2" if path.startswith("/api/v2") else "1"
+    return {
+        "status": "ok",
+        **api_version_payload(version),
+    }
+
+
 @app.get("/debug/ws-routes")
 def debug_ws_routes():
     if settings.IS_PRODUCTION or settings.ENVIRONMENT.lower() in {"staging", "prod"}:
@@ -243,9 +270,7 @@ def debug_ws_routes():
 
 # === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE ===
 from app.api.v1.accounts_wallets_hardened import router as accounts_wallets_hardened_router
-app.include_router(accounts_wallets_hardened_router, prefix=settings.API_V1_PREFIX)
-if settings.ENABLE_LEGACY_UNVERSIONED_API:
-    app.include_router(accounts_wallets_hardened_router)
+_mount_versioned(accounts_wallets_hardened_router, include_legacy=True)
 # === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE END ===
 
 
@@ -259,34 +284,29 @@ _phase7b_replace = {
     (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "GET"),
     (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "POST"),
     (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions/{{transaction_id}}", "GET"),
+    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions", "GET"),
+    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions", "POST"),
+    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions/{{transaction_id}}", "GET"),
 }
 app.router.routes = [
     r for r in app.router.routes
     if not any((getattr(r, "path", "") == p and m in (getattr(r, "methods", set()) or set())) for p, m in _phase7b_replace)
 ]
-app.include_router(double_entry_transactions_hardened_router, prefix=settings.API_V1_PREFIX)
-if settings.ENABLE_LEGACY_UNVERSIONED_API:
-    app.include_router(double_entry_transactions_hardened_router)
+_mount_versioned(double_entry_transactions_hardened_router, include_legacy=True)
 # === PHASE 7B DOUBLE-ENTRY TRANSACTIONS ROUTER INCLUDE END ===
 
 
 # === PHASE 8B REPORTS AUDIT INTEGRATION ROUTER INCLUDE ===
 from app.api.v1.reports_audit_integration_hardened import router as phase8b_reports_audit_integration_router
-app.include_router(phase8b_reports_audit_integration_router, prefix=settings.API_V1_PREFIX)
-if settings.ENABLE_LEGACY_UNVERSIONED_API:
-    app.include_router(phase8b_reports_audit_integration_router)
+_mount_versioned(phase8b_reports_audit_integration_router, include_legacy=True)
 # === END PHASE 8B REPORTS AUDIT INTEGRATION ROUTER INCLUDE ===
 
 # === PHASE 9B AUDIT TRAIL ROUTER INCLUDE ===
 from app.api.v1.audit_trail_hardened import router as phase9b_audit_trail_router
-app.include_router(phase9b_audit_trail_router, prefix=settings.API_V1_PREFIX)
-if settings.ENABLE_LEGACY_UNVERSIONED_API:
-    app.include_router(phase9b_audit_trail_router)
+_mount_versioned(phase9b_audit_trail_router, include_legacy=True)
 # === END PHASE 9B AUDIT TRAIL ROUTER INCLUDE ===
 
 # === PHASE 10B OFFLINE SYNC ROUTER INCLUDE ===
 from app.api.v1.offline_sync_hardened import router as phase10b_offline_sync_router
-app.include_router(phase10b_offline_sync_router, prefix=settings.API_V1_PREFIX)
-if settings.ENABLE_LEGACY_UNVERSIONED_API:
-    app.include_router(phase10b_offline_sync_router)
+_mount_versioned(phase10b_offline_sync_router, include_legacy=True)
 # === END PHASE 10B OFFLINE SYNC ROUTER INCLUDE ===

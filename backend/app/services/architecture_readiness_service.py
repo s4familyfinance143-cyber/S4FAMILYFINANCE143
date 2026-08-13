@@ -51,6 +51,7 @@ def architecture_readiness() -> dict:
 
     modules = [
         {"key": "auth_security", "name": "Auth & Security", "status": "DONE", "pct": 100},
+        {"key": "api_versioning", "name": "API Versioning /v1 + /v2", "status": "DONE", "pct": 100},
         {"key": "double_entry", "name": "Double-Entry Accounting", "status": "DONE", "pct": 100},
         {"key": "offline_first", "name": "Offline-First Sync", "status": "DONE", "pct": 100},
         {"key": "rbac", "name": "RBAC (5 roles)", "status": "DONE", "pct": 100},

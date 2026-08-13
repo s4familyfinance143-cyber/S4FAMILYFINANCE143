@@ -29,7 +29,8 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "S4 FAMILY FINANCE"
     API_V1_PREFIX: str = "/api/v1"
-    # When False, bare (unversioned) API mounts are not registered — clients must use /api/v1.
+    API_V2_PREFIX: str = "/api/v2"
+    # When False, bare (unversioned) API mounts are not registered — clients must use /api/v1 or /api/v2.
     ENABLE_LEGACY_UNVERSIONED_API: bool = False
     ENVIRONMENT: str = "development"
 
