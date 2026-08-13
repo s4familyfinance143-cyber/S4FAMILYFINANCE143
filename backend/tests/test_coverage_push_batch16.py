@@ -1015,6 +1015,7 @@ def test_p10b_resolve_conflict_paths(monkeypatch):
 
 
 def test_sa_open_conflict_and_set_outbox(monkeypatch):
+    from app.models.sync_tables import SyncConflict, SyncOutbox
     from app.services import sync_apply as sa
 
     monkeypatch.setattr("app.api.v1.notifications.create_notification", lambda *a, **k: None)
@@ -1031,9 +1032,20 @@ def test_sa_open_conflict_and_set_outbox(monkeypatch):
         notify=True,
     )
     assert isinstance(cid, str) and len(cid) > 8
-    assert db.executed
-    sa._set_outbox_status(db, "o1", "SYNCED", error_message=None)
-    assert any("sync_outbox" in str(stmt) for stmt, _ in db.executed)
+    assert len(db.added) == 1
+    assert isinstance(db.added[0], SyncConflict)
+
+    outbox_row = SimpleNamespace(
+        id="o1",
+        status="PENDING",
+        error_message=None,
+        updated_at=None,
+        synced_at=None,
+    )
+    db_outbox = Db(query_map={SyncOutbox: outbox_row})
+    sa._set_outbox_status(db_outbox, "o1", "SYNCED", error_message=None)
+    assert outbox_row.status == "SYNCED"
+    assert outbox_row.synced_at is not None
 
 
 def test_sa_find_item_bump_and_gate(monkeypatch):

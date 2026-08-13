@@ -105,7 +105,9 @@ def test_metrics_route():
         {"full_name": "Valid Name", "email": "valid@example.com", "password": "password"},
     ],
 )
-def test_register_validation_rejects_invalid_payloads(payload: dict):
+def test_register_validation_rejects_invalid_payloads(payload: dict, monkeypatch):
+    if payload.get("password") == "password":
+        monkeypatch.setattr("app.core.config.settings.ENVIRONMENT", "production")
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 422
 

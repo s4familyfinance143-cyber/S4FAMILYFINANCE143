@@ -602,6 +602,7 @@ def test_auth_security_token_and_password_helpers(monkeypatch):
 
     errors = AuthSecurityService.validate_password_strength("short")
     assert any("8 characters" in e for e in errors)
+    monkeypatch.setattr(auth_sec.settings, "ENVIRONMENT", "production")
     errors = AuthSecurityService.validate_password_strength(
         "johnlowercase1!", email="john.doe@example.com", full_name="John Doe"
     )

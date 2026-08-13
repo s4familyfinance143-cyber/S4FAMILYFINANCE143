@@ -492,13 +492,18 @@ def test_sync_apply_apply_one_change_unsupported_and_transaction_tags(monkeypatc
 
 
 def test_sync_apply_process_pending_outbox_without_filters(monkeypatch):
+    from app.models.sync_tables import SyncOutbox
     from app.services import sync_apply as sa
 
-    rows = [
-        {"id": "o1", "device_id": "d1", "entity_type": "grocery_lists",
-         "operation": "CREATE", "entity_id": None, "payload": "{}"},
-    ]
-    db = Db(execute_results=[_mapping_all_result(rows)])
+    row = SimpleNamespace(
+        id="o1",
+        device_id="d1",
+        entity_type="grocery_lists",
+        operation="CREATE",
+        entity_id=None,
+        payload="{}",
+    )
+    db = Db(query_map={SyncOutbox: Query(rows=[row])})
     monkeypatch.setattr(
         sa, "apply_one_change",
         lambda *a, **k: {"status": "SYNCED", "entity_id": "l-new"},
@@ -507,8 +512,6 @@ def test_sync_apply_process_pending_outbox_without_filters(monkeypatch):
     monkeypatch.setattr(sa, "_set_outbox_status", set_status)
 
     summary = sa.process_pending_outbox(db, family_id="f1", member_id="m1")
-    sql = str(db.executed[0][0])
-    assert "device_id" not in sql
     assert summary["processed"] == 1
     assert summary["synced_count"] == 1
     set_status.assert_called_once_with(db, "o1", "SYNCED")

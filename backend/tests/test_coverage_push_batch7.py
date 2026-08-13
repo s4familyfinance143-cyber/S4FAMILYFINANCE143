@@ -594,9 +594,11 @@ def test_errors_http_exception_handler_with_code_in_detail(monkeypatch):
 # ===========================================================================
 
 def test_rate_limit_constants():
+    from app.core.config import settings
     from app.core.rate_limit import AUTH_LOGIN_LIMIT, AUTH_REGISTER_LIMIT, API_USER_LIMIT
     assert AUTH_LOGIN_LIMIT == "5/minute"
-    assert AUTH_REGISTER_LIMIT == "3/hour"
+    expected_register = "3/hour" if settings.IS_PRODUCTION else "30/hour"
+    assert AUTH_REGISTER_LIMIT == expected_register
     assert API_USER_LIMIT == "60/minute"
 
 

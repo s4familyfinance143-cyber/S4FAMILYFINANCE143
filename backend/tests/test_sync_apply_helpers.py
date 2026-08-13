@@ -110,6 +110,9 @@ def test_bump_sets_version_and_client_timestamp():
 def test_open_conflict_serializes_reason_and_ignores_notification_error(monkeypatch):
     db = MagicMock()
     monkeypatch.setattr(sa.uuid, "uuid4", lambda: "conflict-id")
+    monkeypatch.setattr(
+        "app.api.v1.notifications.create_notification", lambda *args, **kwargs: None
+    )
 
     conflict_id = sa._open_conflict(
         db,
@@ -123,19 +126,24 @@ def test_open_conflict_serializes_reason_and_ignores_notification_error(monkeypa
     )
 
     assert conflict_id == "conflict-id"
-    params = db.execute.call_args.args[1]
-    assert params["entity_id"] == "123"
-    assert '"conflict_reason": "DELETE_EDIT_RACE"' in params["local_payload"]
+    added = db.add.call_args.args[0]
+    assert added.entity_id == "123"
+    assert '"conflict_reason": "DELETE_EDIT_RACE"' in added.local_payload
 
 
 def test_set_outbox_status_builds_expected_parameters():
     db = MagicMock()
+    row = SimpleNamespace(
+        id="o1",
+        status="PENDING",
+        error_message=None,
+        updated_at=None,
+        synced_at=None,
+    )
+    db.query.return_value.filter.return_value.first.return_value = row
     sa._set_outbox_status(db, "o1", "FAILED", "bad payload")
-    assert db.execute.call_args.args[1] == {
-        "id": "o1",
-        "status": "FAILED",
-        "error_message": "bad payload",
-    }
+    assert row.status == "FAILED"
+    assert row.error_message == "bad payload"
 
 
 def test_find_grocery_rows_fall_back_to_mobile_key():
@@ -300,15 +308,38 @@ def test_apply_one_change_dispatches_and_normalizes(monkeypatch, entity_type, ta
 
 
 def test_process_pending_outbox_builds_filters_and_maps_statuses(monkeypatch):
+    from app.models.sync_tables import SyncOutbox
+
     db = MagicMock()
     rows = [
-        {"id": "o1", "device_id": "d", "entity_type": "accounts", "operation": "CREATE",
-         "entity_id": None, "payload": '{"name":"Cash"}'},
-        {"id": "o2", "device_id": None, "entity_type": "accounts", "operation": "UPDATE",
-         "entity_id": "a2", "payload": {}},
-        {"id": "o3", "entity_type": "bad", "operation": "CREATE", "payload": None},
+        SimpleNamespace(
+            id="o1",
+            device_id="d",
+            entity_type="accounts",
+            operation="CREATE",
+            entity_id=None,
+            payload='{"name":"Cash"}',
+        ),
+        SimpleNamespace(
+            id="o2",
+            device_id=None,
+            entity_type="accounts",
+            operation="UPDATE",
+            entity_id="a2",
+            payload="{}",
+        ),
+        SimpleNamespace(
+            id="o3",
+            device_id="d",
+            entity_type="bad",
+            operation="CREATE",
+            entity_id=None,
+            payload=None,
+        ),
     ]
-    db.execute.return_value.mappings.return_value.all.return_value = rows
+    chain = db.query.return_value
+    chain.filter.return_value = chain
+    chain.order_by.return_value.limit.return_value.all.return_value = rows
     results = iter([
         {"status": "SYNCED", "entity_id": "a1", "conflict_id": "resolved-c"},
         {"status": "CONFLICT", "conflict_id": "open-c"},
@@ -323,11 +354,9 @@ def test_process_pending_outbox_builds_filters_and_maps_statuses(monkeypatch):
         outbox_ids=["o1", "o2"], limit=10,
     )
 
-    select_sql = str(db.execute.call_args_list[0].args[0])
-    params = db.execute.call_args_list[0].args[1]
-    assert "device_id = :device_id" in select_sql
-    assert "id IN (:oid_0, :oid_1)" in select_sql
-    assert params["limit"] == 10
+    db.query.assert_called_with(SyncOutbox)
+    assert chain.filter.call_count >= 2
+    chain.order_by.return_value.limit.assert_called_with(10)
     assert summary["synced_count"] == 1
     assert summary["failed_count"] == 1
     assert summary["conflict_ids"] == ["resolved-c", "open-c"]

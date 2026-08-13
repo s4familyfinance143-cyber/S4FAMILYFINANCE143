@@ -34,7 +34,8 @@ def _verified_user(email: str, full_name: str = "API Owner") -> User:
         db.close()
 
 
-def test_register_rejects_weak_password():
+def test_register_rejects_weak_password(monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.ENVIRONMENT", "production")
     email = f"weak-{uuid4().hex[:8]}@s4family.com"
     res = client.post(
         "/api/v1/auth/register",
