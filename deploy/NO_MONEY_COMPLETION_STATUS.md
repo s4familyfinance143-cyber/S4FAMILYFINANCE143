@@ -24,7 +24,7 @@ Updated: 2026-08-13 (evening)
 
 | Item | Status |
 |------|--------|
-| Fresh APK install on phone | Build + `adb install` after icon/family fixes |
+| Fresh APK install on phone | **Built** + GitHub release `v1.0.6-icons-family` (install when phone connected) |
 | Local Docker stack smoke | Optional: `docker compose up` (Postgres/Redis/MinIO/Nginx) |
 | Local Mailpit / Tesseract | Optional pipeline smoke without paid cloud |
 
