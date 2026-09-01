@@ -7,4 +7,5 @@ export {
   firebaseSignOut,
   firebaseUserLabel,
 } from "./auth";
-export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile } from "./cloudSync";
+export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile } from "./cloudSync";
+export { createCloudFamilyAccount, seedNewFamilyCache } from "./cloudOnboarding";

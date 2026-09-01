@@ -116,6 +116,15 @@ export async function getCloudSnapshotMeta(uid) {
   };
 }
 
+export async function getUserFamilyProfile(uid) {
+  if (!uid) return null;
+  const db = getFirestoreDb();
+  if (!db) return null;
+  const snap = await getDoc(doc(db, "users", uid));
+  if (!snap.exists()) return null;
+  return snap.data() || null;
+}
+
 export async function ensureUserProfile(uid, user) {
   if (!uid || !user) return;
   const db = getFirestoreDb();

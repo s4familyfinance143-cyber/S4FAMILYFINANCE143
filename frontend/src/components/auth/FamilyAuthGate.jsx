@@ -101,6 +101,11 @@ const UI = {
       "PC-তে backend চালু রাখুন (start_dev.ps1)। নিচে Server settings-এ PC-র Wi‑Fi IP দিন — যেমন http://192.168.1.5:8000 (127.0.0.1 ফোনে কাজ করে না)।",
     mobileApiBlocked:
       "আগে Server settings-এ PC-র API URL সেট করুন (127.0.0.1 ফোনে কাজ করে না)।",
+    cloudCreateSub:
+      "PC ছাড়াই Firebase-এ অ্যাকাউন্ট ও পরিবার তৈরি হবে — ডেটা ক্লাউডে সংরক্ষিত থাকবে।",
+    cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
+    cloudFirstHint:
+      "ফোন/APK-তে সরাসরি অ্যাকাউন্ট তৈরি করুন বা লগইন করুন। ডেটা Firebase-এ সংরক্ষিত থাকবে।",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -159,6 +164,11 @@ const UI = {
       "Keep backend running on your PC (start_dev.ps1). In Server settings below, set your PC Wi‑Fi IP — e.g. http://192.168.1.5:8000 (127.0.0.1 does not work on phone).",
     mobileApiBlocked:
       "Set your PC API URL in Server settings first (127.0.0.1 does not work on phone).",
+    cloudCreateSub:
+      "Create account and family in Firebase — no PC backend required. Data stays in the cloud.",
+    cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
+    cloudFirstHint:
+      "On phone/APK, create an account or sign in directly. Your data is stored in Firebase.",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -243,9 +253,12 @@ export function FamilyAuthGate({
   firebaseFirstMode = false,
   onFirebaseGoogleSignIn,
   onCloudOnlySignIn,
+  onCloudEmailSignIn,
+  onCreateCloudFamily,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang];
+  const useCloudAuth = Boolean(firebaseFirstMode);
   const [view, setView] = useState("login"); // login | createFamily | join | forgot
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -353,6 +366,7 @@ export function FamilyAuthGate({
   }
 
   function requireMobileApiBase() {
+    if (useCloudAuth) return true;
     if (!nativeApp || !isLocalhostApi(apiBase)) return true;
     setMessage(L.mobileApiBlocked, "error");
     setShowAdvancedServer(true);
@@ -360,7 +374,7 @@ export function FamilyAuthGate({
   }
 
   function MobileApiBanner() {
-    if (!nativeApp) return null;
+    if (!nativeApp || useCloudAuth) return null;
     return (
       <div className="warn-box" style={{ marginBottom: 14 }}>
         <strong>{L.mobileApiTitle}</strong>
@@ -373,6 +387,20 @@ export function FamilyAuthGate({
     e?.preventDefault?.();
     if (!email.trim() || !password) {
       setMessage(t("emailPasswordRequired"), "error");
+      return;
+    }
+    if (useCloudAuth && onCloudEmailSignIn) {
+      setAuthLoading(true);
+      setStatus(t("signingIn"));
+      try {
+        await onCloudEmailSignIn({ email: email.trim(), password });
+        setStatus("");
+      } catch (error) {
+        setMessage(formatFetchError(error, lang), "error");
+        setStatus("");
+      } finally {
+        setAuthLoading(false);
+      }
       return;
     }
     if (!requireMobileApiBase()) return;
@@ -412,6 +440,28 @@ export function FamilyAuthGate({
     e?.preventDefault?.();
     if (!fullName.trim() || !email.trim() || !password || !familyName.trim()) {
       setMessage(t("familyGateFieldsRequired"), "error");
+      return;
+    }
+    if (useCloudAuth && onCreateCloudFamily) {
+      setAuthLoading(true);
+      setStatus(t("creatingFamilyGate"));
+      try {
+        await onCreateCloudFamily({
+          email: email.trim(),
+          password,
+          fullName: fullName.trim(),
+          familyName: familyName.trim(),
+          currency: currency.trim() || "BDT",
+          timezone: timezone.trim() || "Asia/Dhaka",
+          ownerRelation,
+        });
+        setStatus("");
+      } catch (error) {
+        setMessage(formatFetchError(error, lang), "error");
+        setStatus("");
+      } finally {
+        setAuthLoading(false);
+      }
       return;
     }
     if (!requireMobileApiBase()) return;
@@ -777,11 +827,7 @@ export function FamilyAuthGate({
                         </div>
                         {firebaseFirstMode ? (
                           <>
-                            <div className="info-box">
-                              {lang === "bn"
-                                ? "Backend ছাড়াই Firebase থেকে ডেটা দেখুন (read-only cache)।"
-                                : "View data from Firebase without a local backend (read-only cache)."}
-                            </div>
+                            <div className="info-box">{L.cloudFirstHint}</div>
                             <button
                               type="button"
                               className="btn-primary"
@@ -789,7 +835,7 @@ export function FamilyAuthGate({
                               disabled={authLoading}
                               onClick={() => onCloudOnlySignIn?.()}
                             >
-                              {lang === "bn" ? "☁ Firebase-only মোড" : "☁ Firebase-only mode"}
+                              {lang === "bn" ? "Google দিয়ে লগইন" : "Sign in with Google"}
                             </button>
                           </>
                         ) : (
@@ -844,7 +890,7 @@ export function FamilyAuthGate({
                   </button>
                 </div>
                 <div className="card-title">{L.createTitle}</div>
-                <div className="card-sub">{L.createSub}</div>
+                <div className="card-sub">{useCloudAuth ? L.cloudCreateSub : L.createSub}</div>
                 <MobileApiBanner />
 
                 <div className="advanced-block">

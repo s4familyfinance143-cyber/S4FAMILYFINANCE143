@@ -66,6 +66,8 @@ import {
   pullCloudSnapshot,
   getCloudSnapshotMeta,
   ensureUserProfile,
+  getUserFamilyProfile,
+  createCloudFamilyAccount,
 } from "./firebase";
 import { buildBackupBlob, restoreBackupBlob } from "./lib/backupPayload";
 import {
@@ -2850,6 +2852,53 @@ function App() {
 
   const isAppAuthed = Boolean(token) || (cloudOnlyMode && Boolean(firebaseUser?.uid));
 
+  function isCloudLocalMode() {
+    return cloudOnlyMode && !token && Boolean(activeFamilyId);
+  }
+
+  async function pushCloudSnapshotIfReady() {
+    if (!firebaseUser?.uid || !activeFamilyId) return;
+    try {
+      await pushCloudSnapshot({
+        uid: firebaseUser.uid,
+        familyId: activeFamilyId,
+        deviceLabel: SYNC_DEVICE_ID || "mobile",
+      });
+    } catch {
+      /* ignore background sync errors */
+    }
+  }
+
+  async function activateCloudSession(user, familyId, familyName = "") {
+    persistCloudOnlyMode(true);
+    setCloudOnlyMode(true);
+    persistCloudFamilyId(familyId);
+    setActiveFamilyId(familyId);
+    setFirebaseUser(user);
+    setFamilies([{ id: familyId, name: familyName || t("cloudOnlyFamilyLabel") }]);
+    setCurrentUser({
+      full_name: user.displayName || user.email || "Cloud User",
+      email: user.email || "",
+    });
+    await hydrateFromCloudCache(familyId);
+    await refreshFirebaseMeta(user.uid);
+  }
+
+  async function resolveCloudFamilyId(uid) {
+    let familyId = loadCloudFamilyId();
+    try {
+      const restored = await pullCloudSnapshot(uid);
+      if (restored?.familyId) familyId = restored.familyId;
+    } catch {
+      /* first-time cloud user may have no snapshot */
+    }
+    if (!familyId) {
+      const profile = await getUserFamilyProfile(uid);
+      familyId = profile?.family_id || "";
+    }
+    return familyId;
+  }
+
   function applyOfflineCacheToState(cache) {
     const phase15 = cache["life/phase15"];
     const phase16 = cache["life/phase16"];
@@ -2887,37 +2936,80 @@ function App() {
     try {
       const user = await firebaseSignInGoogle();
       await ensureUserProfile(user.uid, user);
-      setFirebaseUser(user);
 
-      let familyId = loadCloudFamilyId();
-      try {
-        const restored = await pullCloudSnapshot(user.uid);
-        if (restored?.familyId) familyId = restored.familyId;
-        await refreshFirebaseMeta(user.uid);
-      } catch {
-        /* first-time cloud user may have no snapshot */
-      }
-
+      const familyId = await resolveCloudFamilyId(user.uid);
       if (!familyId) {
-        setMessage(t("cloudOnlyNoData"), "error");
-        await firebaseSignOut();
-        setFirebaseUser(null);
+        setMessage(t("cloudOnlyNoDataCreate"), "error");
         return;
       }
 
-      persistCloudOnlyMode(true);
-      setCloudOnlyMode(true);
-      persistCloudFamilyId(familyId);
-      setActiveFamilyId(familyId);
-      setFamilies([{ id: familyId, name: t("cloudOnlyFamilyLabel") }]);
-      setCurrentUser({
-        full_name: user.displayName || user.email || "Cloud User",
-        email: user.email || "",
-      });
-      await hydrateFromCloudCache(familyId);
+      await activateCloudSession(user, familyId);
       setMessage(t("cloudOnlySignInSuccess"), "success");
     } catch (err) {
       setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleCloudEmailSignIn({ email, password }) {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    setAuthLoading(true);
+    try {
+      const user = await firebaseSignInEmail(email, password);
+      await ensureUserProfile(user.uid, user);
+
+      const familyId = await resolveCloudFamilyId(user.uid);
+      if (!familyId) {
+        setMessage(t("cloudOnlyNoDataCreate"), "error");
+        return;
+      }
+
+      await activateCloudSession(user, familyId);
+      setMessage(t("cloudOnlySignInSuccess"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleCreateCloudFamily({
+    email,
+    password,
+    fullName,
+    familyName,
+    currency,
+    timezone,
+    ownerRelation,
+  }) {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    setAuthLoading(true);
+    try {
+      const { user, familyId, existing } = await createCloudFamilyAccount({
+        email,
+        password,
+        fullName,
+        familyName,
+        currency,
+        timezone,
+        ownerRelation,
+        deviceLabel: SYNC_DEVICE_ID || "mobile",
+      });
+      await activateCloudSession(user, familyId, familyName);
+      setMessage(existing ? t("cloudFamilyRestored") : t("cloudFamilyCreated"), "success");
+    } catch (err) {
+      setMessage(err.message || t("familyCreateFailed"), "error");
     } finally {
       setCloudBusy(false);
       setAuthLoading(false);
@@ -4189,6 +4281,12 @@ function App() {
   }
 
   async function loadWallets() {
+    if (isCloudLocalMode()) {
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+      const data = cached?.data;
+      if (Array.isArray(data)) setWallets(data);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4287,6 +4385,12 @@ function App() {
   }
 
   async function loadTransactions() {
+    if (isCloudLocalMode()) {
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+      const data = cached?.data;
+      if (Array.isArray(data)) setTransactions(data);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -6167,6 +6271,38 @@ function App() {
 
     try {
       setStatus("Creating wallet...");
+
+      if (isCloudLocalMode()) {
+        const newWallet = {
+          id: `wal_${Date.now()}`,
+          family_id: activeFamilyId,
+          name: payload.name,
+          account_type: payload.account_type,
+          currency: payload.currency,
+          balance: Number(payload.opening_balance) || 0,
+          current_balance: Number(payload.opening_balance) || 0,
+          opening_balance: Number(payload.opening_balance) || 0,
+          is_shared_family: payload.is_shared_family,
+          is_owner_wallet: payload.is_owner_wallet,
+          created_at: new Date().toISOString(),
+          source: "cloud_local",
+        };
+        const next = [...wallets, newWallet];
+        setWallets(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
+        await pushCloudSnapshotIfReady();
+        setWalletForm({
+          name: "",
+          account_type: "CASH",
+          currency: currencyCode(),
+          opening_balance: "0",
+          is_shared_family: true,
+          is_owner_wallet: false,
+        });
+        setMessage(t("walletCreated"), "success");
+        setStatus("");
+        return;
+      }
 
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
@@ -8094,6 +8230,18 @@ function App() {
   }, [driveConnected]);
 
   useEffect(() => {
+    if (!cloudOnlyMode || token || !activeFamilyId) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      hydrateFromCloudCache(activeFamilyId);
+      loadDashboard();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudOnlyMode, token, activeFamilyId]);
+
+  useEffect(() => {
     if (!token) return;
 
     const timeoutId = window.setTimeout(() => {
@@ -8425,6 +8573,8 @@ function App() {
           firebaseFirstMode={FIREBASE_FIRST_MODE}
           onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
           onCloudOnlySignIn={handleCloudOnlySignIn}
+          onCloudEmailSignIn={handleCloudEmailSignIn}
+          onCreateCloudFamily={handleCreateCloudFamily}
         />
       </main>
     );
