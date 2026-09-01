@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">S4 Family Finance</string>
+    <string name="title_activity_main">S4 Family Finance</string>
+    <string name="package_name">com.s4familyfinance143.app</string>
+    <string name="custom_url_scheme">com.s4familyfinance143.app</string>
+</resources>

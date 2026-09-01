@@ -1,0 +1,24 @@
+# Local dev: Redis + Mailpit only (no Postgres)
+name: s4-local
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: s4_redis_local
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "s4redis_dev"]
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "s4redis_dev", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: s4_mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"

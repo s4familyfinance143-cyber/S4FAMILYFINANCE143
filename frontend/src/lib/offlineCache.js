@@ -65,3 +65,33 @@ export async function loadOfflineSnapshot(familyId, module, name = "default") {
   db.close();
   return row;
 }
+
+/** Export every cached snapshot row (for Firebase / manual backup). */
+export async function exportAllOfflineSnapshots() {
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readonly");
+  const rows = await new Promise((resolve, reject) => {
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+  await txDone(tx);
+  db.close();
+  return rows;
+}
+
+/** Restore rows produced by exportAllOfflineSnapshots. */
+export async function importOfflineSnapshots(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return 0;
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readwrite");
+  const store = tx.objectStore(STORE);
+  for (const row of list) {
+    if (!row || !row.key) continue;
+    store.put(row);
+  }
+  await txDone(tx);
+  db.close();
+  return list.length;
+}

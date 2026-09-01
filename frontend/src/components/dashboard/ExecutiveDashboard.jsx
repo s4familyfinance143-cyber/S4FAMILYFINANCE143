@@ -594,11 +594,11 @@ export function ExecutiveDashboard({
                 <div className="quick-icon">⇄</div>
                 <div className="quick-label">{t("loans")}</div>
               </button>
-              <button type="button" className="quick dash-mod invest" onClick={() => setActiveMenu("phase15")}>
+              <button type="button" className="quick dash-mod invest" onClick={() => setActiveMenu("phase15:INVESTMENT")}>
                 <div className="quick-icon">📈</div>
                 <div className="quick-label">{t("navInvestments")}</div>
               </button>
-              <button type="button" className="quick dash-mod docs" onClick={() => setActiveMenu("phase16")}>
+              <button type="button" className="quick dash-mod docs" onClick={() => setActiveMenu("phase16:DOCUMENT")}>
                 <div className="quick-icon">▤</div>
                 <div className="quick-label">{t("navDocumentVault")}</div>
               </button>

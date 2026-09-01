@@ -151,7 +151,8 @@ app.add_middleware(RateLimitMiddleware)  # SlowAPI
 app.add_middleware(AuthContextMiddleware)
 app.add_middleware(RequestLoggerMiddleware)
 app.add_middleware(ApiVersionHeaderMiddleware)
-# Development: allow Expo Go / LAN web origins. Production keeps explicit allowlist.
+# Credentials (refresh cookie) require a concrete origin — never wildcard with credentials.
+# Dev also allows typical LAN hosts for Expo / phone testing.
 if settings.IS_PRODUCTION:
     app.add_middleware(
         CORSMiddleware,
@@ -163,8 +164,9 @@ if settings.IS_PRODUCTION:
 else:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$",
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

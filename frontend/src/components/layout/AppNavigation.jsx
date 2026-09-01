@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
+import { isNavItemActive } from "../../lib/navMenu";
+
 function closeMobileDrawer() {
   document.body.classList.remove("mobile-drawer-open");
 }
@@ -32,7 +35,7 @@ export function DesktopSidebar({
 
   const activeGroupLabel = useMemo(() => {
     for (const group of groups) {
-      if ((group.items || []).some((item) => item[0] === activeMenu)) return group.label || "";
+      if ((group.items || []).some((item) => isNavItemActive(activeMenu, item[0]))) return group.label || "";
     }
     return groups[0]?.label || "";
   }, [groups, activeMenu]);
@@ -76,11 +79,11 @@ export function DesktopSidebar({
         <div className="brand">
           <button
             type="button"
-            className={`brand-mark ${avatarUrl ? "has-photo" : ""}`}
+            className="brand-mark has-photo brand-mark--logo"
             onClick={() => go("settings")}
-            title={t("profilePhoto")}
+            title={t("settings")}
           >
-            {avatarUrl ? <img src={avatarUrl} alt="" className="brand-avatar-img" /> : "S4"}
+            <img src={BRAND_LOGO_SRC} alt="S4 Family Finance" className="brand-avatar-img" />
           </button>
           <div>
             <div className="brand-title">{digits("S4 FAMILY 143")}</div>
@@ -93,7 +96,7 @@ export function DesktopSidebar({
             const label = group.label || "";
             const isOpen = !label || openGroups.has(label);
             const items = group.items || [];
-            const groupActive = items.some((item) => item[0] === activeMenu);
+            const groupActive = items.some((item) => isNavItemActive(activeMenu, item[0]));
 
             return (
               <div
@@ -121,9 +124,9 @@ export function DesktopSidebar({
                         <button
                           key={`${menu}-${itemLabel}`}
                           type="button"
-                          className={`nav-item ${activeMenu === menu ? "active" : ""}`}
+                          className={`nav-item ${isNavItemActive(activeMenu, menu) ? "active" : ""}`}
                           onClick={() => go(menu)}
-                          aria-current={activeMenu === menu ? "page" : undefined}
+                          aria-current={isNavItemActive(activeMenu, menu) ? "page" : undefined}
                         >
                           <span className="nav-icon" aria-hidden="true">
                             {icon}
@@ -220,11 +223,11 @@ export function TopHeader({
       <div className="mobile-brand" aria-label="S4 FAMILY 143">
         <button
           type="button"
-          className={`mobile-brand-mark ${avatarUrl ? "has-photo" : ""}`}
+          className="mobile-brand-mark has-photo"
           onClick={() => setActiveMenu("settings")}
-          title={t("profilePhoto")}
+          title={t("settings")}
         >
-          {avatarUrl ? <img src={avatarUrl} alt="" /> : initials}
+          <img src={BRAND_LOGO_SRC} alt="" />
         </button>
         <div className="mobile-brand-copy">
           <div className="mobile-brand-title">S4 FAMILY 143</div>
@@ -292,7 +295,7 @@ export function MobileBottomNavigation({ navItems, activeMenu, setActiveMenu }) 
         <button
           key={menu}
           type="button"
-          className={activeMenu === menu ? "active" : ""}
+          className={isNavItemActive(activeMenu, menu) ? "active" : ""}
           onClick={() => {
             setActiveMenu(menu);
             closeMobileDrawer();

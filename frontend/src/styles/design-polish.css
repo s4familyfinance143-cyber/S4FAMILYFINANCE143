@@ -57,7 +57,8 @@ button:active {
   grid-template-columns: var(--sidebar) minmax(0, 1fr) !important;
 }
 
-.brand {
+.sidebar > .brand,
+.arch-shell-sidebar > .brand {
   height: var(--topbar);
   padding: 0 16px;
   gap: 10px;
@@ -1485,4 +1486,42 @@ html[data-theme="dark"] .dash-kpi-loan {
   .dash-hero-actions .btn {
     flex: 1;
   }
+}
+
+.settings-cloud-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-cloud-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.settings-cloud-targets {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.settings-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.cloud-auto-last-runs {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.cloud-only-banner {
+  background: linear-gradient(90deg, rgba(29, 158, 117, 0.15), rgba(2, 132, 199, 0.12));
+  border-bottom: 1px solid rgba(29, 158, 117, 0.25);
+  color: var(--text, #1a2b2a);
+  font-size: 0.88rem;
+  padding: 0.55rem 1rem;
+  text-align: center;
 }

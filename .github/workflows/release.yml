@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-pwa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build PWA
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run i18n:check
+          npm run build:pwa
+      - name: Zip PWA dist
+        run: |
+          cd frontend/dist
+          zip -r ../../s4-pwa-dist.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pwa-dist
+          path: |
+            frontend/dist
+            s4-pwa-dist.zip
+
+  build-android-apk:
+    runs-on: ubuntu-latest
+    needs: build-pwa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-dist
+          path: .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Sync Capacitor Android
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run generate:icons
+          CAPACITOR=true npx vite build
+          npx cap sync android
+      - name: Build debug APK
+        working-directory: frontend/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Rename APK
+        run: |
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk s4-family-finance-143-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: s4-family-finance-143-debug.apk
+
+  firebase-hosting:
+    runs-on: ubuntu-latest
+    needs: build-pwa
+    continue-on-error: true
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-dist
+          path: frontend/dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Deploy Firebase Hosting
+        if: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --only hosting --project s4-family-finance --token "${{ secrets.FIREBASE_TOKEN }}"
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [build-pwa, build-android-apk]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-dist
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: release-assets
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/s4-pwa-dist.zip
+            release-assets/s4-family-finance-143-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

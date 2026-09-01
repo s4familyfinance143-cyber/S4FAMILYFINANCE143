@@ -98,7 +98,8 @@ body {
   box-shadow: none !important;
 }
 
-.brand {
+.sidebar > .brand,
+.arch-shell-sidebar > .brand {
   height: var(--topbar);
   display: flex;
   align-items: center;
@@ -130,10 +131,15 @@ body {
   position: relative;
   line-height: 0;
 }
-.brand-mark.has-photo {
+.brand-mark.has-photo,
+.brand-mark.brand-mark--logo {
   display: block !important;
   background: #0b1220 !important;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+}
+.brand-mark.brand-mark--logo img {
+  object-fit: contain !important;
+  padding: 3px;
 }
 .brand-avatar-img,
 .brand-mark img,
@@ -1212,10 +1218,8 @@ table.table tr:hover td { background: var(--surface-2); }
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 12% 18%, rgba(61, 156, 240, 0.22), transparent 36%),
-    radial-gradient(circle at 88% 12%, rgba(232, 184, 109, 0.2), transparent 34%),
-    radial-gradient(circle at 50% 88%, rgba(32, 201, 151, 0.28), transparent 42%),
-    linear-gradient(145deg, #0b1f2a 0%, #12352c 46%, #0e2430 100%);
+    linear-gradient(145deg, rgba(8, 18, 28, 0.94) 0%, rgba(12, 42, 36, 0.9) 50%, rgba(8, 22, 32, 0.96) 100%),
+    url("/splash-bg.png") center center / cover no-repeat fixed;
 }
 
 .splash-frame {
@@ -1243,7 +1247,7 @@ table.table tr:hover td { background: var(--surface-2); }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.18;
+  opacity: 0.55;
 }
 
 .splash-frame--fallback .splash-image {

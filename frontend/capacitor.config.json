@@ -1,0 +1,22 @@
+{
+  "appId": "com.s4familyfinance143.app",
+  "appName": "S4 Family Finance",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#0b1520",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0b1520"
+    }
+  }
+}

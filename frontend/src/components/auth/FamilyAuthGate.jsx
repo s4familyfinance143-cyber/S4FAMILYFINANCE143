@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
+import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
 import {
   JOIN_RELATIONSHIPS,
   OWNER_RELATIONSHIPS,
@@ -153,109 +154,6 @@ const UI = {
   },
 };
 
-const FLOWS = {
-  login: {
-    bn: {
-      h1: "পরিবারের সব হিসাব, এক জায়গায় — নিরাপদে",
-      p: "আয়-ব্যয়, বাজার লিস্ট, ঋণ, বাজেট আর সঞ্চয় — একসাথে পুরো পরিবার মিলে ব্যবস্থাপনা করুন।",
-      label: "Authentication Flow",
-      steps: [
-        ["Login Request", 1],
-        ["bcrypt verify", 0],
-        ["JWT (15min)", 0],
-        ["Family Dashboard", 0],
-      ],
-    },
-    en: {
-      h1: "All family accounts in one place — securely",
-      p: "Income, expenses, grocery lists, loans, budgets and savings — managed together by the whole family.",
-      label: "Authentication Flow",
-      steps: [
-        ["Login Request", 1],
-        ["bcrypt verify", 0],
-        ["JWT (15min)", 0],
-        ["Family Dashboard", 0],
-      ],
-    },
-  },
-  createFamily: {
-    bn: {
-      h1: "একজন responsible person-ই Owner হবে",
-      p: "Owner পুরো পরিবার, সদস্য, টাকা, রিপোর্ট, সেটিংস — সব নিয়ন্ত্রণ করতে পারবে।",
-      label: "Family Creation Flow",
-      steps: [
-        ["User Register/Login", 1],
-        ["Create Family", 1],
-        ["Select Responsible Person", 1],
-        ["Owner Role Auto Assign", 0],
-        ["Default Accounts Seed", 0],
-      ],
-    },
-    en: {
-      h1: "One responsible person becomes Owner",
-      p: "Owner controls family, members, money, reports and settings — with full audit trails.",
-      label: "Family Creation Flow",
-      steps: [
-        ["User Register/Login", 1],
-        ["Create Family", 1],
-        ["Select Responsible Person", 1],
-        ["Owner Role Auto Assign", 0],
-        ["Default Accounts Seed", 0],
-      ],
-    },
-  },
-  join: {
-    bn: {
-      h1: "ইনভাইট কোড → Join Request → Approval",
-      p: "কোড দেওয়ার পর status হবে PENDING। Owner/Admin approve করার আগ পর্যন্ত data দেখা যাবে না।",
-      label: "Invite + Join Approval Flow",
-      steps: [
-        ["Owner generates code", 1],
-        ["Member sends join request", 0],
-        ["Owner/Admin approve", 0],
-        ["Role + relationship", 0],
-        ["Audit log", 0],
-      ],
-    },
-    en: {
-      h1: "Invite code → Join request → Approval",
-      p: "After submitting, status is PENDING. No family data until Owner/Admin approves.",
-      label: "Invite + Join Approval Flow",
-      steps: [
-        ["Owner generates code", 1],
-        ["Member sends join request", 0],
-        ["Owner/Admin approve", 0],
-        ["Role + relationship", 0],
-        ["Audit log", 0],
-      ],
-    },
-  },
-  forgot: {
-    bn: {
-      h1: "পাসওয়ার্ড নিরাপদে রিসেট করুন",
-      p: "ইমেইলে রিসেট লিংক যাবে। লিংক সীমিত সময়ের জন্য বৈধ থাকবে।",
-      label: "Password Reset Flow",
-      steps: [
-        ["Enter email", 1],
-        ["Send reset link", 0],
-        ["Open link", 0],
-        ["Set new password", 0],
-      ],
-    },
-    en: {
-      h1: "Reset your password securely",
-      p: "A reset link will be emailed. The link stays valid for a limited time.",
-      label: "Password Reset Flow",
-      steps: [
-        ["Enter email", 1],
-        ["Send reset link", 0],
-        ["Open link", 0],
-        ["Set new password", 0],
-      ],
-    },
-  },
-};
-
 const MODE_META = {
   login: { ico: "🔑", key: "btnLogin" },
   createFamily: { ico: "👑", key: "btnCreate" },
@@ -301,6 +199,15 @@ function StepIndicator({ active, labels }) {
   );
 }
 
+function LoginCardBrand({ subtitle }) {
+  return (
+    <div className="login-card-brand">
+      <img className="login-card-logo" src={BRAND_LOGO_SRC} alt="S4 Family Finance 143" />
+      {subtitle ? <p className="brand-subtitle">{subtitle}</p> : null}
+    </div>
+  );
+}
+
 /**
  * Architecture auth gate:
  * Register/Login → Create Family (Owner) OR Join with Invite (relationship) → Approve later.
@@ -321,6 +228,10 @@ export function FamilyAuthGate({
   apiBase,
   onApiBaseChange,
   onAuthenticated,
+  firebaseConfigured = false,
+  firebaseFirstMode = false,
+  onFirebaseGoogleSignIn,
+  onCloudOnlySignIn,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang];
@@ -354,7 +265,6 @@ export function FamilyAuthGate({
     { value: "SAR", label: "SAR — Saudi Riyal" },
   ];
 
-  const flow = useMemo(() => FLOWS[view]?.[lang] || FLOWS.login[lang], [view, lang]);
   const mode = MODE_META[view] || MODE_META.login;
   const pwScore = passwordStrength(password);
 
@@ -624,47 +534,8 @@ export function FamilyAuthGate({
   return (
     <div className={`s4-login-shell${authLoading ? " is-busy" : ""}`}>
       <div className="shell">
-        <aside className="brand" aria-hidden={false}>
-          <div className="brand-top">
-            <div className="logo-title">⬡ S4-FAMILY</div>
-            <div className="logo-sub">{L.logoSub}</div>
-          </div>
-          <div>
-            <div className="brand-headline">
-              <h1>{flow.h1}</h1>
-              <p>{flow.p}</p>
-            </div>
-            <div className="flow-label">{flow.label}</div>
-            <div className="flow">
-              {flow.steps.map(([label, done], i) => {
-                const isNow =
-                  done === 1 && (i === flow.steps.length - 1 || flow.steps[i + 1]?.[1] === 0);
-                return (
-                  <div key={`${label}-${i}`}>
-                    {i > 0 ? <div className="fline" /> : null}
-                    <div className={`fstep${done ? " done" : ""}${isNow ? " now" : ""}`}>
-                      <span className="dot" />
-                      <span>{label}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="brand-bottom">
-            <div className="trust-row">
-              <span className="chip">🔐 bcrypt + JWT</span>
-              <span className="chip">🛡️ Rate Limit 5/min</span>
-              <span className="chip">📱 Offline-first Sync</span>
-              <span className="chip">👨‍👩‍👧‍👦 RBAC Roles</span>
-            </div>
-          </div>
-        </aside>
-
         <div className="formside">
           <div className="stagearea">
-            <div className="mobile-brand">⬡ S4-FAMILY</div>
-
             {view === "login" || view === "forgot" ? (
               <div className="card">
                 <div className="top-row">
@@ -683,8 +554,7 @@ export function FamilyAuthGate({
                   </select>
                 </div>
 
-                <div className="brand-title">{digits("S4 FAMILY FINANCE 143")}</div>
-                <div className="brand-subtitle">{L.subtitle}</div>
+                <LoginCardBrand subtitle={L.subtitle} />
 
                 <div className="advanced-block">
                   <button
@@ -867,6 +737,48 @@ export function FamilyAuthGate({
                         {L.btnJoin}
                       </button>
                     </div>
+                    {firebaseConfigured ? (
+                      <>
+                        <div className="divider">
+                          <span>{L.or}</span>
+                        </div>
+                        {firebaseFirstMode ? (
+                          <>
+                            <div className="info-box">
+                              {lang === "bn"
+                                ? "Backend ছাড়াই Firebase থেকে ডেটা দেখুন (read-only cache)।"
+                                : "View data from Firebase without a local backend (read-only cache)."}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              style={{ marginTop: 8 }}
+                              disabled={authLoading}
+                              onClick={() => onCloudOnlySignIn?.()}
+                            >
+                              {lang === "bn" ? "☁ Firebase-only মোড" : "☁ Firebase-only mode"}
+                            </button>
+                          </>
+                        ) : (
+                          <div className="info-box">
+                            {lang === "bn"
+                              ? "লগইনের পর Settings → Cloud থেকে Firebase/Google দিয়ে অনলাইন ব্যাকআপ চালু করুন।"
+                              : "After login, open Settings → Cloud to enable Firebase/Google online backup."}
+                          </div>
+                        )}
+                        {!firebaseFirstMode ? (
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            style={{ marginTop: 8 }}
+                            disabled={authLoading}
+                            onClick={() => onFirebaseGoogleSignIn?.()}
+                          >
+                            {lang === "bn" ? "Google দিয়ে Cloud অ্যাকাউন্ট" : "Cloud account with Google"}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
                   </>
                 ) : null}
 

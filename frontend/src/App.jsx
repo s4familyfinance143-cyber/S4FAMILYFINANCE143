@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import "./styles/architecture-shell.css";
 import "./styles/design-polish.css";
@@ -55,6 +55,60 @@ import {
   offlineEntityType as lifeOfflineEntityType,
   updatePath as lifeUpdatePath,
 } from "./lifeArchitectureApi";
+import {
+  isFirebaseConfigured,
+  subscribeFirebaseAuth,
+  firebaseSignInEmail,
+  firebaseRegisterEmail,
+  firebaseSignInGoogle,
+  firebaseSignOut,
+  pushCloudSnapshot,
+  pullCloudSnapshot,
+  getCloudSnapshotMeta,
+  ensureUserProfile,
+} from "./firebase";
+import { buildBackupBlob, restoreBackupBlob } from "./lib/backupPayload";
+import {
+  loadCloudAutoSyncSettings,
+  saveCloudAutoSyncSettings,
+  shouldRunTarget,
+  markTargetRun,
+  intervalMs,
+} from "./lib/cloudAutoSync";
+import { isPhase15Menu, isPhase16Menu, parsePhaseTab, isSettingsMenu, parseSettingsTab } from "./lib/navMenu";
+import {
+  isFirebaseFirstMode,
+  loadCloudOnlyMode,
+  persistCloudOnlyMode,
+  loadCloudFamilyId,
+  persistCloudFamilyId,
+  clearCloudSession,
+} from "./lib/cloudSession";
+import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hydrateFromCache";
+import {
+  isGoogleDriveConfigured,
+  connectGoogleDrive,
+  getStoredDriveToken,
+  clearStoredDriveToken,
+  getDriveAccessToken,
+  uploadBackupToDrive,
+  listDriveBackups,
+  downloadDriveBackup,
+} from "./googleDrive";
+import {
+  isLocalFolderBackupSupported,
+  pickBackupFolder,
+  writeBackupToFolder,
+  readLatestBackupFromFolder,
+  getStoredFolderLabel,
+  loadDirectoryHandle,
+  downloadBackupFile,
+} from "./localBackup";
+
+const FIREBASE_CONFIGURED = isFirebaseConfigured();
+const FIREBASE_FIRST_MODE = isFirebaseFirstMode();
+const DRIVE_CONFIGURED = isGoogleDriveConfigured();
+const LOCAL_FOLDER_SUPPORTED = isLocalFolderBackupSupported();
 
 try {
   const savedTheme = localStorage.getItem("s4-theme");
@@ -2447,6 +2501,16 @@ function App() {
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [status, setStatus] = useState("");
   const [toast, setToast] = useState(null);
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [firebaseMeta, setFirebaseMeta] = useState(null);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [driveConnected, setDriveConnected] = useState(() => Boolean(getStoredDriveToken()));
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [localFolderLabel, setLocalFolderLabel] = useState(() => getStoredFolderLabel());
+  const [cloudAutoSync, setCloudAutoSync] = useState(() => loadCloudAutoSyncSettings());
+  const [cloudOnlyMode, setCloudOnlyMode] = useState(() => loadCloudOnlyMode());
+  const cloudAutoSyncRef = useRef(cloudAutoSync);
+  const cloudAutoBackupRunningRef = useRef(false);
 
   const [dashboard, setDashboard] = useState(null);
   const [wallets, setWallets] = useState([]);
@@ -2782,6 +2846,419 @@ function App() {
     setTimeout(() => {
       setStatus((current) => (current === message ? "" : current));
     }, 3000);
+  }
+
+  const isAppAuthed = Boolean(token) || (cloudOnlyMode && Boolean(firebaseUser?.uid));
+
+  function applyOfflineCacheToState(cache) {
+    const phase15 = cache["life/phase15"];
+    const phase16 = cache["life/phase16"];
+    if (Array.isArray(cache["finance/wallets"])) setWallets(cache["finance/wallets"]);
+    if (Array.isArray(cache["finance/transactions"])) setTransactions(cache["finance/transactions"]);
+    if (Array.isArray(cache["finance/savings"])) setSavings(cache["finance/savings"]);
+    if (Array.isArray(cache["finance/loans"])) setLoans(cache["finance/loans"]);
+    if (Array.isArray(cache["finance/budgets"])) setBudgets(cache["finance/budgets"]);
+    if (Array.isArray(cache["finance/recurring"])) setRecurringItems(cache["finance/recurring"]);
+    if (Array.isArray(cache["finance/goals"])) setGoals(cache["finance/goals"]);
+    if (cache["finance/goalSummary"]) setGoalSummary(cache["finance/goalSummary"]);
+    if (phase15?.items) setPhase15Items(phase15.items);
+    if (phase15?.summary) setPhase15Summary(phase15.summary);
+    if (phase16?.items) setPhase16Items(phase16.items);
+    if (phase16?.summary) setPhase16Summary(phase16.summary);
+    if (cache["zakat/main"]) setZakatRecords(Array.isArray(cache["zakat/main"]) ? cache["zakat/main"] : cache["zakat/main"]?.records || []);
+    if (cache["reports/overview"]) setFinancialReport(cache["reports/overview"]);
+    if (cache["system/currency"]) setCurrencySummary(cache["system/currency"]);
+    setDashboard(buildDashboardFromCache(cache));
+  }
+
+  async function hydrateFromCloudCache(familyId) {
+    const cache = await hydrateFamilyFromOfflineCache(familyId);
+    applyOfflineCacheToState(cache);
+    return cache;
+  }
+
+  async function handleCloudOnlySignIn() {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    setAuthLoading(true);
+    try {
+      const user = await firebaseSignInGoogle();
+      await ensureUserProfile(user.uid, user);
+      setFirebaseUser(user);
+
+      let familyId = loadCloudFamilyId();
+      try {
+        const restored = await pullCloudSnapshot(user.uid);
+        if (restored?.familyId) familyId = restored.familyId;
+        await refreshFirebaseMeta(user.uid);
+      } catch {
+        /* first-time cloud user may have no snapshot */
+      }
+
+      if (!familyId) {
+        setMessage(t("cloudOnlyNoData"), "error");
+        await firebaseSignOut();
+        setFirebaseUser(null);
+        return;
+      }
+
+      persistCloudOnlyMode(true);
+      setCloudOnlyMode(true);
+      persistCloudFamilyId(familyId);
+      setActiveFamilyId(familyId);
+      setFamilies([{ id: familyId, name: t("cloudOnlyFamilyLabel") }]);
+      setCurrentUser({
+        full_name: user.displayName || user.email || "Cloud User",
+        email: user.email || "",
+      });
+      await hydrateFromCloudCache(familyId);
+      setMessage(t("cloudOnlySignInSuccess"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+      setAuthLoading(false);
+    }
+  }
+
+  async function refreshFirebaseMeta(uid) {
+    if (!uid || !FIREBASE_CONFIGURED) return;
+    try {
+      const meta = await getCloudSnapshotMeta(uid);
+      setFirebaseMeta(meta);
+    } catch {
+      setFirebaseMeta(null);
+    }
+  }
+
+  async function refreshDriveFileList() {
+    if (!DRIVE_CONFIGURED || !getStoredDriveToken()) {
+      setDriveFiles([]);
+      setDriveConnected(false);
+      return;
+    }
+    try {
+      const token = await getDriveAccessToken();
+      const files = await listDriveBackups(token);
+      setDriveFiles(files);
+      setDriveConnected(true);
+    } catch {
+      setDriveConnected(Boolean(getStoredDriveToken()));
+    }
+  }
+
+  async function handlePickLocalFolder() {
+    setCloudBusy(true);
+    try {
+      const handle = await pickBackupFolder();
+      setLocalFolderLabel(handle.name || getStoredFolderLabel());
+      setMessage(t("localBackupFolderSaved"), "success");
+    } catch (err) {
+      setMessage(err.message || t("localBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleLocalBackup() {
+    setCloudBusy(true);
+    try {
+      const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+      const result = await writeBackupToFolder(blob, fileName);
+      setLocalFolderLabel(result.folder || getStoredFolderLabel());
+      setMessage(`${t("localBackupSaved")} (${result.fileName})`, "success");
+    } catch (err) {
+      setMessage(err.message || t("localBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleLocalRestore() {
+    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
+    setCloudBusy(true);
+    try {
+      const { blob } = await readLatestBackupFromFolder();
+      const result = await restoreBackupBlob(blob);
+      if (result.familyId && !activeFamilyId) setActiveFamilyId(result.familyId);
+      setMessage(`${t("localBackupRestored")} (${result.restored})`, "success");
+      if (token && (activeFamilyId || result.familyId)) await loadDashboard();
+    } catch (err) {
+      setMessage(err.message || t("localBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleLocalDownload() {
+    setCloudBusy(true);
+    try {
+      const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+      await downloadBackupFile(blob, fileName);
+      setMessage(t("localBackupDownloaded"), "success");
+    } catch (err) {
+      setMessage(err.message || t("localBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleDriveConnect() {
+    setCloudBusy(true);
+    try {
+      await connectGoogleDrive({ prompt: "consent" });
+      setDriveConnected(true);
+      await refreshDriveFileList();
+      setMessage(t("driveConnected"), "success");
+    } catch (err) {
+      setMessage(err.message || t("driveBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleDriveDisconnect() {
+    clearStoredDriveToken();
+    setDriveConnected(false);
+    setDriveFiles([]);
+    setMessage(t("driveDisconnect"), "success");
+  }
+
+  async function handleDriveUpload() {
+    setCloudBusy(true);
+    try {
+      const token = await getDriveAccessToken();
+      const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+      await uploadBackupToDrive(token, fileName, blob);
+      await refreshDriveFileList();
+      setMessage(`${t("driveUploadSuccess")} (${fileName})`, "success");
+    } catch (err) {
+      setMessage(err.message || t("driveBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleDriveRestore() {
+    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
+    setCloudBusy(true);
+    try {
+      const driveToken = await getDriveAccessToken();
+      const files = await listDriveBackups(driveToken, 1);
+      if (!files.length) throw new Error(t("driveNoFiles"));
+      const blob = await downloadDriveBackup(driveToken, files[0].id);
+      const result = await restoreBackupBlob(blob);
+      if (result.familyId && !activeFamilyId) setActiveFamilyId(result.familyId);
+      setMessage(`${t("driveRestoreSuccess")} (${result.restored})`, "success");
+      if (token && (activeFamilyId || result.familyId)) await loadDashboard();
+    } catch (err) {
+      setMessage(err.message || t("driveBackupFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  function handleCloudAutoSyncChange(next) {
+    const saved = saveCloudAutoSyncSettings(next);
+    setCloudAutoSync(saved);
+    cloudAutoSyncRef.current = saved;
+  }
+
+  async function runCloudAutoBackup({ force = false } = {}) {
+    const settings = cloudAutoSyncRef.current;
+    if (!settings?.enabled && !force) return;
+    if (cloudAutoBackupRunningRef.current || cloudBusy) return;
+    if (!activeFamilyId) return;
+
+    cloudAutoBackupRunningRef.current = true;
+    let nextSettings = { ...settings };
+    let changed = false;
+    const now = Date.now();
+
+    try {
+      if ((force || shouldRunTarget(settings, "local", now)) && settings.local && LOCAL_FOLDER_SUPPORTED) {
+        try {
+          const folderHandle = await loadDirectoryHandle();
+          if (!folderHandle) throw new Error("no folder");
+          const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+          await writeBackupToFolder(blob, fileName);
+          setLocalFolderLabel(getStoredFolderLabel());
+          nextSettings = markTargetRun(nextSettings, "local");
+          changed = true;
+        } catch {
+          /* no folder or permission */
+        }
+      }
+
+      if ((force || shouldRunTarget(settings, "drive", now)) && settings.drive && DRIVE_CONFIGURED && getStoredDriveToken()) {
+        try {
+          const driveToken = await getDriveAccessToken();
+          const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+          await uploadBackupToDrive(driveToken, fileName, blob);
+          nextSettings = markTargetRun(nextSettings, "drive");
+          changed = true;
+        } catch {
+          /* silent auto backup */
+        }
+      }
+
+      if (
+        (force || shouldRunTarget(settings, "firebase", now)) &&
+        settings.firebase &&
+        FIREBASE_CONFIGURED &&
+        firebaseUser?.uid
+      ) {
+        try {
+          await pushCloudSnapshot({
+            uid: firebaseUser.uid,
+            familyId: activeFamilyId || null,
+            deviceLabel: SYNC_DEVICE_ID,
+          });
+          await refreshFirebaseMeta(firebaseUser.uid);
+          nextSettings = markTargetRun(nextSettings, "firebase");
+          changed = true;
+        } catch {
+          /* silent auto backup */
+        }
+      }
+
+      if (changed) {
+        setCloudAutoSync(nextSettings);
+        cloudAutoSyncRef.current = nextSettings;
+      }
+    } finally {
+      cloudAutoBackupRunningRef.current = false;
+    }
+  }
+
+  async function handleFirebaseGoogleSignIn() {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    try {
+      const user = await firebaseSignInGoogle();
+      await ensureUserProfile(user.uid, user);
+      setFirebaseUser(user);
+      await refreshFirebaseMeta(user.uid);
+      setMessage(t("firebaseConnected"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleFirebaseEmailSignIn() {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    const mail = window.prompt(t("lblEmail") || "Email", email || "");
+    if (!mail) return;
+    const pass = window.prompt(t("lblPassword") || "Password");
+    if (!pass) return;
+    setCloudBusy(true);
+    try {
+      const user = await firebaseSignInEmail(mail, pass);
+      await ensureUserProfile(user.uid, user);
+      setFirebaseUser(user);
+      await refreshFirebaseMeta(user.uid);
+      setMessage(t("firebaseConnected"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleFirebaseEmailRegister() {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    const mail = window.prompt(t("lblEmail") || "Email", email || "");
+    if (!mail) return;
+    const pass = window.prompt(t("lblPassword") || "Password (min 8)");
+    if (!pass) return;
+    const name = window.prompt(t("lblName") || "Full name", "");
+    setCloudBusy(true);
+    try {
+      const user = await firebaseRegisterEmail(mail, pass, name || "");
+      await ensureUserProfile(user.uid, user);
+      setFirebaseUser(user);
+      setMessage(t("firebaseConnected"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleFirebaseSignOut() {
+    setCloudBusy(true);
+    try {
+      await firebaseSignOut();
+      setFirebaseUser(null);
+      setFirebaseMeta(null);
+      setMessage(t("firebaseSignOut"), "success");
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleFirebaseSyncNow() {
+    if (!firebaseUser?.uid) {
+      setMessage(t("firebaseSignInPrompt"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    try {
+      const result = await pushCloudSnapshot({
+        uid: firebaseUser.uid,
+        familyId: activeFamilyId || null,
+        deviceLabel: SYNC_DEVICE_ID,
+      });
+      await refreshFirebaseMeta(firebaseUser.uid);
+      setMessage(
+        `${t("firebaseSyncSuccess")} (${result.rowCount} rows)`,
+        "success",
+      );
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
+  }
+
+  async function handleFirebaseRestore() {
+    if (!firebaseUser?.uid) {
+      setMessage(t("firebaseSignInPrompt"), "error");
+      return;
+    }
+    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
+    setCloudBusy(true);
+    try {
+      const result = await pullCloudSnapshot(firebaseUser.uid);
+      await refreshFirebaseMeta(firebaseUser.uid);
+      if (result.familyId && !activeFamilyId) {
+        setActiveFamilyId(result.familyId);
+      }
+      setMessage(`${t("firebaseRestoreSuccess")} (${result.restored})`, "success");
+      if (token && activeFamilyId) {
+        await loadDashboard();
+      }
+    } catch (err) {
+      setMessage(err.message || t("firebaseSyncFailed"), "error");
+    } finally {
+      setCloudBusy(false);
+    }
   }
 
   function t(key) {
@@ -3138,6 +3615,8 @@ function App() {
 
     setToken("");
     setRefreshToken("");
+    clearCloudSession();
+    setCloudOnlyMode(false);
     setFamilies([]);
     setActiveFamilyId("");
     setCurrentUser(null);
@@ -3694,6 +4173,11 @@ function App() {
   }
 
   async function loadDashboard() {
+    if (cloudOnlyMode && !token && activeFamilyId) {
+      const cache = await hydrateFamilyFromOfflineCache(activeFamilyId);
+      setDashboard(buildDashboardFromCache(cache));
+      return;
+    }
     if (!token) return;
 
     try {
@@ -7572,6 +8056,44 @@ function App() {
   }
 
   useEffect(() => {
+    if (!FIREBASE_CONFIGURED) return undefined;
+    return subscribeFirebaseAuth(async (user) => {
+      setFirebaseUser(user);
+      if (user) {
+        try {
+          await ensureUserProfile(user.uid, user);
+          await refreshFirebaseMeta(user.uid);
+        } catch {
+          /* ignore profile/meta errors on subscribe */
+        }
+        if (loadCloudOnlyMode()) {
+          const familyId = loadCloudFamilyId();
+          if (familyId) {
+            setCloudOnlyMode(true);
+            setActiveFamilyId(familyId);
+            setFamilies([{ id: familyId, name: t("cloudOnlyFamilyLabel") }]);
+            setCurrentUser({
+              full_name: user.displayName || user.email || "Cloud User",
+              email: user.email || "",
+            });
+            await hydrateFromCloudCache(familyId);
+          }
+        }
+      } else {
+        setFirebaseMeta(null);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (driveConnected) {
+      refreshDriveFileList();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driveConnected]);
+
+  useEffect(() => {
     if (!token) return;
 
     const timeoutId = window.setTimeout(() => {
@@ -7613,6 +8135,41 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [activeFamily?.default_currency, activeFamily?.timezone]);
+
+  useEffect(() => {
+    cloudAutoSyncRef.current = cloudAutoSync;
+  }, [cloudAutoSync]);
+
+  useEffect(() => {
+    const settingsTabKey = parseSettingsTab(activeMenu);
+    if (settingsTabKey && ["profile", "family", "permissions", "security", "cloud"].includes(settingsTabKey)) {
+      setSettingsTab(settingsTabKey);
+    }
+    const tab15 = parsePhaseTab(activeMenu, "phase15");
+    if (tab15) {
+      setPhase15ActiveTab(tab15);
+      setPhase15Form((prev) => ({ ...prev, module_type: tab15 }));
+    }
+    const tab16 = parsePhaseTab(activeMenu, "phase16");
+    if (tab16) {
+      setPhase16ActiveTab(tab16);
+      setPhase16Form((prev) => ({ ...prev, module_type: tab16 }));
+    }
+  }, [activeMenu]);
+
+  useEffect(() => {
+    if (!cloudAutoSync.enabled || !activeFamilyId) return undefined;
+
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      runCloudAutoBackup();
+    };
+
+    const intervalId = window.setInterval(tick, Math.min(intervalMs(cloudAutoSync), 60_000));
+    tick();
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudAutoSync.enabled, cloudAutoSync.intervalMinutes, activeFamilyId, firebaseUser?.uid, driveConnected]);
 
   useEffect(() => {
     if (!token || !activeFamilyId || activeMenu !== "sync") return;
@@ -7782,7 +8339,7 @@ function App() {
       label: t("navFamilyGov"),
       items: [
         ["family", "◎", t("family")],
-        ["settings", "▣", t("navRolesPermissions")],
+        ["settings:permissions", "▣", t("navRolesPermissions")],
       ],
     },
     {
@@ -7790,17 +8347,17 @@ function App() {
       items: [
         ["planner", "☰", t("planner")],
         ["grocery", "▤", t("groceryTitle")],
-        ["phase15", "✚", t("navHealthExpense")],
-        ["phase16", "↻", t("navSubscriptions")],
+        ["phase15:HEALTH", "✚", t("navHealthExpense")],
+        ["phase16:SUBSCRIPTION", "↻", t("navSubscriptions")],
       ],
     },
     {
       label: t("navAssetsPlanning"),
       items: [
-        ["phase15", "◈", t("navInvestments")],
-        ["phase16", "⌂", t("navProperty")],
+        ["phase15:INVESTMENT", "◈", t("navInvestments")],
+        ["phase16:PROPERTY", "⌂", t("navProperty")],
         ["zakat", "✦", t("navZakat")],
-        ["phase16", "▦", t("navDocumentVault")],
+        ["phase16:DOCUMENT", "▦", t("navDocumentVault")],
       ],
     },
     {
@@ -7819,7 +8376,7 @@ function App() {
 
   const navItems = navGroups.flatMap((group) => group.items);
 
-  if (showSplash && !token) {
+  if (showSplash && !isAppAuthed) {
     return (
       <SplashScreen
         brandTitle={digits("S4 FAMILY FINANCE 143")}
@@ -7829,7 +8386,7 @@ function App() {
     );
   }
 
-  if (!token) {
+  if (!isAppAuthed) {
     return (
       <main className="s4-auth-host" lang={currentLanguage.code} dir={currentLanguage.dir}>
         {toast && (
@@ -7864,6 +8421,10 @@ function App() {
             setToken(access);
             setRefreshToken(refresh || "");
           }}
+          firebaseConfigured={FIREBASE_CONFIGURED}
+          firebaseFirstMode={FIREBASE_FIRST_MODE}
+          onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
+          onCloudOnlySignIn={handleCloudOnlySignIn}
         />
       </main>
     );
@@ -7871,6 +8432,11 @@ function App() {
 
   return (
     <div className="app-layout" lang={currentLanguage.code} dir={currentLanguage.dir}>
+      {cloudOnlyMode ? (
+        <div className="cloud-only-banner" role="status">
+          {t("cloudOnlyBanner")}
+        </div>
+      ) : null}
       {goalEditModal.open && (
         <div className="modal-overlay">
           <div className="modal-card">
@@ -8881,7 +9447,7 @@ function App() {
           </section>
         )}
 
-        {activeFamilyId && activeMenu === "phase15" && (
+        {activeFamilyId && isPhase15Menu(activeMenu) && (
           <Phase15Panel
             t={t}
             digits={digits}
@@ -8902,7 +9468,7 @@ function App() {
           />
         )}
 
-        {activeFamilyId && activeMenu === "phase16" && (
+        {activeFamilyId && isPhase16Menu(activeMenu) && (
           <Phase16Panel
             t={t}
             digits={digits}
@@ -9119,7 +9685,7 @@ function App() {
           />
         )}
 
-        {activeFamilyId && activeMenu === "settings" && (
+        {activeFamilyId && isSettingsMenu(activeMenu) && (
           <SettingsPanel
             t={t}
             digits={digits}
@@ -9160,6 +9726,31 @@ function App() {
             onRefresh={loadSettingsData}
             apiBase={apiBase}
             onApiBaseChange={(next) => setApiBase(persistApiBase(next))}
+            firebaseConfigured={FIREBASE_CONFIGURED}
+            firebaseUser={firebaseUser}
+            firebaseMeta={firebaseMeta}
+            cloudBusy={cloudBusy}
+            cloudAutoSync={cloudAutoSync}
+            onCloudAutoSyncChange={handleCloudAutoSyncChange}
+            localFolderSupported={LOCAL_FOLDER_SUPPORTED}
+            localFolderLabel={localFolderLabel}
+            onPickLocalFolder={handlePickLocalFolder}
+            onLocalBackup={handleLocalBackup}
+            onLocalRestore={handleLocalRestore}
+            onLocalDownload={handleLocalDownload}
+            driveConfigured={DRIVE_CONFIGURED}
+            driveConnected={driveConnected}
+            driveFiles={driveFiles}
+            onDriveConnect={handleDriveConnect}
+            onDriveDisconnect={handleDriveDisconnect}
+            onDriveUpload={handleDriveUpload}
+            onDriveRestore={handleDriveRestore}
+            onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
+            onFirebaseEmailSignIn={handleFirebaseEmailSignIn}
+            onFirebaseEmailRegister={handleFirebaseEmailRegister}
+            onFirebaseSignOut={handleFirebaseSignOut}
+            onFirebaseSyncNow={handleFirebaseSyncNow}
+            onFirebaseRestore={handleFirebaseRestore}
           />
         )}
 

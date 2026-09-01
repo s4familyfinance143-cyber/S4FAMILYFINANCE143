@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SPLASH_BG_SRC } from "../../lib/brandAssets";
 
 /**
  * Architecture splash gate — mirrors desktop QSplashScreen flow:
@@ -34,7 +35,7 @@ export function SplashScreen({ brandTitle = "S4 FAMILY FINANCE 143", hint = "", 
       <div className={`splash-frame${imgFailed ? " splash-frame--fallback" : ""}`}>
         <img
           className="splash-image"
-          src="/splash-bg.jpg"
+          src={SPLASH_BG_SRC}
           alt=""
           onError={() => setImgFailed(true)}
         />

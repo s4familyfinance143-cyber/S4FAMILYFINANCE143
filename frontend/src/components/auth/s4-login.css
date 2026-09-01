@@ -1,43 +1,71 @@
 /* Ported from login.html — scoped under .s4-login-shell */
 .s4-login-shell, .s4-login-shell * { box-sizing: border-box; }
-.s4-login-shell { min-height: 100vh; font-family: system-ui, sans-serif; background: #F4F6F8; color: #1A1A1A; margin: 0; }
-.s4-login-shell .shell{display:flex;min-height:100vh}
 
-/* ===== LEFT — brand / contextual flow panel ===== */
-.s4-login-shell .brand{
-  width:42%;min-width:360px;
-  background:linear-gradient(165deg,#1D9E75 0%,#157A5B 100%);
-  color:#fff;padding:40px 44px;
-  display:flex;flex-direction:column;justify-content:space-between;
-  position:relative;overflow:hidden;
+.s4-login-shell {
+  min-height: 100vh;
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  color: #1a1a1a;
+  background:
+    linear-gradient(145deg, rgba(8, 18, 28, 0.88), rgba(12, 42, 36, 0.84)),
+    url("/splash-bg.png") center center / cover no-repeat fixed;
 }
-.s4-login-shell .brand::before{content:"";position:absolute;width:520px;height:520px;border-radius:50%;background:rgba(255,255,255,.06);top:-220px;right:-180px}
-.s4-login-shell .brand::after{content:"";position:absolute;width:360px;height:360px;border-radius:50%;background:rgba(255,255,255,.05);bottom:-160px;left:-120px}
-.s4-login-shell .brand-top{position:relative;z-index:1}
-.s4-login-shell .logo-title{font-size:22px;font-weight:700;display:flex;align-items:center;gap:8px}
-.s4-login-shell .logo-sub{font-size:11px;color:rgba(255,255,255,.75);margin-top:4px;letter-spacing:.4px}
-.s4-login-shell .brand-headline{position:relative;z-index:1;margin-top:36px}
-.s4-login-shell .brand-headline h1{font-size:25px;line-height:1.42;font-weight:700;max-width:380px}
-.s4-login-shell .brand-headline p{font-size:12.5px;color:rgba(255,255,255,.85);margin-top:10px;line-height:1.8;max-width:360px}
-.s4-login-shell .flow-label{position:relative;z-index:1;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgba(255,255,255,.6);margin-top:26px;margin-bottom:10px}
-.s4-login-shell .flow{position:relative;z-index:1;display:flex;flex-direction:column;gap:0}
-.s4-login-shell .fstep{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px;color:rgba(255,255,255,.55);transition:all .25s}
-.s4-login-shell .fstep .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3);flex-shrink:0;transition:all .25s}
-.s4-login-shell .fstep.done .dot{background:#fff}
-.s4-login-shell .fstep.done{color:rgba(255,255,255,.85)}
-.s4-login-shell .fstep.now{color:#fff;font-weight:700}
-.s4-login-shell .fstep.now .dot{background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.22);width:8px;height:8px}
-.s4-login-shell .fline{width:1px;height:12px;background:rgba(255,255,255,.2);margin-left:3.5px}
-.s4-login-shell .brand-bottom{position:relative;z-index:1}
-.s4-login-shell .trust-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
-.s4-login-shell .chip{font-size:10.5px;padding:4px 10px;border-radius:5px;font-weight:500;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2)}
 
-/* ===== RIGHT — form panel ===== */
-.s4-login-shell .formside{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:40px 28px 48px;overflow:auto}
-.s4-login-shell .stagearea{width:100%;max-width:460px}
-.s4-login-shell .mobile-brand{display:none}
+.s4-login-shell .shell {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
 
-.s4-login-shell .card{width:100%;background:#fff;border:1px solid #E8E8E8;border-radius:16px;padding:28px 30px 24px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.s4-login-shell .login-brand-panel {
+  display: none !important;
+}
+
+/* ===== Centered login card ===== */
+.s4-login-shell .formside {
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  min-height: auto;
+  background: transparent;
+}
+
+.s4-login-shell .stagearea {
+  width: 100%;
+  max-width: 460px;
+}
+
+.s4-login-shell .mobile-brand {
+  display: none;
+}
+
+.s4-login-shell .card {
+  width: 100%;
+  background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 18px;
+  padding: 28px 30px 24px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+
+.s4-login-shell .login-card-brand {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.s4-login-shell .login-card-logo {
+  display: block;
+  width: min(100%, 320px);
+  max-height: 140px;
+  margin: 0 auto 10px;
+  object-fit: contain;
+}
 
 /* top row: language selector */
 .s4-login-shell .top-row{display:flex;justify-content:flex-end;margin-bottom:6px}
@@ -52,7 +80,7 @@
 .s4-login-shell .back-btn{font-size:11px;color:#999;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0}
 .s4-login-shell .back-btn:hover{color:#1D9E75}
 .s4-login-shell .brand-title{font-size:21px;font-weight:800;color:#111;text-align:center;letter-spacing:.2px}
-.s4-login-shell .brand-subtitle{font-size:12px;color:#888;text-align:center;margin-top:5px;margin-bottom:20px;line-height:1.6}
+.s4-login-shell .brand-subtitle{font-size:12px;color:#666;text-align:center;margin-top:0;margin-bottom:4px;line-height:1.6}
 .s4-login-shell .card-title{font-size:19px;font-weight:700;color:#111;margin-top:6px}
 .s4-login-shell .card-sub{font-size:12px;color:#888;margin-top:4px;margin-bottom:20px}
 
@@ -131,7 +159,6 @@
 .s4-login-shell .footer-note{text-align:center;font-size:12.5px;color:#666;margin-top:16px}
 .s4-login-shell .footer-note a, .s4-login-shell .footer-note .link{color:#1D9E75;font-weight:600;text-decoration:none}
 
-/* choice / relationship / invite styling (unchanged core) */
 .s4-login-shell .choice-card{border:1.5px solid #E8E8E8;border-radius:11px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .15s;display:flex;gap:12px;align-items:flex-start}
 .s4-login-shell .choice-card:hover{border-color:#1D9E75;background:#F9FEFC}
 .s4-login-shell .choice-ico{font-size:22px;line-height:1}
@@ -153,7 +180,6 @@
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .s4-login-shell .success-icon{width:52px;height:52px;border-radius:50%;background:#EDF9F4;color:#1D9E75;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px}
 
-/* ===== step indicator (Account / Family-Invite / Approval) ===== */
 .s4-login-shell .step-indicator{margin-top:22px;padding-top:18px;border-top:1px solid #F0F0F0}
 .s4-login-shell .step-pills{display:flex;gap:6px}
 .s4-login-shell .step-pill{
@@ -180,14 +206,47 @@
 .s4-login-shell .choice-mini:hover{background:#dff3eb}
 .s4-login-shell .choice-mini:disabled{opacity:.6;cursor:not-allowed}
 
-@media (max-width:860px){
-  .s4-login-shell .brand{display:none}
-  .s4-login-shell .formside{padding:0}
-  .s4-login-shell .mobile-brand{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 0 0;color:#1D9E75;font-size:18px;font-weight:700}
+@media (max-width:520px){
+  .s4-login-shell .shell{padding:16px 12px}
+  .s4-login-shell .card{padding:22px 18px 20px}
+  .s4-login-shell .login-card-logo{max-height:110px}
 }
 
-/* Host + React button resets (login.html used divs/spans for some controls) */
-.s4-auth-host{min-height:100vh;margin:0;padding:0;background:#F4F6F8}
+.s4-auth-host{
+  min-height:100vh;margin:0;padding:0;
+  background:
+    linear-gradient(145deg, rgba(8,18,28,.88), rgba(12,42,36,.84)),
+    url("/splash-bg.png") center center / cover no-repeat fixed;
+}
+
+html[data-theme="dark"] .s4-login-shell .card,
+.s4-login-shell .card{
+  background:#fff !important;
+  color:#1a1a1a !important;
+  border-color:rgba(255,255,255,.55) !important;
+}
+html[data-theme="dark"] .s4-login-shell .card label,
+html[data-theme="dark"] .s4-login-shell .card .field label,
+html[data-theme="dark"] .s4-login-shell .card .brand-subtitle{
+  color:#555 !important;
+}
+
+html[data-theme="dark"] .s4-login-shell .card input,
+html[data-theme="dark"] .s4-login-shell .card select,
+html[data-theme="dark"] .s4-login-shell .card textarea,
+html[data-theme="dark"] .s4-login-shell .card .lang-select{
+  background:#fafafa !important;
+  color:#1a1a1a !important;
+  border-color:#e0e0e0 !important;
+  -webkit-text-fill-color:#1a1a1a !important;
+}
+
+html[data-theme="dark"] .s4-login-shell .card input:focus,
+html[data-theme="dark"] .s4-login-shell .card select:focus{
+  background:#fff !important;
+  border-color:#1d9e75 !important;
+}
+
 .s4-login-shell button.mode-opt{
   width:100%;border:none;background:transparent;font-family:inherit;text-align:left;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { CloudBackupPanel } from "./CloudBackupPanel";
 
-const SETTINGS_TABS = ["profile", "family", "permissions", "security"];
+const SETTINGS_TABS = ["profile", "family", "permissions", "security", "cloud"];
 
 function langOptionLabel(language) {
   if (language.nativeName === language.name) return language.nativeName;
@@ -47,6 +48,31 @@ export function SettingsPanel({
   onRefresh,
   apiBase = "",
   onApiBaseChange,
+  cloudBusy = false,
+  cloudAutoSync,
+  onCloudAutoSyncChange,
+  localFolderSupported = false,
+  localFolderLabel = "",
+  onPickLocalFolder,
+  onLocalBackup,
+  onLocalRestore,
+  onLocalDownload,
+  driveConfigured = false,
+  driveConnected = false,
+  driveFiles = [],
+  onDriveConnect,
+  onDriveDisconnect,
+  onDriveUpload,
+  onDriveRestore,
+  firebaseConfigured = false,
+  firebaseUser = null,
+  firebaseMeta = null,
+  onFirebaseGoogleSignIn,
+  onFirebaseEmailSignIn,
+  onFirebaseEmailRegister,
+  onFirebaseSignOut,
+  onFirebaseSyncNow,
+  onFirebaseRestore,
 }) {
   const displayName = currentUser?.full_name || currentUser?.email || email || "—";
   const displayEmail = currentUser?.email || email || "—";
@@ -419,6 +445,37 @@ export function SettingsPanel({
             </button>
           </div>
         </div>
+      )}
+
+      {settingsTab === "cloud" && (
+        <CloudBackupPanel
+          t={t}
+          cloudBusy={cloudBusy}
+          cloudAutoSync={cloudAutoSync}
+          onCloudAutoSyncChange={onCloudAutoSyncChange}
+          localFolderSupported={localFolderSupported}
+          localFolderLabel={localFolderLabel}
+          onPickLocalFolder={onPickLocalFolder}
+          onLocalBackup={onLocalBackup}
+          onLocalRestore={onLocalRestore}
+          onLocalDownload={onLocalDownload}
+          driveConfigured={driveConfigured}
+          driveConnected={driveConnected}
+          driveFiles={driveFiles}
+          onDriveConnect={onDriveConnect}
+          onDriveDisconnect={onDriveDisconnect}
+          onDriveUpload={onDriveUpload}
+          onDriveRestore={onDriveRestore}
+          firebaseConfigured={firebaseConfigured}
+          firebaseUser={firebaseUser}
+          firebaseMeta={firebaseMeta}
+          onFirebaseGoogleSignIn={onFirebaseGoogleSignIn}
+          onFirebaseEmailSignIn={onFirebaseEmailSignIn}
+          onFirebaseEmailRegister={onFirebaseEmailRegister}
+          onFirebaseSignOut={onFirebaseSignOut}
+          onFirebaseSyncNow={onFirebaseSyncNow}
+          onFirebaseRestore={onFirebaseRestore}
+        />
       )}
     </section>
   );

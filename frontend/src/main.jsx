@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Capacitor } from "@capacitor/core";
 import { Component, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
@@ -7,6 +8,12 @@ import { create } from "zustand";
 import { captureWebException, initWebSentry } from "./lib/sentry.js";
 
 initWebSentry();
+
+if (Capacitor.isNativePlatform()) {
+  import("@capacitor/status-bar")
+    .then(({ StatusBar, Style }) => StatusBar.setStyle({ style: Style.Dark }))
+    .catch(() => {});
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,7 +67,7 @@ createRoot(document.getElementById("root")).render(
   </StrictMode>
 );
 
-if (import.meta.env.PROD) {
+if (import.meta.env.PROD && !Capacitor.isNativePlatform()) {
   import("virtual:pwa-register")
     .then(({ registerSW }) => {
       registerSW({ immediate: true });
