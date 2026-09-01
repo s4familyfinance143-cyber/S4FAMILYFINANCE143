@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
+import { formatFetchError, isLocalhostApi, isNativeApp } from "../../lib/runtimeEnv";
 import {
   JOIN_RELATIONSHIPS,
   OWNER_RELATIONSHIPS,
@@ -95,6 +96,11 @@ const UI = {
     joinSub: "অ্যাকাউন্ট তৈরি করুন ও পরিবারের কোড দিন",
     codeHint: "কোড ঠিক যেভাবে দেওয়া হয়েছে সেভাবে লিখুন। মেয়াদোত্তীর্ণ কোড গ্রহণ করা হবে না।",
     btnSendJoin: "Join Request পাঠান",
+    mobileApiTitle: "ফোনে অ্যাকাউন্ট/পরিবার তৈরি",
+    mobileApiHint:
+      "PC-তে backend চালু রাখুন (start_dev.ps1)। নিচে Server settings-এ PC-র Wi‑Fi IP দিন — যেমন http://192.168.1.5:8000 (127.0.0.1 ফোনে কাজ করে না)।",
+    mobileApiBlocked:
+      "আগে Server settings-এ PC-র API URL সেট করুন (127.0.0.1 ফোনে কাজ করে না)।",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -148,6 +154,11 @@ const UI = {
     joinSub: "Create your account and enter the family code",
     codeHint: "Enter the code exactly as given. Expired codes will be rejected.",
     btnSendJoin: "Send join request",
+    mobileApiTitle: "Create account/family on phone",
+    mobileApiHint:
+      "Keep backend running on your PC (start_dev.ps1). In Server settings below, set your PC Wi‑Fi IP — e.g. http://192.168.1.5:8000 (127.0.0.1 does not work on phone).",
+    mobileApiBlocked:
+      "Set your PC API URL in Server settings first (127.0.0.1 does not work on phone).",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -254,7 +265,8 @@ export function FamilyAuthGate({
   const [relationshipNote, setRelationshipNote] = useState("");
   const [linkedMemberId, setLinkedMemberId] = useState("");
   const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
-  const [showAdvancedServer, setShowAdvancedServer] = useState(false);
+  const [showAdvancedServer, setShowAdvancedServer] = useState(() => isNativeApp());
+  const nativeApp = isNativeApp();
   const menuRef = useRef(null);
   const TIMEZONE_PRESETS = ["Asia/Dhaka", "Asia/Dubai", "Asia/Kolkata", "UTC"];
   const CURRENCY_PRESETS = [
@@ -340,12 +352,30 @@ export function FamilyAuthGate({
     };
   }
 
+  function requireMobileApiBase() {
+    if (!nativeApp || !isLocalhostApi(apiBase)) return true;
+    setMessage(L.mobileApiBlocked, "error");
+    setShowAdvancedServer(true);
+    return false;
+  }
+
+  function MobileApiBanner() {
+    if (!nativeApp) return null;
+    return (
+      <div className="warn-box" style={{ marginBottom: 14 }}>
+        <strong>{L.mobileApiTitle}</strong>
+        <div style={{ marginTop: 6 }}>{L.mobileApiHint}</div>
+      </div>
+    );
+  }
+
   async function handleLogin(e) {
     e?.preventDefault?.();
     if (!email.trim() || !password) {
       setMessage(t("emailPasswordRequired"), "error");
       return;
     }
+    if (!requireMobileApiBase()) return;
     setAuthLoading(true);
     setStatus(t("signingIn"));
     try {
@@ -371,7 +401,7 @@ export function FamilyAuthGate({
       setMessage(t("loginSuccessful"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(error.message || t("backendConnectionFailed"), "error");
+      setMessage(formatFetchError(error, lang), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -384,6 +414,7 @@ export function FamilyAuthGate({
       setMessage(t("familyGateFieldsRequired"), "error");
       return;
     }
+    if (!requireMobileApiBase()) return;
     setAuthLoading(true);
     setStatus(t("creatingFamilyGate"));
     try {
@@ -409,7 +440,7 @@ export function FamilyAuthGate({
       setMessage(t("familyCreatedGate"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(error.message || t("backendConnectionFailed"), "error");
+      setMessage(formatFetchError(error, lang), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -422,6 +453,7 @@ export function FamilyAuthGate({
       setMessage(t("joinGateFieldsRequired"), "error");
       return;
     }
+    if (!requireMobileApiBase()) return;
     setAuthLoading(true);
     setStatus(t("joiningFamilyGate"));
     try {
@@ -461,7 +493,7 @@ export function FamilyAuthGate({
       setMessage(t("joinRequestedGate"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(error.message || t("backendConnectionFailed"), "error");
+      setMessage(formatFetchError(error, lang), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -488,7 +520,7 @@ export function FamilyAuthGate({
       setView("login");
       setStatus("");
     } catch (error) {
-      setMessage(error.message || t("backendConnectionFailed"), "error");
+      setMessage(formatFetchError(error, lang), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -555,6 +587,7 @@ export function FamilyAuthGate({
                 </div>
 
                 <LoginCardBrand subtitle={L.subtitle} />
+                <MobileApiBanner />
 
                 <div className="advanced-block">
                   <button
@@ -812,6 +845,7 @@ export function FamilyAuthGate({
                 </div>
                 <div className="card-title">{L.createTitle}</div>
                 <div className="card-sub">{L.createSub}</div>
+                <MobileApiBanner />
 
                 <div className="advanced-block">
                   <button
@@ -1015,6 +1049,7 @@ export function FamilyAuthGate({
                 </div>
                 <div className="card-title">{L.joinTitle}</div>
                 <div className="card-sub">{L.joinSub}</div>
+                <MobileApiBanner />
 
                 <form onSubmit={handleJoinFamily}>
                   <div className="field">
