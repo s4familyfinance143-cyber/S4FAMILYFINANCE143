@@ -25,16 +25,18 @@ jobs:
           npm ci
           npm run i18n:check
           npm run build:pwa
-      - name: Zip PWA dist
+      - name: Package PWA release zip
         run: |
+          cp deploy/release/PWA-INSTALL.txt frontend/dist/PWA-INSTALL.txt
           cd frontend/dist
-          zip -r ../../s4-pwa-dist.zip .
+          zip -r ../../S4-Family-Finance-143-PWA.zip .
       - uses: actions/upload-artifact@v4
         with:
           name: pwa-dist
           path: |
             frontend/dist
-            s4-pwa-dist.zip
+            S4-Family-Finance-143-PWA.zip
+            deploy/release/PWA-INSTALL.txt
 
   build-android-apk:
     runs-on: ubuntu-latest
@@ -70,11 +72,35 @@ jobs:
           ./gradlew assembleDebug --no-daemon
       - name: Rename APK
         run: |
-          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk s4-family-finance-143-debug.apk
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk S4-Family-Finance-143.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: s4-family-finance-143-debug.apk
+          path: S4-Family-Finance-143.apk
+
+  build-windows-exe:
+    runs-on: windows-latest
+    needs: build-pwa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-dist
+          path: .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build Windows EXE installer
+        shell: pwsh
+        run: ./deploy/scripts/build_windows_installer_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: S4-Family-Finance-143-Setup.exe
 
   firebase-hosting:
     runs-on: ubuntu-latest
@@ -103,7 +129,7 @@ jobs:
 
   github-release:
     runs-on: ubuntu-latest
-    needs: [build-pwa, build-android-apk]
+    needs: [build-pwa, build-android-apk, build-windows-exe]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -114,12 +140,20 @@ jobs:
         with:
           name: android-apk
           path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: release-assets
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: S4 Family Finance 143 ${{ github.ref_name }}
           files: |
-            release-assets/s4-pwa-dist.zip
-            release-assets/s4-family-finance-143-debug.apk
+            release-assets/S4-Family-Finance-143-PWA.zip
+            release-assets/PWA-INSTALL.txt
+            release-assets/S4-Family-Finance-143.apk
+            release-assets/S4-Family-Finance-143-Setup.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

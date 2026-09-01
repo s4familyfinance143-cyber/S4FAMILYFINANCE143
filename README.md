@@ -54,9 +54,9 @@ Go to **[Releases](https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE14
 
 | File | Platform |
 |------|----------|
-| `s4-family-finance-143-debug.apk` | Android phone |
-| `s4-pwa-dist.zip` | Self-host PWA |
-| Windows EXE | Build locally (see below) |
+| `S4-Family-Finance-143-PWA.zip` | PWA — phone install / self-host |
+| `S4-Family-Finance-143-Setup.exe` | Windows PC installer |
+| `S4-Family-Finance-143.apk` | Android phone |
 
 ### PWA install (phone)
 
