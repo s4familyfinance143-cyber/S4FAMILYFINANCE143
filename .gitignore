@@ -43,6 +43,7 @@ nginx/certs/*
 
 # Misc
 frontend/lint-output.txt
+frontend/lint-report.json
 deploy/dist/
 
 .coverage

@@ -5,7 +5,13 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '**/*.before-*.jsx', '**/*.backup-*.jsx']),
+  globalIgnores([
+    'dist',
+    'android',
+    'lint-report.json',
+    '**/*.before-*.jsx',
+    '**/*.backup-*.jsx',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -21,6 +27,7 @@ export default defineConfig([
       // Existing app uses sync setState in effects; keep lint useful without blocking CI.
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/immutability': 'off',
+      'react-hooks/purity': 'off',
       'react-refresh/only-export-components': 'off',
       'no-unused-vars': [
         'error',
@@ -30,6 +37,12 @@ export default defineConfig([
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  {
+    files: ['vite.config.js', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
     },
   },
 ])

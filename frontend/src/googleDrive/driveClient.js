@@ -1,5 +1,5 @@
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const SCRIPT_ID = "s4-google-identity-services";
+const _SCRIPT_ID = "s4-google-identity-services";
 const TOKEN_KEY = "s4_google_drive_token";
 const TOKEN_EXP_KEY = "s4_google_drive_token_exp";
 

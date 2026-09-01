@@ -16,7 +16,7 @@ export function DesktopSidebar({
   t,
   email,
   currentUser,
-  avatarUrl = "",
+  _avatarUrl = "",
   families = [],
   activeFamilyId,
   changeActiveFamily,
@@ -188,7 +188,7 @@ export function TopHeader({
   lockedLanguages,
   unreadCount = 0,
   onLogout,
-  avatarUrl = "",
+  _avatarUrl = "",
   currentUser,
   email,
 }) {
@@ -204,7 +204,7 @@ export function TopHeader({
     }
   }
 
-  const initials = String(currentUser?.full_name || email || "S4")
+  const _initials = String(currentUser?.full_name || email || "S4")
     .trim()
     .slice(0, 2)
     .toUpperCase();

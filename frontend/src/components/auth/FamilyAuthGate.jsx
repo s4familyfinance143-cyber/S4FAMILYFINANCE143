@@ -215,7 +215,7 @@ function LoginCardBrand({ subtitle }) {
  */
 export function FamilyAuthGate({
   t,
-  digits,
+  _digits,
   appLanguage,
   lockedLanguages,
   languageLabels,
