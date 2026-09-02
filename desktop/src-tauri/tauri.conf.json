@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "S4 Family Finance 143",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "identifier": "com.s4family.finance143",
   "build": {
     "beforeDevCommand": "npm run dev --prefix ../frontend",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build:pwa --prefix ../frontend",
-    "frontendDist": "../frontend/dist"
+    "beforeBuildCommand": "npm run build --prefix ../frontend",
+    "frontendDist": "../../frontend/dist"
   },
   "app": {
     "windows": [
@@ -34,16 +34,15 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico"
     ],
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       },
       "nsis": {
-        "installMode": "both",
-        "displayLanguageSelector": false,
-        "shortcut": true
+        "displayLanguageSelector": false
       }
     }
   }
