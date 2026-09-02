@@ -1214,6 +1214,7 @@ table.table tr:hover td { background: var(--surface-2); }
    Smart mix: cool teal atmosphere + light frosted card so title/% stay readable */
 .splash-root {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;

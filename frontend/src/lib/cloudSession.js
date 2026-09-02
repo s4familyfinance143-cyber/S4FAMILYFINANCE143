@@ -5,9 +5,10 @@ const CLOUD_ONLY_KEY = "s4_cloud_only_mode";
 const CLOUD_FAMILY_KEY = "s4_cloud_family_id";
 
 export function isFirebaseFirstMode() {
-  if (isNativeApp() && isFirebaseConfigured()) return true;
-  const flag = String(import.meta.env.VITE_FIREBASE_FIRST || "").trim().toLowerCase();
-  return (flag === "1" || flag === "true" || flag === "yes") && isFirebaseConfigured();
+  if (!isFirebaseConfigured()) return false;
+  if (isNativeApp()) return true;
+  const flag = String(import.meta.env.VITE_FIREBASE_FIRST ?? "true").trim().toLowerCase();
+  return flag !== "0" && flag !== "false" && flag !== "no";
 }
 
 export function loadCloudOnlyMode() {

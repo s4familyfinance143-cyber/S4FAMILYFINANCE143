@@ -1518,10 +1518,20 @@ html[data-theme="dark"] .dash-kpi-loan {
 }
 
 .cloud-only-banner {
+  grid-column: 1 / -1;
   background: linear-gradient(90deg, rgba(29, 158, 117, 0.15), rgba(2, 132, 199, 0.12));
   border-bottom: 1px solid rgba(29, 158, 117, 0.25);
   color: var(--text, #1a2b2a);
   font-size: 0.88rem;
   padding: 0.55rem 1rem;
   text-align: center;
+}
+
+.app-layout > .sidebar,
+.app-layout > .arch-shell-sidebar {
+  grid-column: 1;
+}
+
+.app-layout > .main-content {
+  grid-column: 2;
 }

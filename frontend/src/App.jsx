@@ -8689,7 +8689,7 @@ function App() {
 
   if (!isAppAuthed) {
     return (
-      <main className="s4-auth-host" lang={currentLanguage.code} dir={currentLanguage.dir}>
+      <main className="splash-root" lang={currentLanguage.code} dir={currentLanguage.dir}>
         {toast && (
           <div className={`toast toast-${toast.type}`}>{toast.message}</div>
         )}
@@ -8722,9 +8722,7 @@ function App() {
             setToken(access);
             setRefreshToken(refresh || "");
           }}
-          firebaseConfigured={FIREBASE_CONFIGURED}
           firebaseFirstMode={FIREBASE_FIRST_MODE}
-          onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
           onCloudEmailSignIn={handleCloudEmailSignIn}
           onCreateCloudFamily={handleCreateCloudFamily}
         />

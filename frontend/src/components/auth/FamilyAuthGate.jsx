@@ -321,9 +321,7 @@ export function FamilyAuthGate({
   apiBase,
   onApiBaseChange,
   onAuthenticated,
-  firebaseConfigured = false,
   firebaseFirstMode = false,
-  onFirebaseGoogleSignIn,
   onCloudEmailSignIn,
   onCreateCloudFamily,
 }) {
@@ -349,7 +347,7 @@ export function FamilyAuthGate({
   const [relationshipNote, setRelationshipNote] = useState("");
   const [linkedMemberId, setLinkedMemberId] = useState("");
   const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
-  const [showAdvancedServer, setShowAdvancedServer] = useState(() => isNativeApp() && !firebaseFirstMode);
+  const [showAdvancedServer, setShowAdvancedServer] = useState(false);
   const nativeApp = isNativeApp();
   const menuRef = useRef(null);
   const TIMEZONE_PRESETS = ["Asia/Dhaka", "Asia/Dubai", "Asia/Kolkata", "UTC"];
@@ -718,7 +716,7 @@ export function FamilyAuthGate({
                   saveApiBase={saveApiBase}
                 />
 
-                {!useCloudAuth ? (
+                {!useCloudAuth && view !== "login" && view !== "forgot" ? (
                 <div className="mode-select-wrap" ref={menuRef}>
                   <span className="mode-select-label">{L.modeLabel}</span>
                   <button
@@ -846,52 +844,24 @@ export function FamilyAuthGate({
                   </>
                 )}
 
-                {view === "login" && useCloudAuth ? (
+                {view === "login" ? (
                   <div className="cloud-footer">
-                    {L.cloudNewUser}{" "}
+                    {useCloudAuth ? L.cloudNewUser : L.noAccount}{" "}
                     <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
                       {L.btnCreate}
                     </button>
-                  </div>
-                ) : view === "login" ? (
-                  <>
-                    <div className="divider">
-                      <span>{L.or}</span>
-                    </div>
-                    <div className="footer-note">{L.noAccount}</div>
-                    <div className="choice-row">
-                      <button type="button" className="choice-mini" disabled={authLoading} onClick={() => setMode("createFamily")}>
-                        {L.btnCreate}
-                      </button>
-                      <button type="button" className="choice-mini" disabled={authLoading} onClick={() => setMode("join")}>
-                        {L.btnJoin}
-                      </button>
-                    </div>
-                    {firebaseConfigured ? (
+                    {!useCloudAuth ? (
                       <>
-                        <div className="divider">
-                          <span>{L.or}</span>
-                        </div>
-                        <div className="info-box">
-                          {lang === "bn"
-                            ? "লগইনের পর Settings → Cloud থেকে Firebase/Google দিয়ে অনলাইন ব্যাকআপ চালু করুন।"
-                            : "After login, open Settings → Cloud to enable Firebase/Google online backup."}
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          style={{ marginTop: 8 }}
-                          disabled={authLoading}
-                          onClick={() => onFirebaseGoogleSignIn?.()}
-                        >
-                          {lang === "bn" ? "Google দিয়ে Cloud অ্যাকাউন্ট" : "Cloud account with Google"}
+                        {" · "}
+                        <button type="button" className="link" disabled={authLoading} onClick={() => setMode("join")}>
+                          {L.btnJoin}
                         </button>
                       </>
                     ) : null}
-                  </>
+                  </div>
                 ) : null}
 
-                {!(useCloudAuth && view === "login") ? (
+                {view !== "login" && view !== "forgot" ? (
                 <StepIndicator active={stepActive} labels={L} />
                 ) : null}
                 {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}

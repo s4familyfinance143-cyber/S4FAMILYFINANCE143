@@ -2,21 +2,18 @@
 .s4-login-shell, .s4-login-shell * { box-sizing: border-box; }
 
 .s4-login-shell {
-  min-height: 100vh;
+  width: 100%;
+  max-width: min(460px, 94vw);
   font-family: system-ui, sans-serif;
   margin: 0;
   color: #1a1a1a;
-  background:
-    linear-gradient(145deg, rgba(8, 18, 28, 0.88), rgba(12, 42, 36, 0.84)),
-    url("/splash-bg.png") center center / cover no-repeat fixed;
 }
 
 .s4-login-shell .shell {
   display: flex;
-  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  padding: 0;
 }
 
 .s4-login-shell .login-brand-panel {
@@ -49,21 +46,21 @@
   width: 100%;
   background: #fff;
   border: 1px solid rgba(255, 255, 255, 0.65);
-  border-radius: 18px;
-  padding: 28px 30px 24px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  border-radius: 16px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.32);
 }
 
 .s4-login-shell .login-card-brand {
   text-align: center;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .s4-login-shell .login-card-logo {
   display: block;
-  width: min(100%, 320px);
-  max-height: 140px;
-  margin: 0 auto 10px;
+  width: min(100%, 240px);
+  max-height: 88px;
+  margin: 0 auto 6px;
   object-fit: contain;
 }
 
@@ -80,7 +77,7 @@
 .s4-login-shell .back-btn{font-size:11px;color:#999;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0}
 .s4-login-shell .back-btn:hover{color:#1D9E75}
 .s4-login-shell .brand-title{font-size:21px;font-weight:800;color:#111;text-align:center;letter-spacing:.2px}
-.s4-login-shell .brand-subtitle{font-size:12px;color:#666;text-align:center;margin-top:0;margin-bottom:4px;line-height:1.6}
+.s4-login-shell .brand-subtitle{font-size:11px;color:#666;text-align:center;margin-top:0;margin-bottom:2px;line-height:1.45}
 .s4-login-shell .card-title{font-size:19px;font-weight:700;color:#111;margin-top:6px}
 .s4-login-shell .card-sub{font-size:12px;color:#888;margin-top:4px;margin-bottom:20px}
 
@@ -116,7 +113,7 @@
 .s4-login-shell .mode-opt-text{font-size:12.5px;font-weight:700;color:#222}
 .s4-login-shell .mode-opt-sub{font-size:10.5px;color:#999;margin-top:1px}
 
-.s4-login-shell .field{margin-bottom:14px}
+.s4-login-shell .field{margin-bottom:11px}
 .s4-login-shell .field label{display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:6px}
 .s4-login-shell .field .hint{font-size:10.5px;color:#999;margin-top:4px;line-height:1.5}
 .s4-login-shell .input-wrap{position:relative}
@@ -135,7 +132,7 @@
 .s4-login-shell .pw-meter i{flex:1;height:3px;border-radius:2px;background:#EEE;transition:background .2s}
 .s4-login-shell .pw-meter-label{font-size:10.5px;color:#999;margin-top:5px}
 
-.s4-login-shell .row-between{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.s4-login-shell .row-between{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .s4-login-shell .remember{display:flex;align-items:center;gap:6px;font-size:12px;color:#555}
 .s4-login-shell .remember input{width:14px;height:14px;accent-color:#1D9E75}
 .s4-login-shell .link{font-size:12px;color:#1D9E75;text-decoration:none;font-weight:600;cursor:pointer}
@@ -207,16 +204,9 @@
 .s4-login-shell .choice-mini:disabled{opacity:.6;cursor:not-allowed}
 
 @media (max-width:520px){
-  .s4-login-shell .shell{padding:16px 12px}
-  .s4-login-shell .card{padding:22px 18px 20px}
-  .s4-login-shell .login-card-logo{max-height:110px}
-}
-
-.s4-auth-host{
-  min-height:100vh;margin:0;padding:0;
-  background:
-    linear-gradient(145deg, rgba(8,18,28,.88), rgba(12,42,36,.84)),
-    url("/splash-bg.png") center center / cover no-repeat fixed;
+  .s4-login-shell .shell{padding:0}
+  .s4-login-shell .card{padding:18px 16px 16px}
+  .s4-login-shell .login-card-logo{max-height:72px}
 }
 
 html[data-theme="dark"] .s4-login-shell .card,
@@ -284,12 +274,11 @@ html[data-theme="dark"] .s4-login-shell .card select:focus{
   display:inline-flex;align-items:center;justify-content:center;font-weight:800;
   font-size:13px;color:#4285F4;
 }
-.s4-login-shell .cloud-footer{text-align:center;margin-top:16px;font-size:13px;color:#666}
+.s4-login-shell .cloud-footer{text-align:center;margin-top:12px;font-size:12.5px;color:#666;line-height:1.6}
 
 @media (max-width: 480px){
-  .s4-login-shell .shell{padding:12px 10px;align-items:flex-start;padding-top:20px}
-  .s4-login-shell .card{padding:20px 18px 18px;border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.28)}
-  .s4-login-shell .login-card-logo{max-height:96px;width:min(100%,260px)}
-  .s4-login-shell .brand-subtitle{font-size:11px;line-height:1.5;margin-bottom:8px}
-  .s4-login-shell .field{margin-bottom:12px}
+  .s4-login-shell .card{padding:18px 16px 16px;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.28)}
+  .s4-login-shell .login-card-logo{max-height:72px;width:min(100%,220px)}
+  .s4-login-shell .brand-subtitle{font-size:10.5px;line-height:1.4;margin-bottom:4px}
+  .s4-login-shell .field{margin-bottom:10px}
 }
