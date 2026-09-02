@@ -730,6 +730,7 @@
   "cloudOnlyNoData": "कोई क्लाउड बैकअप नहीं। पहले PC से सिंक करें।",
   "cloudOnlyNoDataCreate": "इस खाते में अभी कोई परिवार नहीं है। नया क्लाउड परिवार बनाने के लिए 'परिवार बनाएं' का उपयोग करें।",
   "cloudFamilyCreated": "Firebase में परिवार बनाया गया — डैशबोर्ड खुल रहा है",
+  "cloudFamilyCreatedVerify": "परिवार बनाया गया। सत्यापन लिंक आपके ईमेल पर भेजा गया — inbox/spam देखें।",
   "cloudFamilyRestored": "आपका क्लाउड परिवार पुनर्स्थापित हो गया",
   "cloudOnlyFamilyLabel": "क्लाउड परिवार",
   "showPassword": "पासवर्ड दिखाए",

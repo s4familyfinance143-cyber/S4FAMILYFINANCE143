@@ -730,6 +730,7 @@
   "cloudOnlyNoData": "کلاؤڈ بیک اپ نہیں۔ پہلے PC سے سنک کریں۔",
   "cloudOnlyNoDataCreate": "اس اکاؤنٹ میں ابھی کوئی خاندان نہیں۔ نیا کلاؤڈ خاندان بنانے کے لیے 'خاندان بنائیں' استعمال کریں۔",
   "cloudFamilyCreated": "Firebase میں خاندان بنایا گیا — ڈیش بورڈ کھل رہا ہے",
+  "cloudFamilyCreatedVerify": "خاندان بن گیا۔ تصدیقی لنک آپ کے ای میل پر بھیجا گیا — inbox/spam چیک کریں۔",
   "cloudFamilyRestored": "آپ کا کلاؤڈ خاندان بحال ہو گیا",
   "cloudOnlyFamilyLabel": "کلاؤڈ خاندان",
   "showPassword": "پاس ورڈ دکھائیں۔",

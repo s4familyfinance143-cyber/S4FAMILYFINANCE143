@@ -730,6 +730,7 @@
   "cloudOnlyNoData": "ক্লাউড ব্যাকআপ নেই। আগে PC থেকে backend দিয়ে সিঙ্ক করুন।",
   "cloudOnlyNoDataCreate": "এই অ্যাকাউন্টে এখনো পরিবার নেই। 'পরিবার তৈরি' থেকে নতুন পরিবার বানান।",
   "cloudFamilyCreated": "পরিবার Firebase-এ তৈরি হয়েছে — ড্যাশবোর্ডে যান",
+  "cloudFamilyCreatedVerify": "পরিবার তৈরি হয়েছে। ইমেইলে verification লিংক পাঠানো হয়েছে — inbox/spam চেক করুন।",
   "cloudFamilyRestored": "আপনার ক্লাউড পরিবার পুনরুদ্ধার হয়েছে",
   "cloudOnlyFamilyLabel": "ক্লাউড পরিবার",
   "showPassword": "পাসওয়ার্ড দেখান",

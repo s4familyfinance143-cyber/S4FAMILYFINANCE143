@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
 import { formatFetchError, isLocalhostApi, isNativeApp } from "../../lib/runtimeEnv";
+import { firebaseSendPasswordReset } from "../../firebase/auth";
 import {
   JOIN_RELATIONSHIPS,
   OWNER_RELATIONSHIPS,
@@ -104,6 +105,9 @@ const UI = {
     cloudCreateSub:
       "PC ছাড়াই Firebase-এ অ্যাকাউন্ট ও পরিবার তৈরি হবে — ডেটা ক্লাউডে সংরক্ষিত থাকবে।",
     cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
+    cloudLoginPageSub: "Firebase ক্লাউড — লগইন করুন বা পরিবার তৈরি করুন",
+    cloudNewUser: "নতুন ব্যবহারকারী?",
+    cloudGoogleSignIn: "Google দিয়ে সাইন ইন",
     cloudFirstHint:
       "ফোন/APK-তে সরাসরি অ্যাকাউন্ট তৈরি করুন বা লগইন করুন। ডেটা Firebase-এ সংরক্ষিত থাকবে।",
     stAccount: "Account",
@@ -167,6 +171,9 @@ const UI = {
     cloudCreateSub:
       "Create account and family in Firebase — no PC backend required. Data stays in the cloud.",
     cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
+    cloudLoginPageSub: "Cloud sign in or create your family",
+    cloudNewUser: "New here?",
+    cloudGoogleSignIn: "Sign in with Google",
     cloudFirstHint:
       "On phone/APK, create an account or sign in directly. Your data is stored in Firebase.",
     stAccount: "Account",
@@ -239,6 +246,61 @@ function MobileApiBanner({ nativeApp, useCloudAuth, labels }) {
   );
 }
 
+function ServerSettingsBlock({
+  useCloudAuth,
+  showAdvancedServer,
+  setShowAdvancedServer,
+  authLoading,
+  lang,
+  apiBaseDraft,
+  setApiBaseDraft,
+  saveApiBase,
+}) {
+  if (useCloudAuth) return null;
+  return (
+    <div className="advanced-block">
+      <button
+        type="button"
+        className="link advanced-toggle"
+        disabled={authLoading}
+        onClick={() => setShowAdvancedServer((v) => !v)}
+      >
+        {showAdvancedServer
+          ? lang === "bn"
+            ? "সার্ভার সেটিংস লুকান"
+            : "Hide server settings"
+          : lang === "bn"
+            ? "সার্ভার সেটিংস (উন্নত)"
+            : "Server settings (advanced)"}
+      </button>
+      {showAdvancedServer ? (
+        <div className="field">
+          <label>{lang === "bn" ? "API URL (LAN / backend)" : "API URL (LAN / backend)"}</label>
+          <div className="input-wrap">
+            <span className="input-icon">🌐</span>
+            <input
+              type="url"
+              placeholder="http://127.0.0.1:8000"
+              value={apiBaseDraft}
+              disabled={authLoading}
+              onChange={(e) => setApiBaseDraft(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="link"
+            style={{ marginTop: 6 }}
+            disabled={authLoading}
+            onClick={saveApiBase}
+          >
+            {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Architecture auth gate:
  * Register/Login → Create Family (Owner) OR Join with Invite (relationship) → Approve later.
@@ -288,7 +350,7 @@ export function FamilyAuthGate({
   const [relationshipNote, setRelationshipNote] = useState("");
   const [linkedMemberId, setLinkedMemberId] = useState("");
   const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
-  const [showAdvancedServer, setShowAdvancedServer] = useState(() => isNativeApp());
+  const [showAdvancedServer, setShowAdvancedServer] = useState(() => isNativeApp() && !firebaseFirstMode);
   const nativeApp = isNativeApp();
   const menuRef = useRef(null);
   const TIMEZONE_PRESETS = ["Asia/Dhaka", "Asia/Dubai", "Asia/Kolkata", "UTC"];
@@ -559,6 +621,13 @@ export function FamilyAuthGate({
     setAuthLoading(true);
     setStatus(t("sendingReset"));
     try {
+      if (useCloudAuth) {
+        await firebaseSendPasswordReset(email.trim());
+        setMessage(t("forgotSent"), "success");
+        setView("login");
+        setStatus("");
+        return;
+      }
       const res = await fetch(`${apiBase}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -636,50 +705,21 @@ export function FamilyAuthGate({
                   </select>
                 </div>
 
-                <LoginCardBrand subtitle={L.subtitle} />
+                <LoginCardBrand subtitle={useCloudAuth ? L.cloudLoginPageSub : L.subtitle} />
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
-                <div className="advanced-block">
-                  <button
-                    type="button"
-                    className="link advanced-toggle"
-                    disabled={authLoading}
-                    onClick={() => setShowAdvancedServer((v) => !v)}
-                  >
-                    {showAdvancedServer
-                      ? lang === "bn"
-                        ? "সার্ভার সেটিংস লুকান"
-                        : "Hide server settings"
-                      : lang === "bn"
-                        ? "সার্ভার সেটিংস (উন্নত)"
-                        : "Server settings (advanced)"}
-                  </button>
-                  {showAdvancedServer ? (
-                    <div className="field">
-                      <label>{lang === "bn" ? "API URL (LAN / backend)" : "API URL (LAN / backend)"}</label>
-                      <div className="input-wrap">
-                        <span className="input-icon">🌐</span>
-                        <input
-                          type="url"
-                          placeholder="http://127.0.0.1:8000"
-                          value={apiBaseDraft}
-                          disabled={authLoading}
-                          onChange={(e) => setApiBaseDraft(e.target.value)}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="link"
-                        style={{ marginTop: 6 }}
-                        disabled={authLoading}
-                        onClick={saveApiBase}
-                      >
-                        {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <ServerSettingsBlock
+                  useCloudAuth={useCloudAuth}
+                  showAdvancedServer={showAdvancedServer}
+                  setShowAdvancedServer={setShowAdvancedServer}
+                  authLoading={authLoading}
+                  lang={lang}
+                  apiBaseDraft={apiBaseDraft}
+                  setApiBaseDraft={setApiBaseDraft}
+                  saveApiBase={saveApiBase}
+                />
 
+                {!useCloudAuth ? (
                 <div className="mode-select-wrap" ref={menuRef}>
                   <span className="mode-select-label">{L.modeLabel}</span>
                   <button
@@ -716,6 +756,7 @@ export function FamilyAuthGate({
                     ))}
                   </div>
                 </div>
+                ) : null}
 
                 {view === "login" ? (
                   <form onSubmit={handleLogin}>
@@ -807,6 +848,28 @@ export function FamilyAuthGate({
                 )}
 
                 {view === "login" ? (
+                  useCloudAuth ? (
+                    <>
+                      <div className="divider">
+                        <span>{L.or}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-google"
+                        disabled={authLoading}
+                        onClick={() => onCloudOnlySignIn?.()}
+                      >
+                        <span className="btn-google-icon" aria-hidden="true">G</span>
+                        {L.cloudGoogleSignIn}
+                      </button>
+                      <div className="cloud-footer">
+                        {L.cloudNewUser}{" "}
+                        <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
+                          {L.btnCreate}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
                   <>
                     <div className="divider">
                       <span>{L.or}</span>
@@ -825,43 +888,29 @@ export function FamilyAuthGate({
                         <div className="divider">
                           <span>{L.or}</span>
                         </div>
-                        {firebaseFirstMode ? (
-                          <>
-                            <div className="info-box">{L.cloudFirstHint}</div>
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              style={{ marginTop: 8 }}
-                              disabled={authLoading}
-                              onClick={() => onCloudOnlySignIn?.()}
-                            >
-                              {lang === "bn" ? "Google দিয়ে লগইন" : "Sign in with Google"}
-                            </button>
-                          </>
-                        ) : (
-                          <div className="info-box">
-                            {lang === "bn"
-                              ? "লগইনের পর Settings → Cloud থেকে Firebase/Google দিয়ে অনলাইন ব্যাকআপ চালু করুন।"
-                              : "After login, open Settings → Cloud to enable Firebase/Google online backup."}
-                          </div>
-                        )}
-                        {!firebaseFirstMode ? (
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            style={{ marginTop: 8 }}
-                            disabled={authLoading}
-                            onClick={() => onFirebaseGoogleSignIn?.()}
-                          >
-                            {lang === "bn" ? "Google দিয়ে Cloud অ্যাকাউন্ট" : "Cloud account with Google"}
-                          </button>
-                        ) : null}
+                        <div className="info-box">
+                          {lang === "bn"
+                            ? "লগইনের পর Settings → Cloud থেকে Firebase/Google দিয়ে অনলাইন ব্যাকআপ চালু করুন।"
+                            : "After login, open Settings → Cloud to enable Firebase/Google online backup."}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ marginTop: 8 }}
+                          disabled={authLoading}
+                          onClick={() => onFirebaseGoogleSignIn?.()}
+                        >
+                          {lang === "bn" ? "Google দিয়ে Cloud অ্যাকাউন্ট" : "Cloud account with Google"}
+                        </button>
                       </>
                     ) : null}
                   </>
+                  )
                 ) : null}
 
+                {!(useCloudAuth && view === "login") ? (
                 <StepIndicator active={stepActive} labels={L} />
+                ) : null}
                 {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}
               </div>
             ) : null}
@@ -893,40 +942,16 @@ export function FamilyAuthGate({
                 <div className="card-sub">{useCloudAuth ? L.cloudCreateSub : L.createSub}</div>
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
-                <div className="advanced-block">
-                  <button
-                    type="button"
-                    className="link advanced-toggle"
-                    disabled={authLoading}
-                    onClick={() => setShowAdvancedServer((v) => !v)}
-                  >
-                    {showAdvancedServer
-                      ? lang === "bn"
-                        ? "সার্ভার সেটিংস লুকান"
-                        : "Hide server settings"
-                      : lang === "bn"
-                        ? "সার্ভার সেটিংস (উন্নত)"
-                        : "Server settings (advanced)"}
-                  </button>
-                  {showAdvancedServer ? (
-                    <div className="field">
-                      <label>API URL</label>
-                      <div className="input-wrap">
-                        <span className="input-icon">🌐</span>
-                        <input
-                          type="url"
-                          placeholder="http://127.0.0.1:8000"
-                          value={apiBaseDraft}
-                          disabled={authLoading}
-                          onChange={(e) => setApiBaseDraft(e.target.value)}
-                        />
-                      </div>
-                      <button type="button" className="link" style={{ marginTop: 6 }} disabled={authLoading} onClick={saveApiBase}>
-                        {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <ServerSettingsBlock
+                  useCloudAuth={useCloudAuth}
+                  showAdvancedServer={showAdvancedServer}
+                  setShowAdvancedServer={setShowAdvancedServer}
+                  authLoading={authLoading}
+                  lang={lang}
+                  apiBaseDraft={apiBaseDraft}
+                  setApiBaseDraft={setApiBaseDraft}
+                  saveApiBase={saveApiBase}
+                />
 
                 <form onSubmit={handleCreateFamily}>
                   <div className="field">
@@ -1002,7 +1027,7 @@ export function FamilyAuthGate({
                         />
                       ))}
                     </div>
-                    <div className="pw-meter-label">{L.bcryptNote}</div>
+                    <div className="pw-meter-label">{useCloudAuth ? (lang === "bn" ? "Firebase-এ নিরাপদে সংরক্ষিত" : "Securely stored in Firebase") : L.bcryptNote}</div>
                   </div>
                   <div className="field">
                     <label>{L.lblFamilyName}</label>
@@ -1075,7 +1100,7 @@ export function FamilyAuthGate({
                     </div>
                     <div className="hint">{L.responsibleHint}</div>
                   </div>
-                  <div className="warn-box">{L.ownerWarn}</div>
+                  {!useCloudAuth ? <div className="warn-box">{L.ownerWarn}</div> : null}
                   <button type="submit" className="btn-primary" disabled={authLoading}>
                     {authLoading ? t("creatingFamilyGate") : L.btnCreateSubmit}
                   </button>

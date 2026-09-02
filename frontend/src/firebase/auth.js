@@ -2,6 +2,8 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -33,7 +35,20 @@ export async function firebaseRegisterEmail(email, password, fullName = "") {
   if (fullName.trim()) {
     await updateProfile(cred.user, { displayName: fullName.trim() });
   }
-  return cred.user;
+  let verificationSent = false;
+  try {
+    await sendEmailVerification(cred.user);
+    verificationSent = true;
+  } catch {
+    /* rate limit or provider policy — account still created */
+  }
+  return { user: cred.user, verificationSent };
+}
+
+export async function firebaseSendPasswordReset(email) {
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error("Firebase is not configured");
+  await sendPasswordResetEmail(auth, String(email).trim());
 }
 
 export async function firebaseSignInGoogle() {

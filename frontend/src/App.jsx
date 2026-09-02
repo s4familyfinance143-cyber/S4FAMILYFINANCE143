@@ -87,6 +87,7 @@ import {
   clearCloudSession,
 } from "./lib/cloudSession";
 import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hydrateFromCache";
+import { isNativeApp } from "./lib/runtimeEnv";
 import {
   isGoogleDriveConfigured,
   connectGoogleDrive,
@@ -2996,7 +2997,7 @@ function App() {
     setCloudBusy(true);
     setAuthLoading(true);
     try {
-      const { user, familyId, existing } = await createCloudFamilyAccount({
+      const { user, familyId, existing, verificationSent } = await createCloudFamilyAccount({
         email,
         password,
         fullName,
@@ -3007,7 +3008,13 @@ function App() {
         deviceLabel: SYNC_DEVICE_ID || "mobile",
       });
       await activateCloudSession(user, familyId, familyName);
-      setMessage(existing ? t("cloudFamilyRestored") : t("cloudFamilyCreated"), "success");
+      if (existing) {
+        setMessage(t("cloudFamilyRestored"), "success");
+      } else if (verificationSent) {
+        setMessage(t("cloudFamilyCreatedVerify"), "success");
+      } else {
+        setMessage(t("cloudFamilyCreated"), "success");
+      }
     } catch (err) {
       setMessage(err.message || t("familyCreateFailed"), "error");
     } finally {
@@ -3280,7 +3287,7 @@ function App() {
     const name = window.prompt(t("lblName") || "Full name", "");
     setCloudBusy(true);
     try {
-      const user = await firebaseRegisterEmail(mail, pass, name || "");
+      const { user } = await firebaseRegisterEmail(mail, pass, name || "");
       await ensureUserProfile(user.uid, user);
       setFirebaseUser(user);
       setMessage(t("firebaseConnected"), "success");
@@ -8581,7 +8588,7 @@ function App() {
 
   return (
     <div className="app-layout" lang={currentLanguage.code} dir={currentLanguage.dir}>
-      {cloudOnlyMode ? (
+      {cloudOnlyMode && !isNativeApp() ? (
         <div className="cloud-only-banner" role="status">
           {t("cloudOnlyBanner")}
         </div>

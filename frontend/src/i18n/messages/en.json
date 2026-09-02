@@ -730,6 +730,7 @@
   "cloudOnlyNoData": "No cloud backup found. Sync once from a PC with backend, then try again.",
   "cloudOnlyNoDataCreate": "No family on this account yet. Use Create family to start a new cloud family.",
   "cloudFamilyCreated": "Family created in Firebase — opening dashboard",
+  "cloudFamilyCreatedVerify": "Family created. A verification link was sent to your email — check inbox/spam.",
   "cloudFamilyRestored": "Your cloud family was restored",
   "cloudOnlyFamilyLabel": "Cloud family",
   "showPassword": "Show password",

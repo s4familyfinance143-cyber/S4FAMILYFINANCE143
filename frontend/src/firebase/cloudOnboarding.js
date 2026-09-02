@@ -52,8 +52,11 @@ export async function createCloudFamilyAccount({
   deviceLabel = "mobile",
 }) {
   let user;
+  let verificationSent = false;
   try {
-    user = await firebaseRegisterEmail(email, password, fullName);
+    const registered = await firebaseRegisterEmail(email, password, fullName);
+    user = registered.user;
+    verificationSent = registered.verificationSent;
   } catch (err) {
     const code = String(err?.code || "");
     if (code.includes("email-already-in-use")) {
@@ -99,5 +102,5 @@ export async function createCloudFamilyAccount({
 
   await pushCloudSnapshot({ uid: user.uid, familyId, deviceLabel });
 
-  return { user, familyId, existing: false };
+  return { user, familyId, existing: false, verificationSent };
 }

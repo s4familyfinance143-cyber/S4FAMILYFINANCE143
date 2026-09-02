@@ -270,3 +270,26 @@ html[data-theme="dark"] .s4-login-shell .card select:focus{
 .s4-login-shell .lang-select{
   height:auto !important;min-height:0 !important;
 }
+
+.s4-login-shell .btn-google{
+  width:100%;padding:12px;border-radius:8px;font-size:13.5px;font-weight:700;
+  background:#fff;color:#333;border:1.5px solid #E0E0E0;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit;
+  transition:border-color .15s,background .15s;
+}
+.s4-login-shell .btn-google:hover{border-color:#1D9E75;background:#F4FBF8}
+.s4-login-shell .btn-google:disabled{opacity:.6;cursor:not-allowed}
+.s4-login-shell .btn-google-icon{
+  width:22px;height:22px;border-radius:50%;background:#fff;border:1px solid #E0E0E0;
+  display:inline-flex;align-items:center;justify-content:center;font-weight:800;
+  font-size:13px;color:#4285F4;
+}
+.s4-login-shell .cloud-footer{text-align:center;margin-top:16px;font-size:13px;color:#666}
+
+@media (max-width: 480px){
+  .s4-login-shell .shell{padding:12px 10px;align-items:flex-start;padding-top:20px}
+  .s4-login-shell .card{padding:20px 18px 18px;border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.28)}
+  .s4-login-shell .login-card-logo{max-height:96px;width:min(100%,260px)}
+  .s4-login-shell .brand-subtitle{font-size:11px;line-height:1.5;margin-bottom:8px}
+  .s4-login-shell .field{margin-bottom:12px}
+}

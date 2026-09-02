@@ -6,6 +6,7 @@ export {
   firebaseSignInGoogle,
   firebaseSignOut,
   firebaseUserLabel,
+  firebaseSendPasswordReset,
 } from "./auth";
 export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile } from "./cloudSync";
 export { createCloudFamilyAccount, seedNewFamilyCache } from "./cloudOnboarding";
