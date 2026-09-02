@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import "./styles/architecture-shell.css";
 import "./styles/design-polish.css";
+import "./styles/mobile-shell.css";
 import arMessages from "./i18n/messages/ar.json";
 import bnMessages from "./i18n/messages/bn.json";
 import enMessages from "./i18n/messages/en.json";
@@ -8606,14 +8607,11 @@ function App() {
   }, [token, activeFamilyId, activeMenu]);
 
   const mobileNavItems = [
-    ["dashboard", t("dashboard"), "⌂"],
-    ["wallets", t("wallets"), "◇"],
-    ["transactions", t("transactions"), "↕"],
-    ["grocery", t("groceryTitle"), "▤"],
-    ["reports", t("reports"), "▥"],
-    ["family", t("family"), "◎"],
-    ["sync", t("offlineSync"), "⟳"],
-    ["settings", t("settings"), "⚙"],
+    ["dashboard", appLanguage === "bn" ? "হোম" : "Home", "⌂"],
+    ["wallets", appLanguage === "bn" ? "ওয়ালেট" : "Wallet", "◇"],
+    ["transactions", appLanguage === "bn" ? "লেনদেন" : "Tx", "↕"],
+    ["grocery", appLanguage === "bn" ? "বাজার" : "Shop", "▤"],
+    ["__menu__", appLanguage === "bn" ? "মেনু" : "Menu", "☰"],
   ];
 
   // [menu, icon, label] — slim IA (no duplicate income/expense/transfer rows)

@@ -216,8 +216,14 @@ export function TopHeader({
         type="button"
         onClick={() => document.body.classList.toggle("mobile-drawer-open")}
         aria-label={t("openMobileMenu")}
+        title={t("openMobileMenu")}
       >
-        ☰
+        <span className="mobile-menu-bars" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span className="mobile-menu-text">{appLanguage === "bn" ? "মেনু" : "Menu"}</span>
       </button>
 
       <div className="mobile-brand" aria-label="S4 FAMILY 143">
@@ -271,7 +277,7 @@ export function TopHeader({
 
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn mobile-notify-btn"
           onClick={() => setActiveMenu("notifications")}
           title={t("notifications")}
         >
@@ -291,22 +297,31 @@ export function MobileBottomNavigation({ navItems, activeMenu, setActiveMenu }) 
   const primary = (navItems || []).slice(0, 5);
   return (
     <nav className="mobile-bottom-nav" aria-label="Primary">
-      {primary.map(([menu, label, icon]) => (
-        <button
-          key={menu}
-          type="button"
-          className={isNavItemActive(activeMenu, menu) ? "active" : ""}
-          onClick={() => {
-            setActiveMenu(menu);
-            closeMobileDrawer();
-          }}
-        >
-          <span className="mb-icon" aria-hidden="true">
-            {icon}
-          </span>
-          <small>{label}</small>
-        </button>
-      ))}
+      {primary.map(([menu, label, icon]) => {
+        const isMenu = menu === "__menu__";
+        const active = !isMenu && isNavItemActive(activeMenu, menu);
+        return (
+          <button
+            key={menu}
+            type="button"
+            className={`${active ? "active" : ""}${isMenu ? " is-menu-tab" : ""}`}
+            aria-label={label}
+            onClick={() => {
+              if (isMenu) {
+                document.body.classList.toggle("mobile-drawer-open");
+                return;
+              }
+              setActiveMenu(menu);
+              closeMobileDrawer();
+            }}
+          >
+            <span className="mb-icon" aria-hidden="true">
+              {icon}
+            </span>
+            <small>{label}</small>
+          </button>
+        );
+      })}
     </nav>
   );
 }

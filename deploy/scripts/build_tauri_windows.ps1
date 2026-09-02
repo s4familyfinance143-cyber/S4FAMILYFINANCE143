@@ -23,7 +23,7 @@ if (-not (Test-Path "node_modules")) {
 }
 
 $env:TAURI_PLATFORM = "windows"
-npm run tauri build -- --ci
+npm run tauri build
 if ($LASTEXITCODE -ne 0) { throw "Tauri build failed" }
 
 $bundleDir = Join-Path $Desktop "src-tauri\target\release\bundle\nsis"

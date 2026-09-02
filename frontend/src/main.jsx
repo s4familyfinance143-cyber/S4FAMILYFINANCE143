@@ -11,7 +11,10 @@ initWebSentry();
 
 if (Capacitor.isNativePlatform()) {
   import("@capacitor/status-bar")
-    .then(({ StatusBar, Style }) => StatusBar.setStyle({ style: Style.Dark }))
+    .then(({ StatusBar, Style }) => {
+      StatusBar.setStyle({ style: Style.Light }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: "#ffffff" }).catch(() => {});
+    })
     .catch(() => {});
 }
 
