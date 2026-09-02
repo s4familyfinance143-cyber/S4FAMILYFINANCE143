@@ -1,7 +1,7 @@
 {
   "name": "s4-family-finance-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.9",
   "description": "Tauri desktop shell for S4 Family Finance 143",
   "scripts": {
     "tauri": "tauri",

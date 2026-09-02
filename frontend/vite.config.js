@@ -3,13 +3,16 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const isCapacitor = process.env.CAPACITOR === 'true'
+const isTauri = Boolean(process.env.TAURI_PLATFORM)
+const isEmbeddedApp = isCapacitor || isTauri
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: isCapacitor ? './' : '/',
+  base: isEmbeddedApp ? './' : '/',
   plugins: [
     react(),
     VitePWA({
+      disable: isEmbeddedApp,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {

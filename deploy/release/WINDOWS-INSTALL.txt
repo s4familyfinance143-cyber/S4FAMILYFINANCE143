@@ -1,0 +1,13 @@
+S4 Family Finance 143 — Windows install
+=======================================
+
+Normal software install (no Python, no backend):
+
+1. Download S4-Family-Finance-143-Setup.exe from GitHub Releases
+2. Double-click Setup → Next → Install → Finish
+3. Open "S4 Family Finance 143" from Desktop or Start Menu
+4. Sign in with your Firebase email + password (same as phone APK)
+
+Cloud sync is automatic. No PC server or API URL needed.
+
+Optional backup: Settings → Cloud → Google Drive / local folder.

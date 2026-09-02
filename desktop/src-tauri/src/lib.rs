@@ -1,7 +1,7 @@
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    s4_family_finance_143_lib::run();
-}
-
-fn main() {
-    s4_family_finance_143_lib::run();
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .run(tauri::generate_context!())
+        .expect("error while running S4 desktop app");
 }

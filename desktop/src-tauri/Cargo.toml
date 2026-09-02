@@ -1,6 +1,6 @@
 [package]
 name = "s4-family-finance-143"
-version = "0.1.0"
+version = "1.0.9"
 description = "S4 Family Finance 143 desktop"
 authors = ["S4 Family"]
 edition = "2021"
