@@ -8226,7 +8226,6 @@ function App() {
     if (driveConnected) {
       refreshDriveFileList();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driveConnected]);
 
   useEffect(() => {

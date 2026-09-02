@@ -229,6 +229,16 @@ function LoginCardBrand({ subtitle }) {
   );
 }
 
+function MobileApiBanner({ nativeApp, useCloudAuth, labels }) {
+  if (!nativeApp || useCloudAuth) return null;
+  return (
+    <div className="warn-box" style={{ marginBottom: 14 }}>
+      <strong>{labels.mobileApiTitle}</strong>
+      <div style={{ marginTop: 6 }}>{labels.mobileApiHint}</div>
+    </div>
+  );
+}
+
 /**
  * Architecture auth gate:
  * Register/Login → Create Family (Owner) OR Join with Invite (relationship) → Approve later.
@@ -371,16 +381,6 @@ export function FamilyAuthGate({
     setMessage(L.mobileApiBlocked, "error");
     setShowAdvancedServer(true);
     return false;
-  }
-
-  function MobileApiBanner() {
-    if (!nativeApp || useCloudAuth) return null;
-    return (
-      <div className="warn-box" style={{ marginBottom: 14 }}>
-        <strong>{L.mobileApiTitle}</strong>
-        <div style={{ marginTop: 6 }}>{L.mobileApiHint}</div>
-      </div>
-    );
   }
 
   async function handleLogin(e) {
@@ -637,7 +637,7 @@ export function FamilyAuthGate({
                 </div>
 
                 <LoginCardBrand subtitle={L.subtitle} />
-                <MobileApiBanner />
+                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
                 <div className="advanced-block">
                   <button
@@ -891,7 +891,7 @@ export function FamilyAuthGate({
                 </div>
                 <div className="card-title">{L.createTitle}</div>
                 <div className="card-sub">{useCloudAuth ? L.cloudCreateSub : L.createSub}</div>
-                <MobileApiBanner />
+                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
                 <div className="advanced-block">
                   <button
@@ -1095,7 +1095,7 @@ export function FamilyAuthGate({
                 </div>
                 <div className="card-title">{L.joinTitle}</div>
                 <div className="card-sub">{L.joinSub}</div>
-                <MobileApiBanner />
+                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
                 <form onSubmit={handleJoinFamily}>
                   <div className="field">
