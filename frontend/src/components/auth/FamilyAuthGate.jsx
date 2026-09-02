@@ -324,7 +324,6 @@ export function FamilyAuthGate({
   firebaseConfigured = false,
   firebaseFirstMode = false,
   onFirebaseGoogleSignIn,
-  onCloudOnlySignIn,
   onCloudEmailSignIn,
   onCreateCloudFamily,
 }) {
@@ -847,29 +846,14 @@ export function FamilyAuthGate({
                   </>
                 )}
 
-                {view === "login" ? (
-                  useCloudAuth ? (
-                    <>
-                      <div className="divider">
-                        <span>{L.or}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-google"
-                        disabled={authLoading}
-                        onClick={() => onCloudOnlySignIn?.()}
-                      >
-                        <span className="btn-google-icon" aria-hidden="true">G</span>
-                        {L.cloudGoogleSignIn}
-                      </button>
-                      <div className="cloud-footer">
-                        {L.cloudNewUser}{" "}
-                        <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
-                          {L.btnCreate}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
+                {view === "login" && useCloudAuth ? (
+                  <div className="cloud-footer">
+                    {L.cloudNewUser}{" "}
+                    <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
+                      {L.btnCreate}
+                    </button>
+                  </div>
+                ) : view === "login" ? (
                   <>
                     <div className="divider">
                       <span>{L.or}</span>
@@ -905,7 +889,6 @@ export function FamilyAuthGate({
                       </>
                     ) : null}
                   </>
-                  )
                 ) : null}
 
                 {!(useCloudAuth && view === "login") ? (

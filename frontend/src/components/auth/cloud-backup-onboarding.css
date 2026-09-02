@@ -1,0 +1,171 @@
+.cloud-onboard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 18, 28, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.cloud-onboard-card {
+  width: min(100%, 440px);
+  max-height: min(92vh, 680px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 18px;
+  padding: 24px 22px 20px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+
+.cloud-onboard-eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #1d9e75;
+}
+
+.cloud-onboard-card h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: #111;
+}
+
+.cloud-onboard-sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #666;
+}
+
+.cloud-onboard-row {
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #fafafa;
+}
+
+.cloud-onboard-row--ok {
+  background: #edf9f4;
+  border-color: #c8e8dc;
+}
+
+.cloud-onboard-row-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.cloud-onboard-ico {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.cloud-onboard-row-head strong {
+  display: block;
+  font-size: 14px;
+  color: #111;
+  margin-bottom: 4px;
+}
+
+.cloud-onboard-row-head p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #777;
+}
+
+.cloud-onboard-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #1d9e75;
+  color: #fff;
+}
+
+.cloud-onboard-badge--muted {
+  background: #eef2f4;
+  color: #444;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-onboard-note {
+  margin: 0;
+  font-size: 12px;
+  color: #888;
+}
+
+.cloud-onboard-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.cloud-onboard-actions .btn {
+  flex: 1;
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+.cloud-onboard-actions .btn-primary {
+  background: #1d9e75;
+  color: #fff;
+}
+
+.cloud-onboard-actions .btn-ghost {
+  background: #f3f3f3;
+  color: #444;
+}
+
+.cloud-onboard-actions .btn-outline {
+  background: #fff;
+  color: #1d9e75;
+  border: 1.5px solid #1d9e75;
+}
+
+.cloud-onboard-row .btn-outline {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 4px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #fff;
+  color: #1d9e75;
+  border: 1.5px solid #1d9e75;
+  font-family: inherit;
+}
+
+.cloud-onboard-actions .btn:disabled,
+.cloud-onboard-row .btn-outline:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .cloud-onboard-card {
+    padding: 20px 16px 16px;
+    border-radius: 16px;
+  }
+
+  .cloud-onboard-actions {
+    flex-direction: column-reverse;
+  }
+}

@@ -9,6 +9,7 @@ import hiMessages from "./i18n/messages/hi.json";
 import urMessages from "./i18n/messages/ur.json";
 import { SplashScreen } from "./components/auth/SplashScreen";
 import { FamilyAuthGate } from "./components/auth/FamilyAuthGate";
+import { CloudBackupOnboarding } from "./components/auth/CloudBackupOnboarding";
 import {
   enqueueGroceryChange,
   enqueueOutboxChange,
@@ -88,6 +89,7 @@ import {
 } from "./lib/cloudSession";
 import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hydrateFromCache";
 import { isNativeApp } from "./lib/runtimeEnv";
+import { loadBackupOnboardingDone, saveBackupOnboardingDone } from "./lib/cloudOnboardingStorage";
 import {
   isGoogleDriveConfigured,
   connectGoogleDrive,
@@ -2512,6 +2514,7 @@ function App() {
   const [localFolderLabel, setLocalFolderLabel] = useState(() => getStoredFolderLabel());
   const [cloudAutoSync, setCloudAutoSync] = useState(() => loadCloudAutoSyncSettings());
   const [cloudOnlyMode, setCloudOnlyMode] = useState(() => loadCloudOnlyMode());
+  const [showBackupOnboarding, setShowBackupOnboarding] = useState(false);
   const cloudAutoSyncRef = useRef(cloudAutoSync);
   const cloudAutoBackupRunningRef = useRef(false);
 
@@ -2883,6 +2886,42 @@ function App() {
     });
     await hydrateFromCloudCache(familyId);
     await refreshFirebaseMeta(user.uid);
+    if (!loadBackupOnboardingDone(user.uid)) {
+      setShowBackupOnboarding(true);
+    }
+  }
+
+  function finishBackupOnboarding(skipped = false) {
+    if (firebaseUser?.uid) saveBackupOnboardingDone(firebaseUser.uid, skipped);
+    setShowBackupOnboarding(false);
+  }
+
+  async function handleOnboardingDriveConnect() {
+    await handleDriveConnect();
+    if (getStoredDriveToken()) {
+      const next = saveCloudAutoSyncSettings({
+        ...cloudAutoSyncRef.current,
+        enabled: true,
+        drive: true,
+        firebase: true,
+      });
+      setCloudAutoSync(next);
+      cloudAutoSyncRef.current = next;
+    }
+  }
+
+  async function handleOnboardingPickFolder() {
+    await handlePickLocalFolder();
+    if (getStoredFolderLabel()) {
+      const next = saveCloudAutoSyncSettings({
+        ...cloudAutoSyncRef.current,
+        enabled: true,
+        local: true,
+        firebase: true,
+      });
+      setCloudAutoSync(next);
+      cloudAutoSyncRef.current = next;
+    }
   }
 
   async function resolveCloudFamilyId(uid) {
@@ -2925,33 +2964,6 @@ function App() {
     const cache = await hydrateFamilyFromOfflineCache(familyId);
     applyOfflineCacheToState(cache);
     return cache;
-  }
-
-  async function handleCloudOnlySignIn() {
-    if (!FIREBASE_CONFIGURED) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    setCloudBusy(true);
-    setAuthLoading(true);
-    try {
-      const user = await firebaseSignInGoogle();
-      await ensureUserProfile(user.uid, user);
-
-      const familyId = await resolveCloudFamilyId(user.uid);
-      if (!familyId) {
-        setMessage(t("cloudOnlyNoDataCreate"), "error");
-        return;
-      }
-
-      await activateCloudSession(user, familyId);
-      setMessage(t("cloudOnlySignInSuccess"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-      setAuthLoading(false);
-    }
   }
 
   async function handleCloudEmailSignIn({ email, password }) {
@@ -8578,7 +8590,6 @@ function App() {
           firebaseConfigured={FIREBASE_CONFIGURED}
           firebaseFirstMode={FIREBASE_FIRST_MODE}
           onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
-          onCloudOnlySignIn={handleCloudOnlySignIn}
           onCloudEmailSignIn={handleCloudEmailSignIn}
           onCreateCloudFamily={handleCreateCloudFamily}
         />
@@ -8588,6 +8599,21 @@ function App() {
 
   return (
     <div className="app-layout" lang={currentLanguage.code} dir={currentLanguage.dir}>
+      {showBackupOnboarding && cloudOnlyMode && firebaseUser?.uid ? (
+        <CloudBackupOnboarding
+          t={t}
+          lang={appLanguage === "en" ? "en" : "bn"}
+          cloudBusy={cloudBusy}
+          driveConfigured={DRIVE_CONFIGURED}
+          driveConnected={driveConnected}
+          localFolderSupported={LOCAL_FOLDER_SUPPORTED}
+          localFolderLabel={localFolderLabel}
+          onDriveConnect={handleOnboardingDriveConnect}
+          onPickLocalFolder={handleOnboardingPickFolder}
+          onSkip={() => finishBackupOnboarding(true)}
+          onContinue={() => finishBackupOnboarding(false)}
+        />
+      ) : null}
       {cloudOnlyMode && !isNativeApp() ? (
         <div className="cloud-only-banner" role="status">
           {t("cloudOnlyBanner")}
