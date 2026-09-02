@@ -2,6 +2,7 @@ import { loadOfflineSnapshot } from "./offlineCache";
 
 const SNAPSHOT_KEYS = [
   ["finance", "wallets"],
+  ["finance", "categories"],
   ["finance", "transactions"],
   ["finance", "savings"],
   ["finance", "loans"],

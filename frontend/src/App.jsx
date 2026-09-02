@@ -91,6 +91,11 @@ import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hy
 import { isNativeApp } from "./lib/runtimeEnv";
 import { loadBackupOnboardingDone, saveBackupOnboardingDone } from "./lib/cloudOnboardingStorage";
 import {
+  DEFAULT_CLOUD_CATEGORIES,
+  applyWalletBalances,
+  buildLocalTransaction,
+} from "./lib/cloudLocalFinance";
+import {
   isGoogleDriveConfigured,
   connectGoogleDrive,
   getStoredDriveToken,
@@ -2862,6 +2867,7 @@ function App() {
 
   async function pushCloudSnapshotIfReady() {
     if (!firebaseUser?.uid || !activeFamilyId) return;
+    if (!isBrowserOnline()) return;
     try {
       await pushCloudSnapshot({
         uid: firebaseUser.uid,
@@ -2871,6 +2877,36 @@ function App() {
     } catch {
       /* ignore background sync errors */
     }
+  }
+
+  async function loadOfflineFinanceCache(module, name) {
+    if (!activeFamilyId) return undefined;
+    const cached = await loadOfflineSnapshot(activeFamilyId, module, name).catch(() => null);
+    return cached?.data;
+  }
+
+  function enableCloudAutoSyncDefaults() {
+    if (!FIREBASE_CONFIGURED) return;
+    const next = saveCloudAutoSyncSettings({
+      ...cloudAutoSyncRef.current,
+      enabled: true,
+      firebase: true,
+      intervalMinutes: 15,
+    });
+    setCloudAutoSync(next);
+    cloudAutoSyncRef.current = next;
+  }
+
+  async function refreshCloudLocalAll() {
+    await loadWallets();
+    await loadCategories();
+    await loadTransactions();
+    await loadSavings();
+    await loadLoans();
+    await loadBudgets();
+    await loadRecurring();
+    await loadGoals();
+    await loadDashboard();
   }
 
   async function activateCloudSession(user, familyId, familyName = "") {
@@ -2886,6 +2922,10 @@ function App() {
     });
     await hydrateFromCloudCache(familyId);
     await refreshFirebaseMeta(user.uid);
+    enableCloudAutoSyncDefaults();
+    if (isBrowserOnline()) {
+      await pushCloudSnapshotIfReady();
+    }
     if (!loadBackupOnboardingDone(user.uid)) {
       setShowBackupOnboarding(true);
     }
@@ -2943,6 +2983,7 @@ function App() {
     const phase15 = cache["life/phase15"];
     const phase16 = cache["life/phase16"];
     if (Array.isArray(cache["finance/wallets"])) setWallets(cache["finance/wallets"]);
+    if (Array.isArray(cache["finance/categories"])) setCategories(cache["finance/categories"]);
     if (Array.isArray(cache["finance/transactions"])) setTransactions(cache["finance/transactions"]);
     if (Array.isArray(cache["finance/savings"])) setSavings(cache["finance/savings"]);
     if (Array.isArray(cache["finance/loans"])) setLoans(cache["finance/loans"]);
@@ -4370,6 +4411,25 @@ function App() {
   }
 
   async function loadCategories() {
+    if (isCloudLocalMode()) {
+      let data = await loadOfflineFinanceCache("finance", "categories");
+      if (!Array.isArray(data) || !data.length) {
+        data = DEFAULT_CLOUD_CATEGORIES;
+        await saveOfflineSnapshot(activeFamilyId, "finance", "categories", data).catch(() => {});
+      }
+      setCategories(data);
+      if (data.length && !txForm.category_id) {
+        setTxForm((prev) => ({ ...prev, category_id: data[0].id }));
+      }
+      const expense = data.find((c) => c.category_type === "EXPENSE");
+      if (expense && !budgetForm.category_id) {
+        setBudgetForm((prev) => ({ ...prev, category_id: expense.id }));
+      }
+      if (expense && !recurringForm.category_id) {
+        setRecurringForm((prev) => ({ ...prev, category_id: expense.id }));
+      }
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4430,6 +4490,11 @@ function App() {
   }
 
   async function loadSavings() {
+    if (isCloudLocalMode()) {
+      const data = await loadOfflineFinanceCache("finance", "savings");
+      if (Array.isArray(data)) setSavings(data);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4457,6 +4522,11 @@ function App() {
   }
 
   async function loadLoans() {
+    if (isCloudLocalMode()) {
+      const data = await loadOfflineFinanceCache("finance", "loans");
+      if (Array.isArray(data)) setLoans(data);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4484,6 +4554,14 @@ function App() {
   }
 
   async function loadBudgets() {
+    if (isCloudLocalMode()) {
+      const cached = await loadOfflineFinanceCache("finance", "budgets");
+      if (cached) {
+        setBudgets(Array.isArray(cached) ? cached : cached.data || []);
+        setBudgetStatus(cached.statusData || null);
+      }
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4510,6 +4588,11 @@ function App() {
   }
 
   async function loadRecurring() {
+    if (isCloudLocalMode()) {
+      const data = await loadOfflineFinanceCache("finance", "recurring");
+      if (Array.isArray(data)) setRecurringItems(data);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -4530,6 +4613,13 @@ function App() {
   }
 
   async function loadGoals() {
+    if (isCloudLocalMode()) {
+      const data = await loadOfflineFinanceCache("finance", "goals");
+      if (Array.isArray(data)) setGoals(data);
+      const summary = await loadOfflineFinanceCache("finance", "goalSummary");
+      if (summary) setGoalSummary(summary);
+      return;
+    }
     if (!token) return;
 
     try {
@@ -6309,7 +6399,10 @@ function App() {
         const next = [...wallets, newWallet];
         setWallets(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
-        await pushCloudSnapshotIfReady();
+        if (isBrowserOnline()) {
+          await pushCloudSnapshotIfReady();
+          runCloudAutoBackup({ force: true });
+        }
         setWalletForm({
           name: "",
           account_type: "CASH",
@@ -6410,6 +6503,30 @@ function App() {
 
     try {
       setStatus("Posting transaction...");
+
+      if (isCloudLocalMode()) {
+        const newTx = buildLocalTransaction({
+          familyId: activeFamilyId,
+          txForm,
+          currency: currencyCode(),
+        });
+        const nextTx = [...transactions, newTx];
+        const nextWallets = applyWalletBalances(wallets, txForm);
+        setTransactions(nextTx);
+        setWallets(nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        if (isBrowserOnline()) {
+          await pushCloudSnapshotIfReady();
+          runCloudAutoBackup({ force: true });
+        }
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        setTxForm((prev) => ({ ...prev, amount: "", description: "", split_enabled: false }));
+        setMessage(t("transactionPosted"), "success");
+        setStatus("");
+        return;
+      }
+
       const clientRequestId = `web-tx-${Date.now()}`;
       const txType = String(txForm.type || "").toUpperCase();
       let createdId = null;
@@ -8248,16 +8365,34 @@ function App() {
   }, [driveConnected]);
 
   useEffect(() => {
+    if (cloudOnlyMode && firebaseUser?.uid && !cloudAutoSyncRef.current.enabled) {
+      enableCloudAutoSyncDefaults();
+    }
+  }, [cloudOnlyMode, firebaseUser?.uid]);
+
+  useEffect(() => {
     if (!cloudOnlyMode || token || !activeFamilyId) return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      hydrateFromCloudCache(activeFamilyId);
-      loadDashboard();
+      refreshCloudLocalAll();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudOnlyMode, token, activeFamilyId]);
+
+  useEffect(() => {
+    if (!cloudOnlyMode || !firebaseUser?.uid || !activeFamilyId) return undefined;
+
+    const syncWhenOnline = () => {
+      pushCloudSnapshotIfReady();
+      runCloudAutoBackup({ force: true });
+    };
+
+    window.addEventListener("online", syncWhenOnline);
+    return () => window.removeEventListener("online", syncWhenOnline);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudOnlyMode, firebaseUser?.uid, activeFamilyId]);
 
   useEffect(() => {
     if (!token) return;
@@ -8610,6 +8745,7 @@ function App() {
           localFolderLabel={localFolderLabel}
           onDriveConnect={handleOnboardingDriveConnect}
           onPickLocalFolder={handleOnboardingPickFolder}
+          onLocalDownload={handleLocalDownload}
           onSkip={() => finishBackupOnboarding(true)}
           onContinue={() => finishBackupOnboarding(false)}
         />

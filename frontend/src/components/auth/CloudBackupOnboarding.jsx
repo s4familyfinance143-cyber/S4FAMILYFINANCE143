@@ -13,6 +13,7 @@ export function CloudBackupOnboarding({
   localFolderLabel,
   onDriveConnect,
   onPickLocalFolder,
+  onLocalDownload,
   onSkip,
   onContinue,
 }) {
@@ -70,7 +71,14 @@ export function CloudBackupOnboarding({
               {L.localPick}
             </button>
           ) : (
-            <p className="cloud-onboard-note">{L.localLater}</p>
+            <>
+              <p className="cloud-onboard-note">{L.localLater}</p>
+              {onLocalDownload ? (
+                <button type="button" className="btn btn-outline" disabled={cloudBusy} onClick={onLocalDownload} style={{ marginTop: 8 }}>
+                  {L.localDownload}
+                </button>
+              ) : null}
+            </>
           )}
         </div>
 
@@ -103,7 +111,8 @@ const UI = {
     localHint: "PC/ব্রাউজারে folder select করে backup",
     localHintMobile: "ফোনে folder picker সীমিত — PC Settings থেকেও করা যাবে",
     localPick: "Folder বেছে নিন",
-    localLater: "পরে Settings → Cloud থেকে করুন",
+    localDownload: "Backup file download (ফোন)",
+    localLater: "PC-তে folder select করুন, অথবা নিচে download",
     skip: "Skip — পরে করব",
     continue: "অ্যাপে যান",
   },
@@ -122,7 +131,8 @@ const UI = {
     localHint: "Pick a folder on this device for backup files",
     localHintMobile: "Folder picker is limited on phone — you can also set this later on PC in Settings",
     localPick: "Choose folder",
-    localLater: "Set up later in Settings → Cloud",
+    localDownload: "Download backup file (phone)",
+    localLater: "Pick a folder on PC, or download backup below",
     skip: "Skip for now",
     continue: "Continue to app",
   },

@@ -1,6 +1,7 @@
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 import { saveOfflineSnapshot } from "../lib/offlineCache";
+import { DEFAULT_CLOUD_CATEGORIES } from "../lib/cloudLocalFinance";
 import { firebaseRegisterEmail, firebaseSignInEmail } from "./auth";
 import { ensureUserProfile, getCloudSnapshotMeta, pushCloudSnapshot } from "./cloudSync";
 import { getFirestoreDb } from "./config";
@@ -17,6 +18,7 @@ export async function seedNewFamilyCache(
   { familyName, ownerName, currency = "BDT", timezone = "Asia/Dhaka", ownerRelation = "Owner" },
 ) {
   await saveOfflineSnapshot(familyId, "finance", "wallets", []);
+  await saveOfflineSnapshot(familyId, "finance", "categories", DEFAULT_CLOUD_CATEGORIES);
   await saveOfflineSnapshot(familyId, "finance", "transactions", []);
   await saveOfflineSnapshot(familyId, "finance", "savings", []);
   await saveOfflineSnapshot(familyId, "finance", "loans", []);

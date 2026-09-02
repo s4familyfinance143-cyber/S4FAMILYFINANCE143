@@ -10,7 +10,7 @@ export const CLOUD_SYNC_INTERVALS = [
 
 const DEFAULT_SETTINGS = {
   enabled: false,
-  intervalMinutes: 60,
+  intervalMinutes: 15,
   local: true,
   drive: true,
   firebase: true,
