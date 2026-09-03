@@ -21,6 +21,34 @@ export function subscribeFirebaseAuth(callback) {
   return onAuthStateChanged(auth, callback);
 }
 
+export function isFirebaseEmailVerified(user) {
+  if (!user) return false;
+  // Must match Firestore rules: request.auth.token.email_verified == true
+  return Boolean(user.emailVerified);
+}
+
+export async function firebaseReloadUser() {
+  const auth = getFirebaseAuth();
+  if (!auth?.currentUser) return null;
+  await auth.currentUser.reload();
+  try {
+    // Refresh ID token so Firestore rules see updated email_verified claim.
+    await auth.currentUser.getIdToken(true);
+  } catch {
+    /* ignore token refresh errors */
+  }
+  return auth.currentUser;
+}
+
+export async function firebaseResendEmailVerification(user = null) {
+  const auth = getFirebaseAuth();
+  const target = user || auth?.currentUser;
+  if (!target) throw new Error("No signed-in user");
+  if (isFirebaseEmailVerified(target)) return { alreadyVerified: true };
+  await sendEmailVerification(target);
+  return { sent: true };
+}
+
 export async function firebaseSignInEmail(email, password) {
   const auth = getFirebaseAuth();
   if (!auth) throw new Error("Firebase is not configured");

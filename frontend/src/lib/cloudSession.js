@@ -11,6 +11,20 @@ export function isFirebaseFirstMode() {
   return flag !== "0" && flag !== "false" && flag !== "no";
 }
 
+/**
+ * Invoice-tracker style: block app until Firebase email is verified.
+ * Default ON in Firebase-first mode. Override with VITE_REQUIRE_EMAIL_VERIFICATION=0.
+ */
+export function requireEmailVerification() {
+  if (!isFirebaseConfigured()) return false;
+  const raw = import.meta.env.VITE_REQUIRE_EMAIL_VERIFICATION;
+  if (raw !== undefined && String(raw).trim() !== "") {
+    const flag = String(raw).trim().toLowerCase();
+    return flag !== "0" && flag !== "false" && flag !== "no";
+  }
+  return isFirebaseFirstMode();
+}
+
 export function loadCloudOnlyMode() {
   try {
     return localStorage.getItem(CLOUD_ONLY_KEY) === "1";

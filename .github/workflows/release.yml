@@ -65,14 +65,28 @@ jobs:
           npm run generate:icons
           CAPACITOR=true npx vite build
           npx cap sync android
-      - name: Build debug APK
+      - name: Build release APK (CI-signed)
         working-directory: frontend/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          # CI distribution uses the Android debug keystore so assembleRelease
+          # works without a private Play Store keystore secret.
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=S4 CI, OU=S4, O=S4, L=Dhaka, ST=Dhaka, C=BD"
+          fi
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
       - name: Rename APK
         run: |
-          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk S4-Family-Finance-143.apk
+          cp frontend/android/app/build/outputs/apk/release/app-release.apk S4-Family-Finance-143.apk \
+            || cp frontend/android/app/build/outputs/apk/release/*.apk S4-Family-Finance-143.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk

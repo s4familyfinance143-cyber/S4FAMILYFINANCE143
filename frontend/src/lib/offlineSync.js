@@ -9,6 +9,36 @@ import {
 export { enqueueOutboxChange, countPendingOutbox, isBrowserOnline, listPendingOutbox };
 
 /**
+ * Hybrid cloud path: push full IndexedDB snapshot to Firestore, then clear local outbox.
+ * Used when Firebase-first / cloud-only (no PC backend sync/push).
+ */
+export async function flushCloudSnapshotOutbox({
+  familyId,
+  uid,
+  pushSnapshot,
+  deviceLabel = "web",
+}) {
+  if (!familyId || !uid || typeof pushSnapshot !== "function") {
+    return { pushed: 0, skipped: true, cloud: true };
+  }
+  if (!isBrowserOnline()) {
+    return { pushed: 0, offline: true, cloud: true };
+  }
+
+  const pending = await listPendingOutbox(familyId);
+  await pushSnapshot({ uid, familyId, deviceLabel });
+  if (pending.length) {
+    await markOutboxSynced(pending.map((row) => row.id));
+  }
+  return {
+    pushed: pending.length,
+    applied: null,
+    cloud: true,
+    empty: pending.length === 0,
+  };
+}
+
+/**
  * Flush local IndexedDB outbox via Phase 10B POST /sync/push.
  * apiPost(path, body) should return parsed JSON and throw on HTTP error.
  */

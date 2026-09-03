@@ -39,12 +39,9 @@ cd S4FAMILYFINANCE143
 
 Open: **http://127.0.0.1:5173**
 
-### Demo login
+### Login
 
-| Field | Value |
-|-------|-------|
-| Email | `owner@s4family.com` |
-| Password | `S4Family143!` |
+Use your own Firebase cloud account (email + password). Create a family from the login screen — no shared demo password is published.
 
 ---
 
@@ -68,14 +65,17 @@ Go to **[Releases](https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE14
 
 Download APK from Releases → install on phone (allow unknown sources).
 
-### Windows EXE
+### Windows EXE (Tauri)
 
 ```powershell
-cd backend
-.\compile_windows_exe_installer_clean_v4.ps1
+cd desktop
+npm install
+npm run build
 ```
 
-Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php).
+Installer output is under `desktop/src-tauri/target/release/bundle/nsis/`.
+
+Or use GitHub Actions **Release** workflow artifacts.
 
 ---
 

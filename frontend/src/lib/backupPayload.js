@@ -7,7 +7,7 @@ export function backupFileName(familyId = "family") {
 }
 
 export async function buildBackupPayload(familyId, deviceLabel = "web") {
-  const rows = await exportAllOfflineSnapshots();
+  const rows = await exportAllOfflineSnapshots(familyId || null);
   return {
     version: 1,
     exported_at: new Date().toISOString(),

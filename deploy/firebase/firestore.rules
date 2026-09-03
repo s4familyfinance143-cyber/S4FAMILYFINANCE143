@@ -1,16 +1,72 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function emailOk() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function familyMember(familyId) {
+      return signedIn()
+        && emailOk()
+        && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    function familyOwner(familyId) {
+      return familyMember(familyId)
+        && get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role == 'OWNER';
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isOwner(userId);
 
       match /cloudSnapshots/{snapshotId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isOwner(userId) && emailOk();
 
         match /parts/{partId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read, write: if isOwner(userId) && emailOk();
         }
       }
+    }
+
+    // Shared family shell + snapshot (multi-account truth)
+    match /families/{familyId} {
+      allow read: if familyMember(familyId);
+      allow create: if signedIn() && emailOk();
+      // Owner updates OR bootstrap while creating (member already written as self)
+      allow update: if familyOwner(familyId)
+        || (signedIn() && emailOk() && familyMember(familyId));
+
+      match /members/{memberId} {
+        allow read: if familyMember(familyId) || (signedIn() && request.auth.uid == memberId);
+        allow create: if signedIn() && emailOk() && request.auth.uid == memberId;
+        allow update, delete: if familyOwner(familyId)
+          || (signedIn() && emailOk() && request.auth.uid == memberId);
+      }
+
+      match /cloudSnapshots/{snapshotId} {
+        allow read, write: if familyMember(familyId);
+
+        match /parts/{partId} {
+          allow read, write: if familyMember(familyId);
+        }
+      }
+    }
+
+    // Global invite codes — any verified user can read a code to join;
+    // create/update restricted to signed-in verified users (owner publishes).
+    match /familyInvites/{code} {
+      allow read: if signedIn() && emailOk();
+      allow create, update: if signedIn() && emailOk();
+      allow delete: if signedIn() && emailOk()
+        && resource.data.owner_uid == request.auth.uid;
     }
   }
 }

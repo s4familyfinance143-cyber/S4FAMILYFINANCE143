@@ -2,9 +2,11 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 import { saveOfflineSnapshot } from "../lib/offlineCache";
 import { DEFAULT_CLOUD_CATEGORIES } from "../lib/cloudLocalFinance";
-import { firebaseRegisterEmail, firebaseSignInEmail } from "./auth";
-import { ensureUserProfile, getCloudSnapshotMeta, pushCloudSnapshot } from "./cloudSync";
+import { seedCloudModuleCaches } from "../lib/cloudApiShim";
+import { firebaseRegisterEmail, firebaseSignInEmail, isFirebaseEmailVerified } from "./auth";
+import { ensureUserProfile, getCloudSnapshotMeta, getUserFamilyProfile, pushCloudSnapshot } from "./cloudSync";
 import { getFirestoreDb } from "./config";
+import { ensureFamilyCloudShell } from "./familyCloud";
 
 function newFamilyId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -15,7 +17,7 @@ function newFamilyId() {
 
 export async function seedNewFamilyCache(
   familyId,
-  { familyName, ownerName, currency = "BDT", timezone = "Asia/Dhaka", ownerRelation = "Owner" },
+  { familyName, ownerName, ownerEmail = "", currency = "BDT", timezone = "Asia/Dhaka", ownerRelation = "Owner" },
 ) {
   await saveOfflineSnapshot(familyId, "finance", "wallets", []);
   await saveOfflineSnapshot(familyId, "finance", "categories", DEFAULT_CLOUD_CATEGORIES);
@@ -38,10 +40,16 @@ export async function seedNewFamilyCache(
     created_at: new Date().toISOString(),
     source: "firebase_cloud",
   });
+  await seedCloudModuleCaches(familyId, {
+    ownerName,
+    ownerEmail,
+    ownerRelation,
+  });
 }
 
 /**
  * Create Firebase Auth account + new cloud family (no PC backend).
+ * Snapshot upload waits until email is verified (hybrid lock).
  */
 export async function createCloudFamilyAccount({
   email,
@@ -63,9 +71,25 @@ export async function createCloudFamilyAccount({
     const code = String(err?.code || "");
     if (code.includes("email-already-in-use")) {
       user = await firebaseSignInEmail(email, password);
-      const meta = await getCloudSnapshotMeta(user.uid);
-      if (meta?.familyId) {
-        return { user, familyId: meta.familyId, existing: true };
+      const profile = await getUserFamilyProfile(user.uid);
+      if (profile?.family_id) {
+        return {
+          user,
+          familyId: profile.family_id,
+          existing: true,
+          verificationSent: false,
+        };
+      }
+      // Verified users may only have snapshot meta.
+      if (isFirebaseEmailVerified(user)) {
+        try {
+          const meta = await getCloudSnapshotMeta(user.uid);
+          if (meta?.familyId) {
+            return { user, familyId: meta.familyId, existing: true, verificationSent: false };
+          }
+        } catch {
+          /* ignore */
+        }
       }
     } else {
       throw err;
@@ -78,6 +102,7 @@ export async function createCloudFamilyAccount({
   await seedNewFamilyCache(familyId, {
     familyName,
     ownerName: fullName,
+    ownerEmail: email,
     currency,
     timezone,
     ownerRelation,
@@ -102,7 +127,23 @@ export async function createCloudFamilyAccount({
     );
   }
 
-  await pushCloudSnapshot({ uid: user.uid, familyId, deviceLabel });
+  if (isFirebaseEmailVerified(user)) {
+    await ensureFamilyCloudShell({
+      familyId,
+      uid: user.uid,
+      email: user.email,
+      displayName: fullName,
+      familyName,
+      role: "OWNER",
+    });
+    await pushCloudSnapshot({
+      uid: user.uid,
+      familyId,
+      deviceLabel,
+      email: user.email,
+      displayName: fullName,
+    });
+  }
 
   return { user, familyId, existing: false, verificationSent };
 }

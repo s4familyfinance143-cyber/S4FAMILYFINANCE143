@@ -66,8 +66,8 @@ export async function loadOfflineSnapshot(familyId, module, name = "default") {
   return row;
 }
 
-/** Export every cached snapshot row (for Firebase / manual backup). */
-export async function exportAllOfflineSnapshots() {
+/** Export cached snapshot rows (optionally one family only). */
+export async function exportAllOfflineSnapshots(familyId = null) {
   const db = await openDb();
   const tx = db.transaction(STORE, "readonly");
   const rows = await new Promise((resolve, reject) => {
@@ -77,7 +77,9 @@ export async function exportAllOfflineSnapshots() {
   });
   await txDone(tx);
   db.close();
-  return rows;
+  if (!familyId) return rows;
+  const want = String(familyId);
+  return rows.filter((row) => String(row?.familyId || "") === want);
 }
 
 /** Restore rows produced by exportAllOfflineSnapshots. */

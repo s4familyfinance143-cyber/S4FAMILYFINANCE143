@@ -204,10 +204,13 @@ export function TopHeader({
     }
   }
 
-  const _initials = String(currentUser?.full_name || email || "S4")
+  const _initials = String(currentUser?.full_name || email || "SH")
     .trim()
+    .split(/\s+/)
     .slice(0, 2)
-    .toUpperCase();
+    .map((part) => part[0] || "")
+    .join("")
+    .toUpperCase() || "SH";
 
   return (
     <header className="topbar arch-shell-topbar">
@@ -226,6 +229,13 @@ export function TopHeader({
         <span className="mobile-menu-text">{appLanguage === "bn" ? "মেনু" : "Menu"}</span>
       </button>
 
+      <div className="shoyb-top-copy">
+        <div className="brand-heading">
+          <span className="s4">S4</span> FAMILY 143 — Dashboard
+        </div>
+        <div className="brand-sub">{t("welcomeBackOverview")}</div>
+      </div>
+
       <div className="mobile-brand" aria-label="S4 FAMILY 143">
         <button
           type="button"
@@ -236,8 +246,10 @@ export function TopHeader({
           <img src={BRAND_LOGO_SRC} alt="" />
         </button>
         <div className="mobile-brand-copy">
-          <div className="mobile-brand-title">S4 FAMILY 143</div>
-          <div className="mobile-brand-sub">{currentUser?.full_name || t("offlineReady")}</div>
+          <div className="mobile-brand-title">
+            <span className="s4">S4</span> FAMILY 143
+          </div>
+          <div className="mobile-brand-sub">{t("brandTagline")}</div>
         </div>
       </div>
 
@@ -277,12 +289,23 @@ export function TopHeader({
 
         <button
           type="button"
-          className="icon-btn mobile-notify-btn"
+          className="icon-btn mobile-notify-btn shoyb-bell bell-btn"
           onClick={() => setActiveMenu("notifications")}
           title={t("notifications")}
         >
           🔔
-          {Number(unreadCount) > 0 ? <span className="dot-badge" /> : null}
+          {Number(unreadCount) > 0 ? (
+            <span className="dot-badge bell-dot">{Number(unreadCount) > 9 ? "9+" : unreadCount}</span>
+          ) : null}
+        </button>
+
+        <button
+          type="button"
+          className="avatar-mini"
+          onClick={() => setActiveMenu("settings")}
+          title={t("settings")}
+        >
+          {_initials}
         </button>
 
         <button type="button" className="btn topbar-logout" onClick={() => onLogout?.()} title={t("logout")}>
@@ -299,16 +322,22 @@ export function MobileBottomNavigation({ navItems, activeMenu, setActiveMenu }) 
     <nav className="mobile-bottom-nav" aria-label="Primary">
       {primary.map(([menu, label, icon]) => {
         const isMenu = menu === "__menu__";
-        const active = !isMenu && isNavItemActive(activeMenu, menu);
+        const isAdd = menu === "__add__";
+        const active = !isMenu && !isAdd && isNavItemActive(activeMenu, menu);
         return (
           <button
             key={menu}
             type="button"
-            className={`${active ? "active" : ""}${isMenu ? " is-menu-tab" : ""}`}
-            aria-label={label}
+            className={`${active ? "active" : ""}${isMenu ? " is-menu-tab" : ""}${isAdd ? " is-add-tab" : ""}`}
+            aria-label={label || "Add"}
             onClick={() => {
               if (isMenu) {
                 document.body.classList.toggle("mobile-drawer-open");
+                return;
+              }
+              if (isAdd) {
+                setActiveMenu("transactions");
+                closeMobileDrawer();
                 return;
               }
               setActiveMenu(menu);
@@ -318,7 +347,7 @@ export function MobileBottomNavigation({ navItems, activeMenu, setActiveMenu }) 
             <span className="mb-icon" aria-hidden="true">
               {icon}
             </span>
-            <small>{label}</small>
+            {label ? <small>{label}</small> : <small />}
           </button>
         );
       })}

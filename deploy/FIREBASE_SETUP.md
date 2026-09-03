@@ -1,4 +1,12 @@
-# Firebase setup — S4 Family Finance (no VPS cloud backup)
+## Hybrid architecture (locked)
+
+See **`deploy/HYBRID_ARCHITECTURE_LOCK.md`**:
+
+- Firebase Email/Password + **email verification required**
+- Offline-first IndexedDB + outbox
+- Cloud truth = Firestore snapshot
+- Extra backups = Local folder JSON + Google Drive
+- No required PC backend / Django ERP for end users
 
 ## 1. Create project
 
@@ -22,16 +30,27 @@
 
 1. Firebase Console → Firestore → **Rules**
 2. Paste contents of `deploy/firebase/firestore.rules`
-3. **Publish**
+3. **Publish** (rules require **email verified** for cloud snapshot read/write)
+
+4. Firebase Console → Storage → **Get started** (enable Storage; Blaze may be required for cross-service rules)
+5. Storage → **Rules** → paste `deploy/firebase/storage.rules` → **Publish**
 
 Or with Firebase CLI:
 
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase init firestore   # select your project, use deploy/firebase/firestore.rules
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,storage --project s4-family-finance
 ```
+
+Shared family paths used by the app:
+
+- `users/{uid}/cloudSnapshots/latest` — personal backup
+- `families/{familyId}/members/{uid}` — RBAC
+- `families/{familyId}/cloudSnapshots/latest` — shared family truth
+- `familyInvites/{CODE}` — cross-account invite join
+- Storage `families/{familyId}/documents|attachments/...` — real file uploads
+
 
 ## 5. Register web app
 

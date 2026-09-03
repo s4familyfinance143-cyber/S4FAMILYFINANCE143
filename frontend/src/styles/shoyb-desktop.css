@@ -1,0 +1,929 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --paper: #f6f1e4;
+  --surface-alt: #efe7d4;
+  --ink: #252017;
+  --ink-muted: #8a7f6b;
+  --navy: #22344a;
+  --navy-soft: #dce3e9;
+  --gold: #a8752e;
+  --gold-soft: #f1e3c7;
+  --rust: #9c4a32;
+  --rust-soft: #f1dcd2;
+  --sage: #496b54;
+  --sage-soft: #dce6dd;
+  --moss: #6b7f4f;
+  --moss-soft: #e1e6d4;
+  --serif: "Fraunces", serif;
+}
+
+.dash-shoyb {
+  --surface: #fffdf7;
+  --line: #ded2b3;
+  --text: var(--ink);
+  --muted: var(--ink-muted);
+}
+
+.serif {
+  font-family: var(--serif);
+}
+
+/* ===== Desktop shell: keep original sidebar, fix page scroll ===== */
+@media (min-width: 961px) {
+  html,
+  body,
+  #root {
+    height: 100% !important;
+    min-height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  body {
+    background: var(--paper) !important;
+    color: var(--ink) !important;
+  }
+
+  html[data-theme="dark"] body,
+  html[data-theme="dark"] .app-layout,
+  html[data-theme="dark"] .main-content {
+    background: var(--paper) !important;
+    color: var(--ink) !important;
+  }
+
+  .app-layout.shoyb-shell {
+    display: grid !important;
+    grid-template-columns: var(--sidebar) minmax(0, 1fr) !important;
+    grid-template-rows: 1fr !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+    background: var(--paper) !important;
+    align-items: stretch !important;
+  }
+
+  .app-layout.shoyb-shell > .cloud-only-banner {
+    display: none !important;
+  }
+
+  /* Sidebar: keep original architecture-shell look — only ensure it fills height + scrolls */
+  .app-layout.shoyb-shell > .sidebar,
+  .app-layout.shoyb-shell .sidebar.arch-shell-sidebar {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    height: 100% !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  .app-layout.shoyb-shell .sidebar-scroll {
+    overflow-y: auto !important;
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  .app-layout.shoyb-shell .sidebar .profile,
+  .app-layout.shoyb-shell .arch-shell-sidebar .profile {
+    display: flex !important;
+  }
+
+  .app-layout.shoyb-shell .sb-add,
+  .app-layout.shoyb-shell .sb-family {
+    display: none !important;
+  }
+
+  .app-layout.shoyb-shell > .main-content {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    height: 100% !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    background: var(--paper) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-width: 0 !important;
+  }
+
+  .app-layout.shoyb-shell .topbar.arch-shell-topbar,
+  .app-layout.shoyb-shell .main-content > .topbar {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 16px 28px 12px !important;
+    background: var(--paper) !important;
+    border-bottom: 0 !important;
+    backdrop-filter: none !important;
+    gap: 12px !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .app-layout.shoyb-shell .topbar .search,
+  .app-layout.shoyb-shell .topbar .online-pill,
+  .app-layout.shoyb-shell .topbar .lang-select-wrap,
+  .app-layout.shoyb-shell .topbar .topbar-logout,
+  .app-layout.shoyb-shell .topbar .mobile-brand,
+  .app-layout.shoyb-shell .topbar .mobile-menu,
+  .app-layout.shoyb-shell .topbar .icon-btn:not(.shoyb-bell) {
+    display: none !important;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy {
+    display: block !important;
+    min-width: 0;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading {
+    font-size: 19px !important;
+    font-weight: 800 !important;
+    color: var(--ink) !important;
+    line-height: 1.2;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading .s4 {
+    color: var(--gold) !important;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-sub {
+    font-size: 11.5px !important;
+    color: var(--ink-muted) !important;
+    margin-top: 2px !important;
+  }
+
+  .app-layout.shoyb-shell .top-actions {
+    gap: 12px !important;
+    margin-left: auto;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .app-layout.shoyb-shell .main-content .icon-btn.shoyb-bell,
+  .app-layout.shoyb-shell .main-content button.shoyb-bell {
+    position: relative !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    border-radius: 10px !important;
+    background: #fffdf7 !important;
+    background-image: none !important;
+    border: 1px solid #ded2b3 !important;
+    display: grid !important;
+    place-items: center !important;
+    font-size: 14px !important;
+    color: var(--navy) !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .app-layout.shoyb-shell .shoyb-bell .dot-badge,
+  .app-layout.shoyb-shell .shoyb-bell .bell-dot {
+    position: absolute !important;
+    top: -3px !important;
+    right: -3px !important;
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
+    border-radius: 50% !important;
+    background: var(--rust) !important;
+    color: #fff !important;
+    font-size: 8px !important;
+    font-weight: 700 !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 1.5px solid var(--paper) !important;
+  }
+
+  .app-layout.shoyb-shell .main-content button.avatar-mini {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    border-radius: 50% !important;
+    background: var(--gold-soft) !important;
+    background-image: none !important;
+    color: var(--navy) !important;
+    display: grid !important;
+    place-items: center !important;
+    font-weight: 700 !important;
+    font-size: 12.5px !important;
+    border: 1.5px solid #ded2b3 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Dashboard only: fixed, no scroll */
+  .app-layout.shoyb-shell .main-content > .page.dash-shoyb,
+  .app-layout.shoyb-shell .main-content > .arch-page.dash-shoyb {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 6px 28px 20px !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: transparent !important;
+  }
+
+  /* All other options: scrollable */
+  .app-layout.shoyb-shell .main-content > section,
+  .app-layout.shoyb-shell .main-content > .panel,
+  .app-layout.shoyb-shell .main-content > .page:not(.dash-shoyb),
+  .app-layout.shoyb-shell .main-content > .arch-page:not(.dash-shoyb) {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 18px 28px 32px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    display: block !important;
+    background: transparent !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+
+/* Dashboard canvas — matches the HTML mock grid */
+@media (min-width: 961px) {
+  .dash-shoyb-grid {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .main-content > .page.dash-shoyb,
+  .main-content > .arch-page.dash-shoyb,
+  .app-layout .main-content > .dash-shoyb {
+    max-width: none !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+.dash-shoyb-grid {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  grid-template-rows: auto auto 1fr;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.dash-shoyb .balance-card {
+  grid-column: 1 / span 2;
+  grid-row: 1;
+  background: var(--navy);
+  color: #f3efe2;
+  border-radius: 18px;
+  padding: 20px 28px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.dash-shoyb .balance-card::after {
+  content: "";
+  position: absolute;
+  right: -40px;
+  top: -50px;
+  width: 180px;
+  height: 180px;
+  border: 1px solid rgba(243, 239, 226, 0.14);
+  border-radius: 50%;
+}
+
+.dash-shoyb .balance-card::before {
+  content: "";
+  position: absolute;
+  right: 20px;
+  top: 10px;
+  width: 110px;
+  height: 110px;
+  border: 1px solid rgba(243, 239, 226, 0.1);
+  border-radius: 50%;
+}
+
+.dash-shoyb .bc-left {
+  position: relative;
+  z-index: 1;
+}
+
+.dash-shoyb .bc-top {
+  display: none;
+}
+
+.dash-shoyb .bc-more {
+  display: none;
+}
+
+.dash-shoyb .mobile-quick-actions {
+  display: none;
+}
+
+.dash-shoyb .bc-label-desktop {
+  display: flex;
+}
+
+.dash-shoyb .bc-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: rgba(243, 239, 226, 0.65);
+}
+
+.dash-shoyb .bc-eye {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(243, 239, 226, 0.15);
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dash-shoyb .bc-figure {
+  font-size: 34px;
+  font-weight: 700;
+  margin-top: 5px;
+  letter-spacing: -0.01em;
+  font-family: var(--serif);
+}
+
+.dash-shoyb .bc-figure sup {
+  font-size: 15px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-right: 2px;
+  font-family: Inter, sans-serif;
+}
+
+.dash-shoyb .bc-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: #cfe0d4;
+  background: rgba(76, 120, 90, 0.28);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.dash-shoyb .bc-delta.down {
+  color: #e3b7a6;
+  background: rgba(156, 74, 50, 0.28);
+}
+
+.dash-shoyb .bc-rows {
+  display: flex;
+  gap: 26px;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .bc-col {
+  padding-left: 18px;
+  border-left: 1px solid rgba(243, 239, 226, 0.16);
+}
+
+.dash-shoyb .bc-col:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.dash-shoyb .bc-col-label {
+  font-size: 9.5px;
+  color: rgba(243, 239, 226, 0.55);
+}
+
+.dash-shoyb .bc-col-value {
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.dash-shoyb .bc-col.income .bc-col-value {
+  color: #b9dabf;
+}
+
+.dash-shoyb .bc-col.expense .bc-col-value {
+  color: #e3b7a6;
+}
+
+.dash-shoyb .bc-col.savings .bc-col-value {
+  color: #cfe0d4;
+}
+
+.dash-shoyb .quick-panel {
+  grid-column: 2;
+  grid-row: 3;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.dash-shoyb .quick-panel .stat-title {
+  margin-bottom: 2px;
+}
+
+.dash-shoyb .qa-row {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dash-shoyb .qa-btn {
+  flex: 1;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 4px;
+  text-align: center;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-shoyb .qa-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  font-size: 12px;
+  color: #fff;
+}
+
+.dash-shoyb .qa-btn.income .qa-icon {
+  background: var(--sage);
+}
+
+.dash-shoyb .qa-btn.expense .qa-icon {
+  background: var(--rust);
+}
+
+.dash-shoyb .qa-btn.transfer .qa-icon {
+  background: var(--navy);
+}
+
+.dash-shoyb .qa-btn.wallet .qa-icon {
+  background: var(--gold);
+}
+
+.dash-shoyb .qa-label {
+  font-size: 8.5px;
+  font-weight: 600;
+  margin-top: 5px;
+  color: var(--ink);
+}
+
+.dash-shoyb .stats-row {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  gap: 16px;
+  min-width: 0;
+}
+
+.dash-shoyb .stat-card {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dash-shoyb .stat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.dash-shoyb .stat-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dash-shoyb .stat-more {
+  font-size: 11px;
+  color: var(--ink-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dash-shoyb .donut {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .donut-inner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.dash-shoyb .budget-body,
+.dash-shoyb .spend-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.dash-shoyb .budget-figs {
+  flex: 1;
+}
+
+.dash-shoyb .bf-row {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.dash-shoyb .bf-row b {
+  display: block;
+  font-size: 13.5px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.dash-shoyb .bf-left {
+  margin-top: 6px;
+  font-size: 9.5px;
+  color: var(--sage);
+  font-weight: 700;
+}
+
+.dash-shoyb .spend-total {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .spend-total .donut-inner {
+  width: 48px;
+  height: 48px;
+  font-size: 9.5px;
+}
+
+.dash-shoyb .spend-legend {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dash-shoyb .leg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.dash-shoyb .leg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .leg-name {
+  flex: 1;
+  color: var(--ink);
+}
+
+.dash-shoyb .leg-pct {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.dash-shoyb .family-banner {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 11px;
+  row-gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 18px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  width: 100%;
+}
+
+.dash-shoyb .fb-top {
+  display: none;
+}
+
+.dash-shoyb .fb-icon {
+  grid-column: 1;
+  grid-row: 1;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--sage-soft);
+  color: var(--sage);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .fb-mid {
+  grid-column: 2;
+  grid-row: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-shoyb .fb-title {
+  font-size: 9.5px;
+  color: var(--ink-muted);
+}
+
+.dash-shoyb .fb-count {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dash-shoyb .fb-arrow {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+.dash-shoyb .fb-avatars {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+}
+
+.dash-shoyb .fb-avatars .av {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+  border: 1.5px solid var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-left: -7px;
+}
+
+.dash-shoyb .fb-avatars .av:first-child {
+  margin-left: 0;
+}
+
+.dash-shoyb .tx-section {
+  grid-column: 1;
+  grid-row: 3;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-shoyb .tx-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.dash-shoyb .tx-head-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dash-shoyb .tx-head button {
+  font-size: 10.5px;
+  color: var(--gold);
+  font-weight: 600;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dash-shoyb .ledger {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  min-height: 0;
+}
+
+.dash-shoyb .tx-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  background: none;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.dash-shoyb .tx-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  flex: 0 0 auto;
+  color: #fff;
+}
+
+.dash-shoyb .tx-icon.plus {
+  background: var(--sage);
+}
+
+.dash-shoyb .tx-icon.minus {
+  background: var(--rust);
+}
+
+.dash-shoyb .tx-mid {
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-shoyb .tx-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dash-shoyb .tx-meta {
+  font-size: 9.5px;
+  color: var(--ink-muted);
+  margin-top: 1px;
+}
+
+.dash-shoyb .tx-amt {
+  font-size: 11.5px;
+  font-weight: 700;
+  flex: 0 0 auto;
+  width: 110px;
+}
+
+.dash-shoyb .tx-amt.plus {
+  color: var(--sage);
+}
+
+.dash-shoyb .tx-amt.minus {
+  color: var(--rust);
+}
+
+.dash-shoyb .tx-chev {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.dash-shoyb .empty {
+  padding: 18px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.page.dash-shoyb,
+.arch-page.dash-shoyb {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+.main-content .dash-shoyb button.qa-btn,
+.main-content .dash-shoyb button.family-banner,
+.main-content .dash-shoyb button.tx-row,
+.main-content .dash-shoyb .tx-head button,
+.main-content .dash-shoyb .stat-more,
+.main-content .dash-shoyb .bc-eye {
+  min-height: 0 !important;
+  height: auto !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
+.main-content .dash-shoyb button.qa-btn {
+  border-radius: 12px !important;
+  padding: 10px 4px !important;
+  background: var(--paper) !important;
+  border: 1px solid var(--line) !important;
+  font-size: 8.5px !important;
+  font-weight: 600 !important;
+  height: 100% !important;
+  min-height: 72px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.main-content .dash-shoyb button.family-banner {
+  border-radius: 16px !important;
+  padding: 14px 18px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--line) !important;
+}
+
+.main-content .dash-shoyb button.tx-row {
+  border-radius: 0 !important;
+  padding: 8px 18px !important;
+  background: transparent !important;
+  border: 0 !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+}
+
+.main-content .dash-shoyb .tx-head button {
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  color: var(--gold) !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+}
+
+.main-content .dash-shoyb .stat-more {
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  color: var(--ink-muted) !important;
+  font-size: 11px !important;
+}
+
+.main-content .dash-shoyb .bc-eye {
+  width: 16px !important;
+  height: 16px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  background: rgba(243, 239, 226, 0.15) !important;
+  border: 0 !important;
+}
+
+@media (max-width: 960px) {
+  /* mobile layout handled in shoyb-mobile.css */
+}

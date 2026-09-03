@@ -10,6 +10,7 @@ import {
 
 import { buildBackupPayload, restoreBackupBlob } from "../lib/backupPayload";
 import { getFirestoreDb } from "./config";
+import { ensureFamilyCloudShell, pullFamilyCloudSnapshot, pushFamilyCloudSnapshot } from "./familyCloud";
 
 const SNAPSHOT_DOC_ID = "latest";
 const MAX_PART_CHARS = 750_000;
@@ -35,9 +36,9 @@ function chunkPayload(jsonText) {
 }
 
 /**
- * Push local IndexedDB snapshots to Firestore (user-scoped, chunked).
+ * Push local IndexedDB snapshots to Firestore (user + shared family).
  */
-export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web" }) {
+export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", email = null, displayName = null }) {
   if (!uid) throw new Error("Firebase user required");
   const payload = await buildBackupPayload(familyId, deviceLabel);
   const rows = payload.rows || [];
@@ -68,6 +69,29 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web" }) 
   });
 
   await batch.commit();
+
+  // Shared family truth for multi-account members
+  if (familyId) {
+    try {
+      await ensureFamilyCloudShell({
+        familyId,
+        uid,
+        email,
+        displayName,
+        familyName: familyId,
+        role: "OWNER",
+      });
+      await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
+    } catch {
+      /* family shell may already exist with different owner role — still try snapshot */
+      try {
+        await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
+      } catch {
+        /* ignore shared push failure; user snapshot already saved */
+      }
+    }
+  }
+
   return {
     partCount: parts.length,
     rowCount: rows.length,
@@ -78,14 +102,44 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web" }) 
 
 /**
  * Pull latest cloud snapshot into local IndexedDB.
+ * Prefers shared family snapshot when family_id is known (multi-member truth).
  */
 export async function pullCloudSnapshot(uid) {
   if (!uid) throw new Error("Firebase user required");
+
+  let familyId = null;
+  try {
+    const profile = await getUserFamilyProfile(uid);
+    familyId = profile?.family_id || null;
+  } catch {
+    /* ignore */
+  }
+
+  if (familyId) {
+    try {
+      const shared = await pullFamilyCloudSnapshot(familyId);
+      if (shared.message !== "no_family_snapshot") {
+        return shared;
+      }
+    } catch {
+      /* fall through to user snapshot */
+    }
+  }
+
   const metaSnap = await getDoc(snapshotRef(uid));
   if (!metaSnap.exists()) {
     return { restored: 0, message: "no_cloud_snapshot" };
   }
   const meta = metaSnap.data() || {};
+  if (!familyId && meta.family_id) {
+    try {
+      const shared = await pullFamilyCloudSnapshot(meta.family_id);
+      if (shared.restored > 0) return shared;
+    } catch {
+      /* use personal */
+    }
+  }
+
   const partSnaps = await getDocs(partsCollection(uid));
   const ordered = partSnaps.docs
     .map((d) => d.data())
