@@ -187,12 +187,12 @@ export async function updateFamilyCloudSettings({
   } catch (err) {
     const code = String(err?.code || err?.message || "");
     if (/permission-denied/i.test(code)) {
-      throw new Error("Permission denied: unable to update family settings in Firestore");
+      throw new Error("Permission denied: unable to update family settings in Firestore", { cause: err });
     }
     if (/unavailable|network|failed-precondition/i.test(code)) {
-      throw new Error("Database connection issue — check your network and try again");
+      throw new Error("Database connection issue — check your network and try again", { cause: err });
     }
-    throw new Error(err?.message || "Family settings update failed");
+    throw new Error(err?.message || "Family settings update failed", { cause: err });
   }
 
   return {

@@ -7,7 +7,7 @@ export function BudgetsPanel({
   t,
   digits,
   money,
-  budgets = [],
+  budgets: _budgets = [],
   filteredBudgets = [],
   expenseCategories = [],
   summary,

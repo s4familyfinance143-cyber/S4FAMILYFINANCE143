@@ -439,7 +439,7 @@ export async function cloudApiGet({ familyId, path, currentUser }) {
       const raw = String(import.meta.env.VITE_FIREBASE_VAPID_KEY || "").trim();
       vapidConfigured = raw.length > 20;
     } catch {
-      vapidConfigured = false;
+      /* keep vapidConfigured = false */
     }
     return {
       handled: true,
@@ -808,7 +808,6 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
     const row = {
       id: newId("life"),
       family_id: familyId,
-      module_type: lifeKey,
       name: body.name || body.title || lifeKey,
       category: body.category || "GENERAL",
       sub_type: body.sub_type || body.type || "",
