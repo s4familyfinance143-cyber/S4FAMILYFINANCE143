@@ -3430,6 +3430,8 @@ body.mobile-drawer-open .mobile-drawer-backdrop {
     min-width: 140px;
   }
 }
+
+.invite-code-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
