@@ -67,3 +67,12 @@ mobile/.git.nested.bak/
 
 # Accidental root uploads
 file_*.png
+
+# Optional design mockups / legacy installer binaries (not used by Firebase-first app)
+deploy/mockups/
+deploy/installer/Output/
+deploy/installer/OutputClean*/
+S4_FAMILY_143_*.html
+S4_FAMILY_143_*.png
+S4-FAMILY_Architecture_*.html
+SETUP_COMPLETE.md

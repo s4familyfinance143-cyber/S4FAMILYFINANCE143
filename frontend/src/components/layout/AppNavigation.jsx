@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
 import { isNavItemActive } from "../../lib/navMenu";
+import { NotificationBellDropdown } from "../notifications/NotificationBellDropdown";
 
 function closeMobileDrawer() {
   document.body.classList.remove("mobile-drawer-open");
@@ -182,16 +183,57 @@ export function DesktopSidebar({
 
 export function TopHeader({
   appLanguage,
+  activeMenu = "dashboard",
   setActiveMenu,
   changeAppLanguage,
   t,
   lockedLanguages,
   unreadCount = 0,
+  notifications = [],
+  notificationsLoading = false,
+  notifyPermission = "default",
+  notifyPermissionHint = "",
+  notifyDropdownOpen = false,
+  setNotifyDropdownOpen,
+  onEnablePush,
+  onRefreshNotifications,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
   onLogout,
   _avatarUrl = "",
   currentUser,
   email,
 }) {
+  const menuHistoryRef = useRef([]);
+  const prevMenuRef = useRef(activeMenu);
+
+  useEffect(() => {
+    const prev = prevMenuRef.current;
+    if (prev && prev !== activeMenu) {
+      menuHistoryRef.current = [...menuHistoryRef.current, prev].slice(-20);
+    }
+    prevMenuRef.current = activeMenu;
+  }, [activeMenu]);
+
+  function handleMobileBack() {
+    closeMobileDrawer();
+    const history = menuHistoryRef.current;
+    if (history.length > 0) {
+      const previous = history[history.length - 1];
+      menuHistoryRef.current = history.slice(0, -1);
+      prevMenuRef.current = previous;
+      setActiveMenu(previous);
+      return;
+    }
+    if (activeMenu !== "dashboard") {
+      prevMenuRef.current = "dashboard";
+      setActiveMenu("dashboard");
+    }
+  }
+
+  const canGoBack = activeMenu !== "dashboard";
+  const backAria = appLanguage === "bn" ? "পিছনে" : "Back";
+
   function toggleTheme() {
     const root = document.documentElement;
     const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
@@ -204,6 +246,16 @@ export function TopHeader({
     }
   }
 
+  function toggleNotifyDropdown() {
+    const next = !notifyDropdownOpen;
+    setNotifyDropdownOpen?.(next);
+    if (next) {
+      onRefreshNotifications?.();
+      // User gesture: request permission + register FCM / SW when opening the bell
+      onEnablePush?.();
+    }
+  }
+
   const _initials = String(currentUser?.full_name || email || "SH")
     .trim()
     .split(/\s+/)
@@ -213,21 +265,37 @@ export function TopHeader({
     .toUpperCase() || "SH";
 
   return (
-    <header className="topbar arch-shell-topbar">
-      <button
-        className="mobile-menu"
-        type="button"
-        onClick={() => document.body.classList.toggle("mobile-drawer-open")}
-        aria-label={t("openMobileMenu")}
-        title={t("openMobileMenu")}
-      >
-        <span className="mobile-menu-bars" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </span>
-        <span className="mobile-menu-text">{appLanguage === "bn" ? "মেনু" : "Menu"}</span>
-      </button>
+    <header className={`topbar arch-shell-topbar${canGoBack ? "" : " is-dashboard-root"}`}>
+      <div className="mobile-header-leading" aria-label="Navigation">
+        {canGoBack ? (
+          <button
+            className="mobile-back"
+            type="button"
+            onClick={handleMobileBack}
+            aria-label={backAria}
+            title={backAria}
+          >
+            <span className="mobile-back-icon" aria-hidden="true">
+              ←
+            </span>
+          </button>
+        ) : null}
+
+        <button
+          className="mobile-menu"
+          type="button"
+          onClick={() => document.body.classList.toggle("mobile-drawer-open")}
+          aria-label={t("openMobileMenu")}
+          title={t("openMobileMenu")}
+        >
+          <span className="mobile-menu-bars" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="mobile-menu-text">{appLanguage === "bn" ? "মেনু" : "Menu"}</span>
+        </button>
+      </div>
 
       <div className="shoyb-top-copy">
         <div className="brand-heading">
@@ -237,14 +305,6 @@ export function TopHeader({
       </div>
 
       <div className="mobile-brand" aria-label="S4 FAMILY 143">
-        <button
-          type="button"
-          className="mobile-brand-mark has-photo"
-          onClick={() => setActiveMenu("settings")}
-          title={t("settings")}
-        >
-          <img src={BRAND_LOGO_SRC} alt="" />
-        </button>
         <div className="mobile-brand-copy">
           <div className="mobile-brand-title">
             <span className="s4">S4</span> FAMILY 143
@@ -287,17 +347,35 @@ export function TopHeader({
           ☾
         </button>
 
-        <button
-          type="button"
-          className="icon-btn mobile-notify-btn shoyb-bell bell-btn"
-          onClick={() => setActiveMenu("notifications")}
-          title={t("notifications")}
-        >
-          🔔
-          {Number(unreadCount) > 0 ? (
-            <span className="dot-badge bell-dot">{Number(unreadCount) > 9 ? "9+" : unreadCount}</span>
-          ) : null}
-        </button>
+        <div className="notify-bell-wrap">
+          <button
+            type="button"
+            className="icon-btn mobile-notify-btn shoyb-bell bell-btn"
+            onClick={toggleNotifyDropdown}
+            title={t("notifications")}
+            aria-expanded={Boolean(notifyDropdownOpen)}
+            aria-haspopup="dialog"
+          >
+            🔔
+            {Number(unreadCount) > 0 ? (
+              <span className="dot-badge bell-dot">{Number(unreadCount) > 9 ? "9+" : unreadCount}</span>
+            ) : null}
+          </button>
+          <NotificationBellDropdown
+            open={Boolean(notifyDropdownOpen)}
+            onClose={() => setNotifyDropdownOpen?.(false)}
+            notifications={notifications}
+            loading={notificationsLoading}
+            permission={notifyPermission}
+            permissionHint={notifyPermissionHint}
+            onEnablePush={onEnablePush}
+            onOpenFull={() => setActiveMenu("notifications")}
+            onMarkRead={onMarkNotificationRead}
+            onMarkAllRead={onMarkAllNotificationsRead}
+            onRefresh={onRefreshNotifications}
+            t={t}
+          />
+        </div>
 
         <button
           type="button"

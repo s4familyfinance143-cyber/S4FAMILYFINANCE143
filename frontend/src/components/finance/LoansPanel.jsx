@@ -61,46 +61,22 @@ export function LoansPanel({
         ))}
       </div>
 
-      <div className="settings-identity">
-        <div className={`sync-health ${remainingTotal > 0 ? "warn" : "ok"}`}>
-          <strong>{active.length}</strong>
-          <span>{t("activeStatus")}</span>
+      <div className="summary-metric-grid" role="group" aria-label={t("loans")}>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("loans")}</span>
+          <strong className="summary-metric-value">{loans.length}</strong>
         </div>
-        <div className="settings-identity-copy">
-          <h3 className="hero-money">{money(remainingTotal)}</h3>
-          <p className="budget-hero-sub">
-            {t("remaining")} · {t("given")}: {given} · {t("taken")}: {taken}
-          </p>
-          <div className="settings-badges">
-            <TypeChip type="GIVEN">
-              {t("given")}: {given}
-            </TypeChip>
-            <TypeChip type="TAKEN">
-              {t("taken")}: {taken}
-            </TypeChip>
-            <TypeChip type="TRANSFER">{filteredLoans.length} shown</TypeChip>
-          </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("remaining")}</span>
+          <strong className="summary-metric-value">{money(remainingTotal)}</strong>
         </div>
-      </div>
-
-      <div className="settings-stat-row">
-        <div className="settings-stat">
-          <span>{t("loans")}</span>
-          <strong>{loans.length}</strong>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("given")}</span>
+          <strong className="summary-metric-value">{given}</strong>
         </div>
-        <div className="settings-stat">
-          <span>{t("activeStatus")}</span>
-          <strong>{active.length}</strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("given")}</span>
-          <strong>{given}</strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("remaining")}</span>
-          <strong>
-            <MoneyPill tone="loan">{money(remainingTotal)}</MoneyPill>
-          </strong>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("taken")}</span>
+          <strong className="summary-metric-value">{taken}</strong>
         </div>
       </div>
 

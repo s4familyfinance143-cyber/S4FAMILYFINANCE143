@@ -63,10 +63,12 @@ export async function createCloudFamilyAccount({
 }) {
   let user;
   let verificationSent = false;
+  let verificationError = null;
   try {
     const registered = await firebaseRegisterEmail(email, password, fullName);
     user = registered.user;
     verificationSent = registered.verificationSent;
+    verificationError = registered.verificationError || null;
   } catch (err) {
     const code = String(err?.code || "");
     if (code.includes("email-already-in-use")) {
@@ -135,6 +137,7 @@ export async function createCloudFamilyAccount({
       displayName: fullName,
       familyName,
       role: "OWNER",
+      relationshipType: ownerRelation,
     });
     await pushCloudSnapshot({
       uid: user.uid,
@@ -145,5 +148,5 @@ export async function createCloudFamilyAccount({
     });
   }
 
-  return { user, familyId, existing: false, verificationSent };
+  return { user, familyId, existing: false, verificationSent, verificationError };
 }

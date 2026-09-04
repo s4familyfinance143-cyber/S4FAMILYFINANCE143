@@ -70,7 +70,10 @@ export function clearStoredDriveToken() {
 
 export async function connectGoogleDrive({ prompt = "" } = {}) {
   if (!isGoogleDriveConfigured()) {
-    throw new Error("Google Drive is not configured (VITE_GOOGLE_CLIENT_ID)");
+    console.error(
+      "[S4 Drive] Missing VITE_GOOGLE_CLIENT_ID — add it to frontend/.env (see deploy/FIREBASE_SETUP.md)"
+    );
+    throw new Error("Google Drive backup is not available on this device.");
   }
   await ensureGoogleIdentityScript();
   const clientId = getGoogleClientId();

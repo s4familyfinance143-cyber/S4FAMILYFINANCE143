@@ -3,6 +3,8 @@ import { isNativeApp } from "./runtimeEnv";
 
 const CLOUD_ONLY_KEY = "s4_cloud_only_mode";
 const CLOUD_FAMILY_KEY = "s4_cloud_family_id";
+/** Alias — active family id is persisted for both cloud and API sessions. */
+export const ACTIVE_FAMILY_STORAGE_KEY = CLOUD_FAMILY_KEY;
 
 export function isFirebaseFirstMode() {
   if (!isFirebaseConfigured()) return false;

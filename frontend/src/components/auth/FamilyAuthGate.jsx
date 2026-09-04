@@ -87,23 +87,32 @@ const UI = {
     stepAccInvite: "Account + Invite",
     back: "← পিছনে",
     createTitle: "নতুন পরিবার তৈরি করুন",
-    createSub: "অ্যাকাউন্ট তৈরি হবে এবং আপনি এই পরিবারের Owner হবেন",
-    bcryptNote: "bcrypt দিয়ে hash হয়ে সংরক্ষণ হবে",
-    responsibleHint: "এটা শুধু পরিচয়/রিপোর্টিং-এর জন্য — নিরাপত্তা অনুমতি (role) থেকে আলাদা থাকবে",
-    ownerWarn:
-      "Owner Protection: Owner নিজেকে delete করতে পারবে না। Ownership transfer-এ second admin approval লাগবে।",
+    createSub: "শুরু করতে আপনার প্রোফাইল সেট করুন",
+    bcryptNote: "",
+    responsibleHint: "",
+    ownerWarn: "",
     btnCreateSubmit: "পরিবার তৈরি করুন ও Owner হোন",
     joinTitle: "ইনভাইট কোড দিয়ে যোগ দিন",
-    joinSub: "অ্যাকাউন্ট তৈরি করুন ও পরিবারের কোড দিন",
+    joinSub: "শুরু করতে আপনার প্রোফাইল সেট করুন",
     codeHint: "কোড ঠিক যেভাবে দেওয়া হয়েছে সেভাবে লিখুন। মেয়াদোত্তীর্ণ কোড গ্রহণ করা হবে না।",
     btnSendJoin: "Join Request পাঠান",
+    signupTitle: "অ্যাকাউন্ট তৈরি",
+    signupSub: "শুরু করতে আপনার প্রোফাইল সেট করুন",
+    tabJoin: "বিদ্যমান পরিবারে যোগ",
+    tabJoinSub: "ইনভাইট কোড দিয়ে",
+    tabCreate: "নতুন পরিবার",
+    tabCreateSub: "Owner হিসেবে তৈরি",
+    colAccount: "অ্যাকাউন্টের তথ্য",
+    colFamily: "পরিবারের তথ্য",
+    colJoin: "ইনভাইট ও সম্পর্ক",
+    lblNote: "নোট",
+    lblLinkedMember: "লিংকড সদস্য ID",
     mobileApiTitle: "ফোনে অ্যাকাউন্ট/পরিবার তৈরি",
     mobileApiHint:
       "PC-তে backend চালু রাখুন (start_dev.ps1)। নিচে Server settings-এ PC-র Wi‑Fi IP দিন — যেমন http://192.168.1.5:8000 (127.0.0.1 ফোনে কাজ করে না)।",
     mobileApiBlocked:
       "আগে Server settings-এ PC-র API URL সেট করুন (127.0.0.1 ফোনে কাজ করে না)।",
-    cloudCreateSub:
-      "PC ছাড়াই Firebase-এ অ্যাকাউন্ট ও পরিবার তৈরি হবে — ডেটা ক্লাউডে সংরক্ষিত থাকবে।",
+    cloudCreateSub: "",
     cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
     cloudLoginPageSub: "Firebase ক্লাউড — লগইন করুন বা পরিবার তৈরি করুন",
     cloudNewUser: "নতুন ব্যবহারকারী?",
@@ -153,23 +162,32 @@ const UI = {
     stepAccInvite: "Account + Invite",
     back: "← Back",
     createTitle: "Create a new family",
-    createSub: "An account will be created and you'll become the family Owner",
-    bcryptNote: "Will be stored hashed with bcrypt",
-    responsibleHint: "This is only for identity/reporting — kept separate from security permission (role)",
-    ownerWarn:
-      "Owner Protection: Owner cannot delete themselves. Ownership transfer requires second admin approval.",
+    createSub: "Set up your profile to get started",
+    bcryptNote: "",
+    responsibleHint: "",
+    ownerWarn: "",
     btnCreateSubmit: "Create family & become Owner",
     joinTitle: "Join with invite code",
-    joinSub: "Create your account and enter the family code",
+    joinSub: "Set up your profile to get started",
     codeHint: "Enter the code exactly as given. Expired codes will be rejected.",
     btnSendJoin: "Send join request",
+    signupTitle: "Create Account",
+    signupSub: "Set up your profile to get started",
+    tabJoin: "Join Existing Family",
+    tabJoinSub: "With invite code",
+    tabCreate: "Create New Family",
+    tabCreateSub: "Become Owner",
+    colAccount: "Account details",
+    colFamily: "Family details",
+    colJoin: "Invite & relationship",
+    lblNote: "Note",
+    lblLinkedMember: "Linked member ID",
     mobileApiTitle: "Create account/family on phone",
     mobileApiHint:
       "Keep backend running on your PC (start_dev.ps1). In Server settings below, set your PC Wi‑Fi IP — e.g. http://192.168.1.5:8000 (127.0.0.1 does not work on phone).",
     mobileApiBlocked:
       "Set your PC API URL in Server settings first (127.0.0.1 does not work on phone).",
-    cloudCreateSub:
-      "Create account and family in Firebase — no PC backend required. Data stays in the cloud.",
+    cloudCreateSub: "",
     cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
     cloudLoginPageSub: "Cloud sign in or create your family",
     cloudNewUser: "New here?",
@@ -558,7 +576,7 @@ export function FamilyAuthGate({
 
   async function handleJoinFamily(e) {
     e?.preventDefault?.();
-    if (!email.trim() || !password || !inviteCode.trim()) {
+    if (!fullName.trim() || !email.trim() || !password || !inviteCode.trim()) {
       setMessage(t("joinGateFieldsRequired"), "error");
       return;
     }
@@ -680,7 +698,7 @@ export function FamilyAuthGate({
   const stepActive = view === "createFamily" || view === "join" ? "family" : "account";
 
   return (
-    <div className={`s4-login-shell${authLoading ? " is-busy" : ""}`}>
+    <div className={`s4-login-shell${authLoading ? " is-busy" : ""}${view === "createFamily" || view === "join" ? " s4-login-shell--signup" : ""}`}>
       <div className="shell">
         <div className="formside">
           <div className="stagearea">
@@ -868,7 +886,7 @@ export function FamilyAuthGate({
               </div>
             ) : null}
 
-            {view === "createFamily" ? (
+            {view === "createFamily" || view === "join" ? (
               <div className="card">
                 <div className="top-row">
                   <select
@@ -886,13 +904,41 @@ export function FamilyAuthGate({
                   </select>
                 </div>
                 <div className="card-eyebrow">
-                  <span>{L.stepAccFam}</span>
+                  <span>{view === "join" ? L.stepAccInvite : L.stepAccFam}</span>
                   <button type="button" className="back-btn" disabled={authLoading} onClick={() => setMode("login")}>
                     {L.back}
                   </button>
                 </div>
-                <div className="card-title">{L.createTitle}</div>
-                <div className="card-sub">{useCloudAuth ? L.cloudCreateSub : L.createSub}</div>
+                <div className="card-title">{L.signupTitle}</div>
+                <div className="card-sub card-sub--compact">{L.signupSub}</div>
+
+                {!useCloudAuth ? (
+                  <div className="account-path-tabs" role="tablist" aria-label={L.signupTitle}>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={view === "join"}
+                      className={`account-path-tab${view === "join" ? " active" : ""}`}
+                      disabled={authLoading}
+                      onClick={() => setMode("join")}
+                    >
+                      {L.tabJoin}
+                      <span className="tab-sub">{L.tabJoinSub}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={view === "createFamily"}
+                      className={`account-path-tab${view === "createFamily" ? " active" : ""}`}
+                      disabled={authLoading}
+                      onClick={() => setMode("createFamily")}
+                    >
+                      {L.tabCreate}
+                      <span className="tab-sub">{L.tabCreateSub}</span>
+                    </button>
+                  </div>
+                ) : null}
+
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
                 <ServerSettingsBlock
@@ -906,330 +952,334 @@ export function FamilyAuthGate({
                   saveApiBase={saveApiBase}
                 />
 
-                <form onSubmit={handleCreateFamily}>
-                  <div className="field">
-                    <label>{L.lblName}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">👤</span>
-                      <input
-                        type="text"
-                        value={fullName}
-                        disabled={authLoading}
-                        onChange={(e) => setFullName(e.target.value)}
-                        required
-                      />
+                {view === "createFamily" ? (
+                  <form className="signup-form" onSubmit={handleCreateFamily}>
+                    <div className="signup-grid">
+                      <div className="signup-col">
+                        <div className="signup-col-title">{L.colAccount}</div>
+                        <div className="field">
+                          <label>{L.lblName}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">👤</span>
+                            <input
+                              type="text"
+                              value={fullName}
+                              disabled={authLoading}
+                              onChange={(e) => setFullName(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblEmail}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">✉️</span>
+                            <input
+                              type="email"
+                              value={email}
+                              disabled={authLoading}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblPhone}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">📱</span>
+                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblPassword}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🔒</span>
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={password}
+                              disabled={authLoading}
+                              autoComplete="new-password"
+                              onChange={(e) => setPassword(e.target.value)}
+                              required
+                            />
+                            <button
+                              type="button"
+                              className="toggle-eye"
+                              disabled={authLoading}
+                              onClick={() => setShowPassword((v) => !v)}
+                            >
+                              {showPassword ? L.hide : L.show}
+                            </button>
+                          </div>
+                          <div className="pw-meter">
+                            {[1, 2, 3, 4].map((n) => (
+                              <i
+                                key={n}
+                                style={{
+                                  background:
+                                    pwScore >= n
+                                      ? n <= 1
+                                        ? "#EF4444"
+                                        : n <= 2
+                                          ? "#F59E0B"
+                                          : n <= 3
+                                            ? "#84CC16"
+                                            : "#1D9E75"
+                                      : undefined,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="signup-col">
+                        <div className="signup-col-title">{L.colFamily}</div>
+                        <div className="field">
+                          <label>{L.lblFamilyName}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🏠</span>
+                            <input
+                              type="text"
+                              value={familyName}
+                              disabled={authLoading}
+                              onChange={(e) => setFamilyName(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblCurrency}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">৳</span>
+                            <select
+                              className="field-select"
+                              value={currency}
+                              disabled={authLoading}
+                              onChange={(e) => setCurrency(e.target.value)}
+                            >
+                              {CURRENCY_PRESETS.map((item) => (
+                                <option key={item.value} value={item.value}>
+                                  {item.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblTimezone}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🌐</span>
+                            <select
+                              className="field-select"
+                              value={timezone}
+                              disabled={authLoading}
+                              onChange={(e) => setTimezone(e.target.value)}
+                            >
+                              {TIMEZONE_PRESETS.map((tz) => (
+                                <option key={tz} value={tz}>
+                                  {tz}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblResponsible}</label>
+                          <div className="pillrow">
+                            {OWNER_RELATIONSHIPS.map((rel) => (
+                              <button
+                                key={rel}
+                                type="button"
+                                className={`pill${ownerRelation === rel ? " sel" : ""}`}
+                                disabled={authLoading}
+                                onClick={() => setOwnerRelation(rel)}
+                              >
+                                {relText(lang, rel)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblEmail}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">✉️</span>
-                      <input
-                        type="email"
-                        value={email}
-                        disabled={authLoading}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblPhone}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">📱</span>
-                      <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblPassword}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">🔒</span>
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                        disabled={authLoading}
-                        autoComplete="new-password"
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="toggle-eye"
-                        disabled={authLoading}
-                        onClick={() => setShowPassword((v) => !v)}
-                      >
-                        {showPassword ? L.hide : L.show}
+
+                    <div className="form-actions">
+                      <button type="submit" className="btn-primary" disabled={authLoading}>
+                        {authLoading ? t("creatingFamilyGate") : L.btnCreateSubmit}
                       </button>
                     </div>
-                    <div className="pw-meter">
-                      {[1, 2, 3, 4].map((n) => (
-                        <i
-                          key={n}
-                          style={{
-                            background:
-                              pwScore >= n
-                                ? n <= 1
-                                  ? "#EF4444"
-                                  : n <= 2
-                                    ? "#F59E0B"
-                                    : n <= 3
-                                      ? "#84CC16"
-                                      : "#1D9E75"
-                                : undefined,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div className="pw-meter-label">{useCloudAuth ? (lang === "bn" ? "Firebase-এ নিরাপদে সংরক্ষিত" : "Securely stored in Firebase") : L.bcryptNote}</div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblFamilyName}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">🏠</span>
-                      <input
-                        type="text"
-                        value={familyName}
-                        disabled={authLoading}
-                        onChange={(e) => setFamilyName(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblCurrency}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">৳</span>
-                      <select
-                        className="field-select"
-                        value={currency}
-                        disabled={authLoading}
-                        onChange={(e) => setCurrency(e.target.value)}
-                      >
-                        {CURRENCY_PRESETS.map((item) => (
-                          <option key={item.value} value={item.value}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblTimezone}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">🌐</span>
-                      <select
-                        className="field-select"
-                        value={timezone}
-                        disabled={authLoading}
-                        onChange={(e) => setTimezone(e.target.value)}
-                      >
-                        {TIMEZONE_PRESETS.map((tz) => (
-                          <option key={tz} value={tz}>
-                            {tz}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="hint">
-                      {lang === "bn"
-                        ? "Asia/Dhaka = বাংলাদেশ, Asia/Dubai = সংযুক্ত আরব আমিরাত — তৈরির সময় বেছে নিন"
-                        : "Asia/Dhaka = Bangladesh, Asia/Dubai = UAE — pick when creating the family"}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblResponsible}</label>
-                    <div className="pillrow">
-                      {OWNER_RELATIONSHIPS.map((rel) => (
-                        <button
-                          key={rel}
-                          type="button"
-                          className={`pill${ownerRelation === rel ? " sel" : ""}`}
-                          disabled={authLoading}
-                          onClick={() => setOwnerRelation(rel)}
-                        >
-                          {relText(lang, rel)}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="hint">{L.responsibleHint}</div>
-                  </div>
-                  {!useCloudAuth ? <div className="warn-box">{L.ownerWarn}</div> : null}
-                  <button type="submit" className="btn-primary" disabled={authLoading}>
-                    {authLoading ? t("creatingFamilyGate") : L.btnCreateSubmit}
-                  </button>
-                </form>
-                <StepIndicator active={stepActive} labels={L} />
-                {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}
-              </div>
-            ) : null}
+                  </form>
+                ) : (
+                  <form className="signup-form" onSubmit={handleJoinFamily}>
+                    <div className="signup-grid">
+                      <div className="signup-col">
+                        <div className="signup-col-title">{L.colAccount}</div>
+                        <div className="field">
+                          <label>{L.lblName}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">👤</span>
+                            <input
+                              type="text"
+                              value={fullName}
+                              disabled={authLoading}
+                              onChange={(e) => setFullName(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblEmail}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">✉️</span>
+                            <input
+                              type="email"
+                              value={email}
+                              disabled={authLoading}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblPhone}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">📱</span>
+                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblPassword}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🔒</span>
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={password}
+                              disabled={authLoading}
+                              autoComplete="new-password"
+                              onChange={(e) => setPassword(e.target.value)}
+                              required
+                            />
+                            <button
+                              type="button"
+                              className="toggle-eye"
+                              disabled={authLoading}
+                              onClick={() => setShowPassword((v) => !v)}
+                            >
+                              {showPassword ? L.hide : L.show}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
 
-            {view === "join" ? (
-              <div className="card">
-                <div className="card-eyebrow">
-                  <span>{L.stepAccInvite}</span>
-                  <button type="button" className="back-btn" disabled={authLoading} onClick={() => setMode("login")}>
-                    {L.back}
-                  </button>
-                </div>
-                <div className="card-title">{L.joinTitle}</div>
-                <div className="card-sub">{L.joinSub}</div>
-                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
+                      <div className="signup-col">
+                        <div className="signup-col-title">{L.colJoin}</div>
+                        <div className="field">
+                          <label>{L.lblInviteCode}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🔗</span>
+                            <input
+                              type="text"
+                              placeholder="S4F-XXXX"
+                              value={inviteCode}
+                              disabled={authLoading}
+                              style={{ textTransform: "uppercase", letterSpacing: 2 }}
+                              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                              required
+                            />
+                          </div>
+                          <div className="hint">{L.codeHint}</div>
+                        </div>
+                        <div className="field">
+                          <label>{L.lblRelation}</label>
+                          <div className="pillrow">
+                            {JOIN_RELATIONSHIPS.map((rel) => (
+                              <button
+                                key={rel}
+                                type="button"
+                                className={`pill${joinRelation === rel ? " sel" : ""}`}
+                                disabled={authLoading}
+                                onClick={() => {
+                                  setJoinRelation(rel);
+                                  setSerialLabel("");
+                                  setRelationshipSerial("");
+                                  setRelationshipNote("");
+                                  setLinkedMemberId("");
+                                }}
+                              >
+                                {relText(lang, rel)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {needsSerial(joinRelation) ? (
+                          <div className="field">
+                            <label>{L.lblSerial}</label>
+                            <div className="pillrow">
+                              {serialLabelsFor(joinRelation).map((label) => (
+                                <button
+                                  key={label}
+                                  type="button"
+                                  className={`pill${serialLabel === label ? " sel" : ""}`}
+                                  disabled={authLoading}
+                                  onClick={() => setSerialLabel(label)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="input-wrap" style={{ marginTop: 8 }}>
+                              <span className="input-icon">🔢</span>
+                              <input
+                                type="text"
+                                value={relationshipSerial}
+                                disabled={authLoading}
+                                placeholder="Custom #"
+                                onChange={(e) => setRelationshipSerial(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                        {needsLinkedMember(joinRelation) ? (
+                          <div className="field">
+                            <label>{L.lblLinkedMember}</label>
+                            <div className="input-wrap">
+                              <span className="input-icon">🔗</span>
+                              <input
+                                type="text"
+                                value={linkedMemberId}
+                                disabled={authLoading}
+                                onChange={(e) => setLinkedMemberId(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                        {needsRelationshipNote(joinRelation) ? (
+                          <div className="field">
+                            <label>{L.lblNote}</label>
+                            <div className="input-wrap">
+                              <span className="input-icon">📝</span>
+                              <input
+                                type="text"
+                                value={relationshipNote}
+                                disabled={authLoading}
+                                onChange={(e) => setRelationshipNote(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
 
-                <form onSubmit={handleJoinFamily}>
-                  <div className="field">
-                    <label>{L.lblName}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">👤</span>
-                      <input
-                        type="text"
-                        value={fullName}
-                        disabled={authLoading}
-                        onChange={(e) => setFullName(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblEmail}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">✉️</span>
-                      <input
-                        type="email"
-                        value={email}
-                        disabled={authLoading}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblPhone}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">📱</span>
-                      <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblPassword}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">🔒</span>
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                        disabled={authLoading}
-                        autoComplete="new-password"
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="toggle-eye"
-                        disabled={authLoading}
-                        onClick={() => setShowPassword((v) => !v)}
-                      >
-                        {showPassword ? L.hide : L.show}
+                    <div className="form-actions">
+                      <button type="submit" className="btn-primary" disabled={authLoading}>
+                        {authLoading ? t("joiningFamilyGate") : L.btnSendJoin}
                       </button>
                     </div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblInviteCode}</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">🔗</span>
-                      <input
-                        type="text"
-                        placeholder="S4F-XXXX"
-                        value={inviteCode}
-                        disabled={authLoading}
-                        style={{ textTransform: "uppercase", letterSpacing: 2 }}
-                        onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                        required
-                      />
-                    </div>
-                    <div className="hint">{L.codeHint}</div>
-                  </div>
-                  <div className="field">
-                    <label>{L.lblRelation}</label>
-                    <div className="pillrow">
-                      {JOIN_RELATIONSHIPS.map((rel) => (
-                        <button
-                          key={rel}
-                          type="button"
-                          className={`pill${joinRelation === rel ? " sel" : ""}`}
-                          disabled={authLoading}
-                          onClick={() => {
-                            setJoinRelation(rel);
-                            setSerialLabel("");
-                            setRelationshipSerial("");
-                            setRelationshipNote("");
-                            setLinkedMemberId("");
-                          }}
-                        >
-                          {relText(lang, rel)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {needsSerial(joinRelation) ? (
-                    <div className="field">
-                      <label>{L.lblSerial}</label>
-                      <div className="pillrow">
-                        {serialLabelsFor(joinRelation).map((label) => (
-                          <button
-                            key={label}
-                            type="button"
-                            className={`pill${serialLabel === label ? " sel" : ""}`}
-                            disabled={authLoading}
-                            onClick={() => setSerialLabel(label)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="input-wrap" style={{ marginTop: 8 }}>
-                        <span className="input-icon">🔢</span>
-                        <input
-                          type="text"
-                          value={relationshipSerial}
-                          disabled={authLoading}
-                          placeholder="Custom #"
-                          onChange={(e) => setRelationshipSerial(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                  {needsLinkedMember(joinRelation) ? (
-                    <div className="field">
-                      <label>Linked member ID</label>
-                      <div className="input-wrap">
-                        <span className="input-icon">🔗</span>
-                        <input
-                          type="text"
-                          value={linkedMemberId}
-                          disabled={authLoading}
-                          onChange={(e) => setLinkedMemberId(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                  {needsRelationshipNote(joinRelation) ? (
-                    <div className="field">
-                      <label>Note</label>
-                      <div className="input-wrap">
-                        <span className="input-icon">📝</span>
-                        <input
-                          type="text"
-                          value={relationshipNote}
-                          disabled={authLoading}
-                          onChange={(e) => setRelationshipNote(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                  <button type="submit" className="btn-primary" disabled={authLoading}>
-                    {authLoading ? t("joiningFamilyGate") : L.btnSendJoin}
-                  </button>
-                </form>
+                  </form>
+                )}
+
                 <StepIndicator active={stepActive} labels={L} />
                 {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}
               </div>

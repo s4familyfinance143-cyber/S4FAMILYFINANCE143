@@ -15,6 +15,16 @@ service firebase.storage {
         && firestore.exists(/databases/(default)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
+    // Profile avatars: users/{uid}/profile/avatar.*
+    match /users/{userId}/profile/{allPaths=**} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/jpeg|image/png|image/webp');
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
     match /families/{familyId}/{allPaths=**} {
       allow read: if familyMember(familyId);
       allow write: if familyMember(familyId)

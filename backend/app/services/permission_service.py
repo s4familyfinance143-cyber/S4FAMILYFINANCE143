@@ -177,6 +177,10 @@ def has_permission(member: FamilyMember, permission: str, db: Session | None = N
 def require_permission(db: Session, family_id: str, user_id: str, permission: str) -> FamilyMember:
     member = get_active_member_or_403(db=db, family_id=family_id, user_id=user_id)
 
+    # OWNER always passes permission checks (full family control, incl. settings.manage)
+    if normalize_role(getattr(member, "role", None)) == "OWNER":
+        return member
+
     if not has_permission(member, permission, db=db):
         raise HTTPException(status_code=403, detail=f"Permission denied: {permission}")
 

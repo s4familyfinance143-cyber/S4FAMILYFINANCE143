@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { TypeChip } from "../ui/FinanceChips";
 import {
   JOIN_RELATIONSHIPS,
+  OWNER_RELATIONSHIPS,
   buildJoinInvitePayload,
   needsLinkedMember,
   needsRelationshipNote,
@@ -19,6 +20,156 @@ const EMPTY_JOIN = {
   linked_member_id: "",
   relationship_note: "",
 };
+
+const ROLE_RANK = {
+  OWNER: 5,
+  ADMIN: 4,
+  MEMBER: 3,
+  VIEWER: 2,
+  CHILD: 1,
+};
+
+/** Clear “what they can do” toggles — Owner sets these for Wife / members. */
+const MEMBER_CAPABILITY_TOGGLES = [
+  { key: "dashboard.read", labelEn: "Can View Dashboard", labelBn: "ড্যাশবোর্ড দেখতে পারবে" },
+  { key: "accounts.create", labelEn: "Can Create Wallets", labelBn: "ওয়ালেট তৈরি করতে পারবে" },
+  { key: "accounts.read", labelEn: "Can View Wallets", labelBn: "ওয়ালেট দেখতে পারবে" },
+  { key: "transactions.create", labelEn: "Can Add Transactions", labelBn: "লেনদেন যোগ করতে পারবে" },
+  { key: "income.create", labelEn: "Can Add Income", labelBn: "আয় যোগ করতে পারবে" },
+  { key: "expense.create", labelEn: "Can Add Expenses", labelBn: "খরচ যোগ করতে পারবে" },
+  { key: "transactions.read", labelEn: "Can View Transactions", labelBn: "লেনদেন দেখতে পারবে" },
+  { key: "reports.read", labelEn: "Can View Reports", labelBn: "রিপোর্ট দেখতে পারবে" },
+  { key: "audit.read", labelEn: "Can View Audit", labelBn: "অডিট দেখতে পারবে" },
+  { key: "backup.create", labelEn: "Can Create Backups", labelBn: "ব্যাকআপ তৈরি করতে পারবে" },
+  { key: "backup.read", labelEn: "Can View Backups", labelBn: "ব্যাকআপ দেখতে পারবে" },
+  { key: "backup.download", labelEn: "Can Download Backups", labelBn: "ব্যাকআপ ডাউনলোড করতে পারবে" },
+  { key: "backup.restore", labelEn: "Can Restore Backups", labelBn: "ব্যাকআপ রিস্টোর করতে পারবে" },
+  { key: "sync.view", labelEn: "Can View Sync", labelBn: "সিঙ্ক দেখতে পারবে" },
+  { key: "sync.pull", labelEn: "Can Pull Sync", labelBn: "সিঙ্ক পুল করতে পারবে" },
+  { key: "sync.push", labelEn: "Can Push Sync", labelBn: "সিঙ্ক পুশ করতে পারবে" },
+  { key: "settings.manage", labelEn: "Can Manage Settings", labelBn: "সেটিংস পরিবর্তন করতে পারবে" },
+];
+
+const ROLE_HELP = {
+  MEMBER: {
+    en: "Normal member — you set each permission below",
+    bn: "সাধারণ সদস্য — নিচের প্রতিটি অনুমতি আপনি সেট করবেন",
+  },
+  ADMIN: {
+    en: "Almost like Owner — full access (individual toggles hidden)",
+    bn: "প্রায় Owner — সব অ্যাক্সেস (আলাদা টগল লাগে না)",
+  },
+  VIEWER: {
+    en: "Mostly view-only — good for read access",
+    bn: "মূলত শুধু দেখা — রিড অ্যাক্সেসের জন্য",
+  },
+  CHILD: {
+    en: "Limited child access — tighten permissions below",
+    bn: "সীমিত চাইল্ড অ্যাক্সেস — নিচে অনুমতি কমিয়ে দিন",
+  },
+};
+
+const MEMBER_DEFAULT_CAPS = [
+  "dashboard.read",
+  "accounts.read",
+  "transactions.read",
+  "transactions.create",
+  "income.create",
+  "expense.create",
+  "reports.read",
+  "backup.read",
+  "sync.view",
+  "sync.pull",
+];
+
+function hasEffectivePermission(effective = [], key) {
+  if (!key) return false;
+  if (effective.includes("*")) return true;
+  return effective.includes(key);
+}
+
+function capabilityLabel(item, lang) {
+  if (String(lang || "").toLowerCase().startsWith("bn")) return item.labelBn || item.labelEn;
+  return item.labelEn;
+}
+
+function roleHelpText(role, lang) {
+  const row = ROLE_HELP[String(role || "").toUpperCase()];
+  if (!row) return "";
+  if (String(lang || "").toLowerCase().startsWith("bn")) return row.bn;
+  return row.en;
+}
+
+function resolveMemberCapabilities(member, permissionRow) {
+  const role = String(
+    permissionRow?.normalized_role ||
+      permissionRow?.role ||
+      member?.normalized_role ||
+      member?.role ||
+      "MEMBER",
+  ).toUpperCase();
+  if (role === "OWNER" || role === "ADMIN") {
+    return ["*"];
+  }
+  const fromPerm = Array.isArray(permissionRow?.effective_permissions)
+    ? permissionRow.effective_permissions
+    : null;
+  if (fromPerm?.length) return fromPerm;
+  const fromMember = Array.isArray(member?.effective_permissions) ? member.effective_permissions : null;
+  if (fromMember?.length) return fromMember;
+  return [...MEMBER_DEFAULT_CAPS];
+}
+
+function preferElevatedRole(...roles) {
+  let best = "";
+  let bestRank = -1;
+  for (const raw of roles) {
+    const role = String(raw || "")
+      .toUpperCase()
+      .trim();
+    if (!role || role === "LOADING" || role === "—") continue;
+    const rank = ROLE_RANK[role] ?? 0;
+    if (rank > bestRank) {
+      best = role;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+/** Stable global family role — never derived from join-request rows or active tab. */
+function resolveMyGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily, loadingLabel }) {
+  const uid = String(
+    currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+  ).trim();
+  const mail = String(currentUser?.email || email || "")
+    .trim()
+    .toLowerCase();
+
+  const ownerUid = String(activeFamily?.owner_uid || activeFamily?.owner_id || "").trim();
+  if (uid && ownerUid && uid === ownerUid) return "OWNER";
+
+  const matchedMembers = (governanceMembers || []).filter((m) => {
+    const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
+    const memberEmail = String(m.email || m.user_email || "")
+      .trim()
+      .toLowerCase();
+    if (uid && memberUid && memberUid === uid) return true;
+    if (mail && memberEmail && memberEmail === mail) return true;
+    return false;
+  });
+
+  const fromMembers = preferElevatedRole(
+    ...matchedMembers.map((m) => m.normalized_role || m.role || m.member_role),
+  );
+
+  const fromPerms = preferElevatedRole(myPermissions?.normalized_role, myPermissions?.role);
+
+  const resolved = preferElevatedRole(fromMembers, fromPerms);
+  if (resolved) return resolved;
+  if (myPermissions || matchedMembers.length) return "MEMBER";
+  return loadingLabel || "—";
+}
 
 function shortId(value) {
   const text = String(value || "");
@@ -58,7 +209,28 @@ function roleTone(role) {
 }
 
 function memberIdOf(member) {
-  return member.member_id || member.id || member.family_member_id || "";
+  return (
+    member.uid ||
+    member.user_id ||
+    member.member_id ||
+    member.id ||
+    member.family_member_id ||
+    ""
+  );
+}
+
+function findPermissionRow(memberPermissions, member) {
+  const mid = String(memberIdOf(member) || "").trim();
+  const email = String(member?.email || "").trim().toLowerCase();
+  const rows = Array.isArray(memberPermissions) ? memberPermissions : [];
+  return (
+    rows.find((row) => {
+      const ids = [row.member_id, row.id, row.uid, row.user_id].filter(Boolean).map(String);
+      if (mid && ids.includes(mid)) return true;
+      const rowEmail = String(row.email || "").trim().toLowerCase();
+      return Boolean(email && rowEmail && email === rowEmail);
+    }) || null
+  );
 }
 
 export function FamilyGovernancePanel({
@@ -70,6 +242,9 @@ export function FamilyGovernancePanel({
   email,
   myPermissions,
   governanceMembers = [],
+  memberPermissions = [],
+  permissionSavingMemberId = "",
+  toggleMemberPermission,
   joinRequests = [],
   governanceLoading,
   inviteForm,
@@ -96,17 +271,56 @@ export function FamilyGovernancePanel({
   const [joinForm, setJoinForm] = useState({ ...EMPTY_JOIN });
   const [joining, setJoining] = useState(false);
   const [roleBusyId, setRoleBusyId] = useState("");
+  const [relationBusyId, setRelationBusyId] = useState("");
   const [memberBusyId, setMemberBusyId] = useState("");
   const [deactivateBusy, setDeactivateBusy] = useState(false);
+  const [initialFetchDone, setInitialFetchDone] = useState(false);
   const [transferMemberId, setTransferMemberId] = useState("");
   const [transferNote, setTransferNote] = useState("");
   const [transfers, setTransfers] = useState([]);
   const [transferBusy, setTransferBusy] = useState("");
 
-  const role = myPermissions?.normalized_role || myPermissions?.role || t("loading");
+  // Auto-fetch members as soon as family context is ready — do not wait for Refresh.
+  useEffect(() => {
+    if (!activeFamilyId || !onRefresh) return undefined;
+    let cancelled = false;
+    setInitialFetchDone(false);
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        await Promise.resolve(onRefresh());
+      } finally {
+        if (!cancelled) setInitialFetchDone(true);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+    // Only when family id is ready — avoid re-fetch loops from unstable onRefresh identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId]);
+
+  const role = useMemo(
+    () =>
+      resolveMyGlobalRole({
+        myPermissions,
+        governanceMembers,
+        currentUser,
+        email,
+        activeFamily,
+        loadingLabel: t("loading"),
+      }),
+    [myPermissions, governanceMembers, currentUser, email, activeFamily, t],
+  );
   const isOwner = String(role).toUpperCase().includes("OWNER");
   const isAdmin = String(role).toUpperCase().includes("ADMIN");
   const familyId = activeFamilyId || activeFamily?.id;
+  const showMemberSkeleton =
+    Boolean(activeFamilyId) &&
+    governanceMembers.length === 0 &&
+    (governanceLoading || !initialFetchDone);
+  const uiLang =
+    typeof document !== "undefined" ? document.documentElement.lang || "en" : "en";
   const memberCount = governanceMembers.length;
   const owners = governanceMembers.filter((m) =>
     String(m.role || m.member_role || "").toUpperCase().includes("OWNER")
@@ -162,6 +376,28 @@ export function FamilyGovernancePanel({
       await onRefresh?.();
     } finally {
       setRoleBusyId("");
+    }
+  }
+
+  async function setMemberRelationship(member, nextRelation) {
+    const mid = memberIdOf(member);
+    const relation = String(nextRelation || "").trim();
+    if (!mid || !familyId || !apiPatch || !relation) return;
+    const current =
+      member.relationship_display_label ||
+      member.relationship_type ||
+      member.relationship ||
+      "";
+    if (String(current).trim() === relation) return;
+    setRelationBusyId(mid);
+    try {
+      await apiPatch(`/families/${familyId}/members/${mid}/relationship`, {
+        relationship_type: relation,
+        relationship: relation,
+      });
+      await onRefresh?.();
+    } finally {
+      setRelationBusyId("");
     }
   }
 
@@ -310,9 +546,11 @@ export function FamilyGovernancePanel({
             {t("myRole")}: {String(role).toUpperCase()} · {currentUser?.email || email || "—"}
           </p>
           <div className="settings-badges">
-            <TypeChip type={roleTone(role)}>{String(role).toUpperCase()}</TypeChip>
+            <TypeChip type={roleTone(role)} className="family-my-role-chip">
+              {String(role).toUpperCase()}
+            </TypeChip>
             <TypeChip type="TRANSFER">
-              {digits(memberCount)} {t("members")}
+              {showMemberSkeleton ? t("loading") : `${digits(memberCount)} ${t("members")}`}
             </TypeChip>
           </div>
         </div>
@@ -321,21 +559,33 @@ export function FamilyGovernancePanel({
       <div className="settings-stat-row">
         <div className="settings-stat">
           <span>{t("members")}</span>
-          <strong>{digits(memberCount)}</strong>
+          <strong>
+            {showMemberSkeleton ? <span className="family-stat-shimmer" aria-hidden="true" /> : digits(memberCount)}
+          </strong>
         </div>
         <div className="settings-stat">
           <span>{t("activeStatus")}</span>
-          <strong>{digits(activeCount)}</strong>
+          <strong>
+            {showMemberSkeleton ? <span className="family-stat-shimmer" aria-hidden="true" /> : digits(activeCount)}
+          </strong>
         </div>
         <div className="settings-stat">
           <span>{t("myRole")}</span>
           <strong>
-            <TypeChip type={roleTone(role)}>{String(role).toUpperCase()}</TypeChip>
+            {showMemberSkeleton && !myPermissions && role === t("loading") ? (
+              <span className="family-stat-shimmer" aria-hidden="true" />
+            ) : (
+              <TypeChip type={roleTone(role)} className="family-my-role-chip">
+                {String(role).toUpperCase()}
+              </TypeChip>
+            )}
           </strong>
         </div>
         <div className="settings-stat">
           <span>Owner</span>
-          <strong>{digits(owners || 1)}</strong>
+          <strong>
+            {showMemberSkeleton ? <span className="family-stat-shimmer" aria-hidden="true" /> : digits(owners || 1)}
+          </strong>
         </div>
       </div>
 
@@ -346,13 +596,19 @@ export function FamilyGovernancePanel({
               <div>
                 <h4>{t("members")}</h4>
                 <p>
-                  {digits(memberCount)} {t("members")} · {digits(activeCount)} {t("activeStatus")}
+                  {showMemberSkeleton
+                    ? t("loading")
+                    : `${digits(memberCount)} ${t("members")} · ${digits(activeCount)} ${t("activeStatus")}`}
                 </p>
               </div>
             </div>
 
-            {governanceLoading ? (
-              <p className="settings-empty">{t("loading")}</p>
+            {showMemberSkeleton ? (
+              <div className="family-member-skeleton" aria-busy="true" aria-live="polite">
+                <div className="family-member-skeleton-row" />
+                <div className="family-member-skeleton-row" />
+                <div className="family-member-skeleton-row" />
+              </div>
             ) : governanceMembers.length === 0 ? (
               <p className="settings-empty">{t("noFamilyMemberData")}</p>
             ) : (
@@ -370,7 +626,32 @@ export function FamilyGovernancePanel({
                   const idValue = member.user_id || member.member_user_id || member.id;
                   const mid = memberIdOf(member);
                   const canToggleRole = isOwner && mid && !roleValue.includes("OWNER");
+                  const canEditRelation = Boolean(isOwner && mid && apiPatch);
+                  const canEditCapabilities = Boolean(
+                    isOwner &&
+                      mid &&
+                      toggleMemberPermission &&
+                      !roleValue.includes("OWNER") &&
+                      !roleValue.includes("ADMIN"),
+                  );
                   const canRemove = (isOwner || isAdmin) && mid && !roleValue.includes("OWNER");
+                  const relationOptions = roleValue.includes("OWNER")
+                    ? OWNER_RELATIONSHIPS
+                    : JOIN_RELATIONSHIPS;
+                  const permRow = findPermissionRow(memberPermissions, member);
+                  const effectiveCaps = resolveMemberCapabilities(member, permRow);
+                  const savingCaps =
+                    permissionSavingMemberId &&
+                    (String(permissionSavingMemberId) === String(mid) ||
+                      String(permissionSavingMemberId) === String(permRow?.member_id || ""));
+                  const capsTitle =
+                    String(uiLang).startsWith("bn")
+                      ? "কী কী করতে পারবে"
+                      : "What they can do";
+                  const capsHint =
+                    String(uiLang).startsWith("bn")
+                      ? "Owner (Husband) Wife / সদস্যের অ্যাক্সেস সেট করে — MEMBER রোলে টগল কাজ করে"
+                      : "Owner sets Wife / member access — use MEMBER role for these toggles";
                   return (
                     <div className="finance-card tx-card is-savings family-member-card" key={idValue || mid}>
                       <div className="tx-row family-member-row">
@@ -391,31 +672,117 @@ export function FamilyGovernancePanel({
                           </TypeChip>
                         </div>
                       </div>
-                      {canToggleRole || canRemove ? (
-                        <div className="finance-form" style={{ marginTop: 10 }}>
-                          {canToggleRole
-                            ? ["MEMBER", "ADMIN", "VIEWER", "CHILD"].map((nextRole) =>
-                                roleValue === nextRole ? null : (
+                      {canEditRelation || canToggleRole || canRemove || canEditCapabilities || (isOwner && !roleValue.includes("OWNER")) ? (
+                        <div className="family-member-actions">
+                          {canEditRelation ? (
+                            <label className="family-member-relation">
+                              <span className="family-member-relation-label">
+                                {t("relationship") || "Relationship"}
+                              </span>
+                              <select
+                                aria-label={t("relationship") || "Relationship"}
+                                value={
+                                  relationOptions.includes(relation)
+                                    ? relation
+                                    : relation || relationOptions[0]
+                                }
+                                disabled={relationBusyId === mid}
+                                onChange={(e) => void setMemberRelationship(member, e.target.value)}
+                              >
+                                {!relationOptions.includes(relation) && relation ? (
+                                  <option value={relation}>{relation}</option>
+                                ) : null}
+                                {relationOptions.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {canToggleRole ? (
+                            <div className="family-member-role-block">
+                              <span className="family-member-relation-label">
+                                {String(uiLang).startsWith("bn") ? "অ্যাক্সেস লেভেল (রোল)" : "Access level (role)"}
+                              </span>
+                              <div className="family-member-role-btns" role="group" aria-label={t("role") || "Role"}>
+                                {["MEMBER", "ADMIN", "VIEWER", "CHILD"].map((nextRole) => (
                                   <button
                                     key={nextRole}
                                     type="button"
-                                    className="btn"
-                                    disabled={roleBusyId === mid}
+                                    className={`btn family-role-chip${roleValue === nextRole ? " is-active" : ""}`}
+                                    disabled={roleBusyId === mid || roleValue === nextRole}
                                     onClick={() => void setMemberRole(member, nextRole)}
                                   >
                                     {nextRole}
                                   </button>
-                                )
-                              )
-                            : null}
+                                ))}
+                              </div>
+                              <p className="family-member-caps-hint">
+                                {roleHelpText(roleValue, uiLang) ||
+                                  (String(uiLang).startsWith("bn")
+                                    ? "MEMBER রাখুন যদি নিচে আলাদা অনুমতি সেট করতে চান"
+                                    : "Keep MEMBER to set individual permissions below")}
+                              </p>
+                            </div>
+                          ) : null}
+                          {canEditCapabilities ? (
+                            <div className="family-member-caps">
+                              <div className="family-member-caps-head">
+                                <span className="family-member-relation-label">{capsTitle}</span>
+                                <span className="family-member-caps-hint">{capsHint}</span>
+                              </div>
+                              <ul className="permissions-toggle-list family-caps-list">
+                                {MEMBER_CAPABILITY_TOGGLES.map((item) => {
+                                  const on = hasEffectivePermission(effectiveCaps, item.key);
+                                  const label = capabilityLabel(item, uiLang);
+                                  return (
+                                    <li key={item.key}>
+                                      <span className="permissions-toggle-label">{label}</span>
+                                      <label className="perm-switch">
+                                        <input
+                                          type="checkbox"
+                                          checked={on}
+                                          disabled={Boolean(savingCaps)}
+                                          onChange={(e) =>
+                                            toggleMemberPermission?.(
+                                              {
+                                                ...member,
+                                                ...(permRow || {}),
+                                                member_id: mid,
+                                                uid: member.uid || permRow?.uid || mid,
+                                                user_id: member.user_id || permRow?.user_id || mid,
+                                                normalized_role: roleValue,
+                                                role: roleValue,
+                                              },
+                                              item.key,
+                                              e.target.checked,
+                                            )
+                                          }
+                                          aria-label={label}
+                                        />
+                                        <span className="perm-switch-ui" aria-hidden="true" />
+                                      </label>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ) : isOwner && mid && roleValue.includes("ADMIN") ? (
+                            <p className="family-member-caps-hint family-admin-note">
+                              {String(uiLang).startsWith("bn")
+                                ? "ADMIN = ফুল অ্যাক্সেস। আলাদা টগল দেখতে রোল MEMBER করুন।"
+                                : "ADMIN = full access. Switch role to MEMBER to set individual toggles."}
+                            </p>
+                          ) : null}
                           {canRemove && apiDelete ? (
                             <button
                               type="button"
-                              className="btn"
+                              className="btn family-member-remove"
                               disabled={memberBusyId === mid}
                               onClick={() => void removeMember(member)}
                             >
-                              {t("removeMember") || "Remove"}
+                              {t("removeMember") || "Remove member"}
                             </button>
                           ) : null}
                         </div>

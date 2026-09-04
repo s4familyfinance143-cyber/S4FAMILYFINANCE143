@@ -71,6 +71,254 @@ async function appendNotification(familyId, entry) {
   return next;
 }
 
+const CLOUD_PERMISSION_CATALOG = [
+  "dashboard.read",
+  "accounts.create",
+  "accounts.read",
+  "transactions.create",
+  "income.create",
+  "expense.create",
+  "transactions.read",
+  "reports.read",
+  "audit.read",
+  "backup.create",
+  "backup.read",
+  "backup.download",
+  "backup.restore",
+  "sync.view",
+  "sync.pull",
+  "sync.push",
+  "sync.conflicts",
+  "sync.resolve",
+  "sync.manage",
+  "settings.manage",
+];
+
+const MEMBER_DEFAULT_PERMISSIONS = [
+  "dashboard.read",
+  "accounts.read",
+  "transactions.read",
+  "transactions.create",
+  "income.create",
+  "expense.create",
+  "reports.read",
+  "backup.read",
+  "sync.view",
+  "sync.pull",
+];
+
+function normalizeMemberRole(member) {
+  return String(member?.normalized_role || member?.role || "MEMBER").toUpperCase();
+}
+
+const ROLE_RANK = {
+  OWNER: 5,
+  ADMIN: 4,
+  MEMBER: 3,
+  VIEWER: 2,
+  CHILD: 1,
+};
+
+function preferElevatedRole(...roles) {
+  let best = "";
+  let bestRank = -1;
+  for (const raw of roles) {
+    const role = String(raw || "").toUpperCase().trim();
+    if (!role) continue;
+    const rank = ROLE_RANK[role] ?? 0;
+    if (rank > bestRank) {
+      best = role;
+      bestRank = rank;
+    }
+  }
+  return best || "MEMBER";
+}
+
+function defaultPermissionsForRole(role) {
+  const r = String(role || "MEMBER").toUpperCase();
+  // OWNER/ADMIN: wildcard + explicit settings.manage so UI/backend checks never miss it
+  if (r === "OWNER" || r === "ADMIN") return ["*", "settings.manage"];
+  return [...MEMBER_DEFAULT_PERMISSIONS];
+}
+
+function applyPermissionOverrides(baseKeys, overrides = []) {
+  if (baseKeys.includes("*")) return ["*"];
+  const set = new Set(baseKeys);
+  for (const item of overrides || []) {
+    const key = String(item?.permission_key || "").trim();
+    if (!key) continue;
+    if (item.allow === false) set.delete(key);
+    else set.add(key);
+  }
+  return [...set];
+}
+
+function memberMatchKey(member) {
+  const email = String(member?.email || "").trim().toLowerCase();
+  if (email) return `email:${email}`;
+  const uid = String(member?.user_id || member?.uid || member?.member_id || member?.id || "").trim();
+  if (uid) return `uid:${uid}`;
+  return "";
+}
+
+function cloudMemberToLocal(cm) {
+  const uid = String(cm?.uid || cm?.id || "").trim();
+  const overrides = Array.isArray(cm?.overrides)
+    ? cm.overrides
+    : Array.isArray(cm?.permission_overrides)
+      ? cm.permission_overrides
+      : [];
+  return {
+    id: uid || cm.id,
+    member_id: uid || cm.id,
+    user_id: uid || cm.user_id || "",
+    uid: uid || "",
+    full_name: cm.display_name || cm.full_name || cm.name || cm.email || "Member",
+    display_name: cm.display_name || cm.full_name || "",
+    email: cm.email || "",
+    role: cm.role || "MEMBER",
+    normalized_role: String(cm.role || "MEMBER").toUpperCase(),
+    relationship:
+      cm.relationship_display_label ||
+      cm.relationship ||
+      cm.relationship_type ||
+      "",
+    relationship_type: cm.relationship_type || cm.relationship || "",
+    relationship_display_label: cm.relationship_display_label || "",
+    status: cm.status || "ACTIVE",
+    overrides,
+    permission_overrides: overrides,
+    source: "firestore_members",
+    updated_at: cm.updated_at || null,
+  };
+}
+
+function mergeLocalAndCloudMembers(localRows = [], cloudRows = []) {
+  const byKey = new Map();
+  for (const row of localRows || []) {
+    const key = memberMatchKey(row);
+    if (!key) continue;
+    byKey.set(key, { ...row });
+  }
+  for (const cm of cloudRows || []) {
+    const mapped = cloudMemberToLocal(cm);
+    const key = memberMatchKey(mapped);
+    if (!key) continue;
+    if (!byKey.has(key)) {
+      byKey.set(key, mapped);
+      continue;
+    }
+    const existing = byKey.get(key);
+    const cloudOverrides = mapped.overrides || [];
+    const localOverrides = Array.isArray(existing.overrides) ? existing.overrides : [];
+    // Prefer newer / non-empty overrides; Firestore is source of truth when present
+    const overrides = cloudOverrides.length ? cloudOverrides : localOverrides;
+    byKey.set(key, {
+      ...existing,
+      ...mapped,
+      // Prefer Firestore uid as stable member_id for multi-device overrides
+      member_id: mapped.member_id || existing.member_id,
+      id: mapped.id || existing.id,
+      uid: mapped.uid || existing.uid,
+      user_id: mapped.user_id || existing.user_id,
+      full_name: mapped.full_name || existing.full_name,
+      email: mapped.email || existing.email,
+      // Never let a stale MEMBER cloud row downgrade an OWNER/ADMIN local row
+      role: preferElevatedRole(mapped.role, existing.role, mapped.normalized_role, existing.normalized_role),
+      normalized_role: preferElevatedRole(
+        mapped.normalized_role,
+        mapped.role,
+        existing.normalized_role,
+        existing.role,
+      ),
+      relationship: mapped.relationship || existing.relationship,
+      relationship_type: mapped.relationship_type || existing.relationship_type,
+      overrides,
+      permission_overrides: overrides,
+      source: existing.source && existing.source !== "cloud_local" ? existing.source : "merged",
+    });
+  }
+  return [...byKey.values()];
+}
+
+function mapFamilyMemberPermissions(member) {
+  const role = normalizeMemberRole(member);
+  const overrides = Array.isArray(member?.overrides)
+    ? member.overrides
+    : Array.isArray(member?.permission_overrides)
+      ? member.permission_overrides
+      : [];
+  const base = defaultPermissionsForRole(role);
+  const effective = applyPermissionOverrides(base, overrides);
+  return {
+    ...member,
+    member_id: member.member_id || member.id || member.uid || member.user_id,
+    user_id: member.user_id || member.uid || member.email || member.member_id || member.id,
+    full_name: member.full_name || member.display_name || member.name || "",
+    email: member.email || "",
+    relationship:
+      member.relationship_display_label ||
+      member.relationship ||
+      member.relationship_type ||
+      member.relation ||
+      role,
+    role,
+    normalized_role: role,
+    overrides,
+    effective_permissions: effective,
+    source: member.source || "cloud_local",
+  };
+}
+
+async function loadPermissionMembers(familyId) {
+  let rows = await readList(familyId, "family", "members");
+  try {
+    const { listFamilyCloudMembers } = await import("../firebase/familyCloud");
+    const cloudMembers = await listFamilyCloudMembers(familyId);
+    if (cloudMembers.length) {
+      const merged = mergeLocalAndCloudMembers(rows, cloudMembers);
+      // Keep local IDB in sync so PATCH /permissions/members/:id can find every member
+      if (merged.length) {
+        await writeList(familyId, "family", "members", merged);
+        rows = merged;
+      }
+    }
+  } catch {
+    /* offline / rules not published */
+  }
+  return rows.map(mapFamilyMemberPermissions);
+}
+
+function findCurrentMember(members, currentUser) {
+  if (!Array.isArray(members) || !members.length) return null;
+  const email = String(currentUser?.email || "").trim().toLowerCase();
+  const uid = String(
+    currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+  ).trim();
+
+  const matches = members.filter((m) => {
+    const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
+    const memberEmail = String(m.email || m.user_email || "").trim().toLowerCase();
+    if (uid && memberUid && memberUid === uid) return true;
+    if (email && memberEmail && memberEmail === email) return true;
+    return false;
+  });
+
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    // Duplicate rows (local seed + Firestore): keep the highest privilege role
+    return [...matches].sort(
+      (a, b) => (ROLE_RANK[normalizeMemberRole(b)] || 0) - (ROLE_RANK[normalizeMemberRole(a)] || 0),
+    )[0];
+  }
+
+  // Only fall back to OWNER when we cannot identify the user at all
+  if (!uid && !email) {
+    return members.find((m) => normalizeMemberRole(m) === "OWNER") || members[0];
+  }
+  return null;
+}
+
 const LIFE_ROUTE_TO_KEY = {
   investments: "INVESTMENT",
   "health-expenses": "HEALTH",
@@ -163,22 +411,64 @@ export async function cloudApiGet({ familyId, path, currentUser }) {
   }
   if (parts[0] === "notifications" && parts[1] === "summary" && parts[2] === familyId) {
     const rows = await readList(familyId, "system", "notifications");
-    const unread = rows.filter((r) => !r.read).length;
-    return { handled: true, data: { total: rows.length, unread, source: "cloud_local" } };
+    const unread = rows.filter((r) => !r.read && !r.is_read).length;
+    const read = rows.length - unread;
+    const high = rows.filter((r) => String(r.severity || "").toUpperCase() === "HIGH").length;
+    const medium = rows.filter((r) => String(r.severity || "").toUpperCase() === "MEDIUM").length;
+    return {
+      handled: true,
+      data: {
+        family_id: familyId,
+        total: rows.length,
+        unread,
+        unread_count: unread,
+        total_notifications: rows.length,
+        unread_notifications: unread,
+        read_notifications: read,
+        high_notifications: high,
+        medium_notifications: medium,
+        source: "cloud_local",
+      },
+    };
   }
   if (parts[0] === "notifications" && parts[1] === "delivery-status") {
+    const permission =
+      typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    let vapidConfigured = false;
+    try {
+      const raw = String(import.meta.env.VITE_FIREBASE_VAPID_KEY || "").trim();
+      vapidConfigured = raw.length > 20;
+    } catch {
+      vapidConfigured = false;
+    }
     return {
       handled: true,
       data: {
         email: false,
+        email_configured: false,
         push: typeof Notification !== "undefined",
+        fcm_configured: vapidConfigured,
         in_app: true,
         mode: "cloud_local",
+        delivery_mode: vapidConfigured ? "IN_APP_BROWSER_FCM" : "IN_APP_BROWSER",
+        browser_permission: permission,
+        web_fcm: {
+          vapid_configured: vapidConfigured,
+          permission,
+        },
+        note:
+          permission === "denied"
+            ? "Browser notifications blocked — enable in site settings"
+            : !vapidConfigured
+              ? "Set VITE_FIREBASE_VAPID_KEY in frontend/.env and restart Vite"
+              : permission === "granted"
+                ? "Browser notifications allowed · VAPID configured"
+                : "Click the bell to enable browser notifications",
       },
     };
   }
   if (parts[0] === "notifications" && parts[1] === "devices") {
-    return { handled: true, data: [] };
+    return { handled: true, data: await readList(familyId, "system", "pushDevices") };
   }
 
   // Audit
@@ -194,21 +484,65 @@ export async function cloudApiGet({ familyId, path, currentUser }) {
 
   // Family members / permissions
   if (parts[0] === "families" && parts[1] === familyId && parts[2] === "members") {
-    return { handled: true, data: await readList(familyId, "family", "members") };
+    return { handled: true, data: await loadPermissionMembers(familyId) };
   }
   if (parts[0] === "permissions" && parts[1] === "family" && parts[2] === familyId && parts[3] === "me") {
+    const members = await loadPermissionMembers(familyId);
+    const me = findCurrentMember(members, currentUser);
+    const ownerUid = String(
+      currentUser?.family_owner_uid ||
+        members.find((m) => normalizeMemberRole(m) === "OWNER")?.user_id ||
+        members.find((m) => normalizeMemberRole(m) === "OWNER")?.uid ||
+        "",
+    ).trim();
+    const myUid = String(currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || "").trim();
+    const isFamilyOwner = Boolean(myUid && ownerUid && myUid === ownerUid);
+
+    const mapped = me
+      ? mapFamilyMemberPermissions(me)
+      : isFamilyOwner
+        ? {
+            role: "OWNER",
+            normalized_role: "OWNER",
+            relationship: "Owner",
+            effective_permissions: ["*", "settings.manage"],
+            overrides: [],
+            source: "cloud_local",
+          }
+        : {
+            role: "OWNER",
+            normalized_role: "OWNER",
+            relationship: "Owner",
+            effective_permissions: ["*"],
+            overrides: [],
+            source: "cloud_local",
+          };
+
+    const resolvedRole = preferElevatedRole(
+      mapped.normalized_role,
+      mapped.role,
+      isFamilyOwner ? "OWNER" : "",
+    );
+
     return {
       handled: true,
       data: {
-        role: "OWNER",
-        effective_permissions: ["*"],
-        overrides: [],
+        role: resolvedRole,
+        normalized_role: resolvedRole,
+        relationship: mapped.relationship || (resolvedRole === "OWNER" ? "Owner" : "Member"),
+        effective_permissions: mapped.effective_permissions?.length
+          ? mapped.effective_permissions
+          : defaultPermissionsForRole(resolvedRole),
+        overrides: mapped.overrides || [],
+        member_id: mapped.member_id,
+        catalog: CLOUD_PERMISSION_CATALOG,
         source: "cloud_local",
       },
     };
   }
   if (parts[0] === "permissions" && parts[1] === "family" && parts[2] === familyId && parts[3] === "members") {
-    return { handled: true, data: await readList(familyId, "family", "members") };
+    const members = await loadPermissionMembers(familyId);
+    return { handled: true, data: members };
   }
 
   // Join requests
@@ -800,6 +1134,8 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       title: "Test notification",
       body: "Saved in-app. Email SMTP is optional; invite codes work without SMTP.",
       type: "TEST",
+      notification_type: "TEST",
+      severity: "LOW",
     });
     await after();
     return { handled: true, data: { sent: true, channel: "in_app", reason: "cloud_in_app" } };
@@ -807,33 +1143,223 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
   if (parts[0] === "notifications" && parts[1] === "test-push") {
     const title = "S4 Family Finance 143";
     const bodyText = "Push test — browser/local notification";
-    await appendNotification(familyId, { title, body: bodyText, type: "TEST" });
+    await appendNotification(familyId, {
+      title,
+      body: bodyText,
+      type: "TEST",
+      notification_type: "TEST",
+      severity: "MEDIUM",
+    });
+    let pushShown = false;
+    let pushReason = "browser_unavailable";
     try {
       if (typeof Notification !== "undefined") {
         if (Notification.permission === "granted") {
-          new Notification(title, { body: bodyText });
+          new Notification(title, { body: bodyText, icon: "/icon-192.png" });
+          pushShown = true;
+          pushReason = "browser_notification";
         } else if (Notification.permission !== "denied") {
-          await Notification.requestPermission();
-          if (Notification.permission === "granted") {
-            new Notification(title, { body: bodyText });
+          const perm = await Notification.requestPermission();
+          if (perm === "granted") {
+            new Notification(title, { body: bodyText, icon: "/icon-192.png" });
+            pushShown = true;
+            pushReason = "browser_notification";
+          } else {
+            pushReason = "permission_not_granted";
           }
+        } else {
+          pushReason = "permission_denied";
         }
       }
-    } catch {
-      /* optional */
+    } catch (err) {
+      console.error("[S4 Notify] test-push failed", err);
+      pushReason = err?.message || "notification_error";
     }
     await after();
-    return { handled: true, data: { sent: true, channel: "browser_notification" } };
+    return {
+      handled: true,
+      data: {
+        sent: true,
+        sent_count: pushShown ? 1 : 0,
+        channel: pushShown ? "browser_notification" : "in_app_only",
+        reason: pushReason,
+      },
+    };
+  }
+
+  if (parts[0] === "notifications" && parts[1] === "devices" && parts[2] === familyId) {
+    const devices = await readList(familyId, "system", "pushDevices", []);
+    const token = String(body?.token || "").trim();
+    if (token.length < 8) {
+      return { handled: true, data: { ok: false, reason: "token_too_short" } };
+    }
+    const existing = devices.find((d) => d.token === token);
+    const row = {
+      id: existing?.id || newId("dev"),
+      token,
+      platform: body?.platform || "WEB",
+      provider: body?.provider || "FCM",
+      device_label: body?.device_label || "web-browser",
+      created_at: existing?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_active: true,
+    };
+    const next = existing
+      ? devices.map((d) => (d.token === token ? row : d))
+      : [row, ...devices].slice(0, 20);
+    await writeList(familyId, "system", "pushDevices", next);
+    await after();
+    return { handled: true, data: row };
+  }
+
+  if (parts[0] === "notifications" && parts[1] === "scan" && parts[2] === familyId) {
+    const created = await appendNotification(familyId, {
+      title: "Activity check",
+      body: "Cloud scan complete — review family alerts in the inbox.",
+      type: "SCAN",
+      notification_type: "SCAN",
+      severity: "LOW",
+    });
+    await after();
+    return {
+      handled: true,
+      data: { created_notifications: 1, unread_notifications: created.filter((r) => !r.read).length },
+    };
   }
 
   return { handled: false };
 }
 
-export async function cloudApiPatch({ familyId, path, body, onAfterWrite }) {
+export async function cloudApiPatch({ familyId, path, body, onAfterWrite, currentUser }) {
   if (!familyId) return { handled: false };
   const clean = stripQuery(path);
   const parts = clean.replace(/^\//, "").split("/").filter(Boolean);
   const after = typeof onAfterWrite === "function" ? onAfterWrite : async () => {};
+
+  // Family settings (currency / timezone) — Owner/Admin with settings.manage
+  if (
+    parts[0] === "families" &&
+    parts[1] === familyId &&
+    (parts[2] === "settings" || parts[2] === "currency")
+  ) {
+    const nextCurrency = String(
+      body?.default_currency || body?.currency || "",
+    )
+      .trim()
+      .toUpperCase();
+    const nextTimezone = String(body?.timezone || "").trim();
+
+    if (parts[2] === "settings" && !nextCurrency && !nextTimezone) {
+      return {
+        handled: true,
+        data: { ok: false, detail: "No settings provided" },
+        error: "No settings provided",
+      };
+    }
+    if (parts[2] === "currency" && !nextCurrency) {
+      return {
+        handled: true,
+        data: { ok: false, detail: "Invalid currency code" },
+        error: "Invalid currency code",
+      };
+    }
+
+    // OWNER / ADMIN always have settings.manage in cloud mode
+    const members = await loadPermissionMembers(familyId);
+    const me = findCurrentMember(members, currentUser);
+    const role = normalizeMemberRole(me || { role: "OWNER" });
+    const effective = me?.effective_permissions || defaultPermissionsForRole(role);
+    const canManage =
+      role === "OWNER" ||
+      role === "ADMIN" ||
+      effective.includes("*") ||
+      effective.includes("settings.manage");
+    if (!canManage) {
+      const err = new Error("Permission denied: settings.manage");
+      err.status = 403;
+      err.isPermission = true;
+      throw err;
+    }
+
+    const profile = await readDoc(familyId, "system", "familyProfile", {
+      id: familyId,
+      default_currency: "BDT",
+      timezone: "Asia/Dhaka",
+    });
+    const currencyBag = await readDoc(familyId, "system", "currency", {
+      code: "BDT",
+      symbol: "BDT",
+    });
+
+    const oldCurrency = profile.default_currency || currencyBag.code || "BDT";
+    const oldTimezone = profile.timezone || "Asia/Dhaka";
+    const appliedCurrency = nextCurrency || oldCurrency;
+    const appliedTimezone = nextTimezone || oldTimezone;
+
+    await writeDoc(familyId, "system", "familyProfile", {
+      ...profile,
+      id: familyId,
+      default_currency: appliedCurrency,
+      currency: appliedCurrency,
+      timezone: appliedTimezone,
+      updated_at: new Date().toISOString(),
+      source: "cloud_local",
+    });
+    await writeDoc(familyId, "system", "currency", {
+      ...currencyBag,
+      code: appliedCurrency,
+      symbol: currencyBag.symbol || appliedCurrency,
+      currencySummary: {
+        ...(currencyBag.currencySummary || {}),
+        base_currency: appliedCurrency,
+        source: "cloud_local",
+      },
+      updated_at: new Date().toISOString(),
+    });
+
+    await appendAudit(familyId, {
+      action: "FAMILY_SETTINGS_UPDATE",
+      default_currency: appliedCurrency,
+      timezone: appliedTimezone,
+    });
+
+    // Persist to Firestore family meta (multi-device)
+    try {
+      const { updateFamilyCloudSettings } = await import("../firebase/familyCloud");
+      await updateFamilyCloudSettings({
+        familyId,
+        currency: appliedCurrency,
+        timezone: appliedTimezone,
+        actorUid: currentUser?.uid || currentUser?.firebase_uid || me?.user_id || me?.uid,
+      });
+    } catch (err) {
+      // Local snapshots already saved — surface Firestore errors clearly
+      const msg = String(err?.message || "");
+      if (/permission denied/i.test(msg)) {
+        throw err;
+      }
+      if (/network|unavailable|connection/i.test(msg)) {
+        throw err;
+      }
+      console.warn("[S4 FamilySettings] Firestore meta update skipped", err);
+    }
+
+    await after();
+    return {
+      handled: true,
+      data: {
+        success: true,
+        family_id: familyId,
+        old_currency: oldCurrency,
+        new_currency: appliedCurrency,
+        old_timezone: oldTimezone,
+        new_timezone: appliedTimezone,
+        default_currency: appliedCurrency,
+        timezone: appliedTimezone,
+        source: "cloud_local",
+      },
+    };
+  }
 
   // Task complete / update
   if (parts[0] === "tasks" && parts[1]) {
@@ -877,6 +1403,255 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite }) {
     await writeDoc(familyId, "life", phase, { ...bag, items: nextItems });
     await after();
     return { handled: true, data: { ok: true } };
+  }
+
+  if (parts[0] === "notifications" && parts[1] === "read" && parts[2]) {
+    const rows = await readList(familyId, "system", "notifications");
+    const next = rows.map((r) =>
+      r.id === parts[2] ? { ...r, read: true, is_read: true, updated_at: new Date().toISOString() } : r,
+    );
+    await writeList(familyId, "system", "notifications", next);
+    await after();
+    return { handled: true, data: next.find((r) => r.id === parts[2]) || { ok: true } };
+  }
+
+  if (parts[0] === "notifications" && parts[1] === "read-all" && parts[2] === familyId) {
+    const rows = await readList(familyId, "system", "notifications");
+    let marked = 0;
+    const next = rows.map((r) => {
+      if (r.read || r.is_read) return r;
+      marked += 1;
+      return { ...r, read: true, is_read: true, updated_at: new Date().toISOString() };
+    });
+    await writeList(familyId, "system", "notifications", next);
+    await after();
+    return { handled: true, data: { marked_read: marked } };
+  }
+
+  // Family member role / relationship (Owner governance)
+  if (parts[0] === "families" && parts[1] === familyId && parts[2] === "members" && parts[3]) {
+    const memberId = String(parts[3] || "").trim();
+    const action = String(parts[4] || "").trim().toLowerCase();
+    const actorUid = String(
+      currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || "",
+    ).trim();
+
+    const matchesMember = (raw) => {
+      const ids = [raw.member_id, raw.id, raw.uid, raw.user_id]
+        .filter(Boolean)
+        .map((v) => String(v));
+      return ids.includes(memberId);
+    };
+
+    if (action === "role") {
+      const nextRole = String(body?.role || "").trim().toUpperCase();
+      if (!nextRole) {
+        return { handled: true, data: { ok: false, detail: "role required" } };
+      }
+      let rows = await readList(familyId, "family", "members");
+      let found = false;
+      const next = rows.map((raw) => {
+        if (!matchesMember(raw)) return raw;
+        found = true;
+        return {
+          ...raw,
+          role: nextRole,
+          normalized_role: nextRole,
+          member_role: nextRole,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      if (!found) {
+        next.push({
+          id: memberId,
+          member_id: memberId,
+          user_id: memberId,
+          uid: memberId,
+          role: nextRole,
+          normalized_role: nextRole,
+          status: "ACTIVE",
+          updated_at: new Date().toISOString(),
+          source: "role_patch",
+        });
+      }
+      await writeList(familyId, "family", "members", next);
+      try {
+        const { setFamilyMemberRole } = await import("../firebase/familyCloud");
+        await setFamilyMemberRole({
+          familyId,
+          memberUid: memberId,
+          role: nextRole,
+          actorUid,
+        });
+      } catch (err) {
+        console.warn("[S4 MemberRole] Firestore update skipped", err);
+      }
+      await appendAudit(familyId, { action: "MEMBER_ROLE", member_id: memberId, role: nextRole });
+      await after();
+      return { handled: true, data: { ok: true, member_id: memberId, role: nextRole } };
+    }
+
+    if (action === "relationship" || body?.relationship_type || body?.relationship) {
+      const relation = String(
+        body?.relationship_type || body?.relationship || body?.relationship_display_label || "",
+      ).trim();
+      if (!relation) {
+        return { handled: true, data: { ok: false, detail: "relationship required" } };
+      }
+      let rows = await readList(familyId, "family", "members");
+      let found = false;
+      const next = rows.map((raw) => {
+        if (!matchesMember(raw)) return raw;
+        found = true;
+        return {
+          ...raw,
+          relationship: relation,
+          relationship_type: relation,
+          relationship_display_label: relation,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      if (!found) {
+        next.push({
+          id: memberId,
+          member_id: memberId,
+          user_id: memberId,
+          uid: memberId,
+          relationship: relation,
+          relationship_type: relation,
+          relationship_display_label: relation,
+          role: "MEMBER",
+          status: "ACTIVE",
+          updated_at: new Date().toISOString(),
+          source: "relationship_patch",
+        });
+      }
+      await writeList(familyId, "family", "members", next);
+      try {
+        const { setFamilyMemberRelationship } = await import("../firebase/familyCloud");
+        await setFamilyMemberRelationship({
+          familyId,
+          memberUid: memberId,
+          relationshipType: relation,
+          actorUid,
+        });
+      } catch (err) {
+        console.warn("[S4 MemberRelation] Firestore update skipped", err);
+      }
+      await appendAudit(familyId, {
+        action: "MEMBER_RELATIONSHIP",
+        member_id: memberId,
+        relationship: relation,
+      });
+      await after();
+      return {
+        handled: true,
+        data: {
+          ok: true,
+          member_id: memberId,
+          relationship: relation,
+          relationship_type: relation,
+        },
+      };
+    }
+  }
+
+  // Member permission override (Owner assigns Allow/Deny)
+  if (parts[0] === "permissions" && parts[1] === "members" && parts[2]) {
+    const memberId = String(parts[2] || "").trim();
+    let rows = await readList(familyId, "family", "members");
+    const key = String(body?.permission_key || "").trim();
+    if (!key) {
+      return { handled: true, data: { ok: false, detail: "permission_key required" } };
+    }
+    const allow = body?.allow !== false;
+    const scope = body?.scope || "family";
+
+    const matchesMember = (raw) => {
+      const ids = [raw.member_id, raw.id, raw.uid, raw.user_id]
+        .filter(Boolean)
+        .map((v) => String(v));
+      return ids.includes(memberId);
+    };
+
+    const applyOverride = (raw) => {
+      const overrides = Array.isArray(raw.overrides)
+        ? [...raw.overrides]
+        : Array.isArray(raw.permission_overrides)
+          ? [...raw.permission_overrides]
+          : [];
+      const idx = overrides.findIndex((o) => o.permission_key === key);
+      const row = {
+        id: overrides[idx]?.id || newId("pov"),
+        permission_key: key,
+        allow,
+        scope,
+        updated_at: new Date().toISOString(),
+      };
+      if (idx >= 0) overrides[idx] = row;
+      else overrides.push(row);
+      return {
+        ...raw,
+        member_id: raw.member_id || raw.id || memberId,
+        overrides,
+        permission_overrides: overrides,
+        updated_at: new Date().toISOString(),
+      };
+    };
+
+    let found = false;
+    let next = rows.map((raw) => {
+      if (!matchesMember(raw)) return raw;
+      found = true;
+      return applyOverride(raw);
+    });
+
+    if (!found) {
+      next = [
+        ...next,
+        applyOverride({
+          id: memberId,
+          member_id: memberId,
+          user_id: memberId,
+          uid: memberId,
+          full_name: body?.full_name || "Member",
+          email: body?.email || "",
+          role: body?.role || "MEMBER",
+          relationship: body?.relationship || "",
+          status: "ACTIVE",
+          source: "permission_upsert",
+        }),
+      ];
+    }
+
+    await writeList(familyId, "family", "members", next);
+    await appendAudit(familyId, {
+      action: "PERMISSION_OVERRIDE",
+      member_id: memberId,
+      permission_key: key,
+      allow,
+    });
+
+    const updated = next.find((r) => matchesMember(r));
+    const mapped = mapFamilyMemberPermissions(updated || {});
+
+    // Also write overrides onto Firestore member doc for multi-device truth
+    try {
+      const { updateFamilyMemberPermissionOverrides } = await import("../firebase/familyCloud");
+      const firestoreUid = String(
+        updated?.uid || updated?.user_id || updated?.member_id || memberId,
+      );
+      await updateFamilyMemberPermissionOverrides({
+        familyId,
+        memberUid: firestoreUid,
+        overrides: mapped.overrides || [],
+      });
+    } catch {
+      /* rules / offline — local IDB still saved */
+    }
+
+    await after();
+    return { handled: true, data: mapped };
   }
 
   return { handled: false };
@@ -941,6 +1716,30 @@ export async function cloudApiDelete({ familyId, path, onAfterWrite }) {
     return { handled: true, data: { ok: true } };
   }
 
+  if (parts[0] === "notifications" && parts[1] && !parts[2]) {
+    const rows = await readList(familyId, "system", "notifications");
+    await writeList(
+      familyId,
+      "system",
+      "notifications",
+      rows.filter((r) => r.id !== parts[1]),
+    );
+    await after();
+    return { handled: true, data: { ok: true } };
+  }
+
+  if (parts[0] === "notifications" && parts[1] === "devices" && parts[2]) {
+    const rows = await readList(familyId, "system", "pushDevices");
+    await writeList(
+      familyId,
+      "system",
+      "pushDevices",
+      rows.filter((r) => r.id !== parts[2]),
+    );
+    await after();
+    return { handled: true, data: { ok: true } };
+  }
+
   return { handled: false };
 }
 
@@ -965,8 +1764,11 @@ export async function seedCloudModuleCaches(familyId, { ownerName, ownerEmail, o
       full_name: ownerName || "Owner",
       email: ownerEmail || "",
       role: "OWNER",
+      normalized_role: "OWNER",
+      relationship: ownerRelation || "Owner",
       relationship_type: ownerRelation || "Owner",
       status: "ACTIVE",
+      overrides: [],
       joined_at: new Date().toISOString(),
       source: "cloud_local",
     };
@@ -1011,6 +1813,7 @@ export async function seedCloudModuleCaches(familyId, { ownerName, ownerEmail, o
     currencySummary: { base_currency: "BDT", source: "cloud_local" },
   });
   await ensureList("system", "notifications", []);
+  await ensureList("system", "pushDevices", []);
   const auditExisting = await loadOfflineSnapshot(familyId, "system", "audit").catch(() => null);
   if (!auditExisting?.data) {
     await writeList(familyId, "system", "audit", [

@@ -68,6 +68,7 @@ export async function ensureFamilyCloudShell({
   displayName,
   familyName,
   role = "OWNER",
+  relationshipType = "",
 }) {
   if (!familyId || !uid) return;
   const db = getFirestoreDb();
@@ -76,6 +77,7 @@ export async function ensureFamilyCloudShell({
   const memberSnap = await getDoc(familyMemberRef(familyId, uid));
   const metaSnap = await getDoc(familyMetaRef(familyId));
   const isFirst = !metaSnap.exists() || !metaSnap.data()?.owner_uid;
+  const relation = String(relationshipType || "").trim();
 
   // Member first so subsequent family meta updates pass familyMember/owner rules.
   if (!memberSnap.exists()) {
@@ -86,6 +88,13 @@ export async function ensureFamilyCloudShell({
         email: email || null,
         display_name: displayName || null,
         role: isFirst ? "OWNER" : role || "MEMBER",
+        ...(relation
+          ? {
+              relationship_type: relation,
+              relationship: relation,
+              relationship_display_label: relation,
+            }
+          : {}),
         status: "ACTIVE",
         joined_at: serverTimestamp(),
         updated_at: serverTimestamp(),
@@ -93,11 +102,24 @@ export async function ensureFamilyCloudShell({
       { merge: true },
     );
   } else {
+    const existingRelation =
+      memberSnap.data()?.relationship_type ||
+      memberSnap.data()?.relationship ||
+      memberSnap.data()?.relationship_display_label ||
+      "";
     await setDoc(
       familyMemberRef(familyId, uid),
       {
         email: email || memberSnap.data()?.email || null,
         display_name: displayName || memberSnap.data()?.display_name || null,
+        // Backfill relation only when missing (never overwrite a corrected label)
+        ...(!existingRelation && relation
+          ? {
+              relationship_type: relation,
+              relationship: relation,
+              relationship_display_label: relation,
+            }
+          : {}),
         status: "ACTIVE",
         updated_at: serverTimestamp(),
       },
@@ -116,6 +138,69 @@ export async function ensureFamilyCloudShell({
     },
     { merge: true },
   );
+}
+
+/**
+ * Owner updates family currency / timezone on families/{familyId} meta doc.
+ */
+export async function updateFamilyCloudSettings({
+  familyId,
+  currency,
+  timezone,
+  actorUid,
+}) {
+  if (!familyId) throw new Error("familyId required");
+  const nextCurrency = String(currency || "").trim().toUpperCase();
+  const nextTimezone = String(timezone || "").trim();
+  if (!nextCurrency && !nextTimezone) {
+    throw new Error("No settings provided");
+  }
+  if (nextCurrency && (nextCurrency.length < 3 || nextCurrency.length > 10)) {
+    throw new Error("Invalid currency code");
+  }
+  if (nextTimezone && (nextTimezone.length < 2 || nextTimezone.length > 64)) {
+    throw new Error("Invalid timezone");
+  }
+
+  if (actorUid) {
+    const actor = await getDoc(familyMemberRef(familyId, actorUid));
+    if (!actor.exists()) {
+      throw new Error("Permission denied: you are not a family member");
+    }
+    const role = String(actor.data()?.role || "").toUpperCase();
+    if (role !== "OWNER" && role !== "ADMIN") {
+      throw new Error("Permission denied: settings.manage required");
+    }
+  }
+
+  const patch = { updated_at: serverTimestamp() };
+  if (nextCurrency) {
+    patch.currency = nextCurrency;
+    patch.default_currency = nextCurrency;
+  }
+  if (nextTimezone) {
+    patch.timezone = nextTimezone;
+  }
+
+  try {
+    await setDoc(familyMetaRef(familyId), patch, { merge: true });
+  } catch (err) {
+    const code = String(err?.code || err?.message || "");
+    if (/permission-denied/i.test(code)) {
+      throw new Error("Permission denied: unable to update family settings in Firestore");
+    }
+    if (/unavailable|network|failed-precondition/i.test(code)) {
+      throw new Error("Database connection issue — check your network and try again");
+    }
+    throw new Error(err?.message || "Family settings update failed");
+  }
+
+  return {
+    success: true,
+    family_id: familyId,
+    default_currency: nextCurrency || null,
+    timezone: nextTimezone || null,
+  };
 }
 
 /** Publish invite code to global registry (cross-account join). */
@@ -308,7 +393,36 @@ export async function listFamilyCloudMembers(familyId) {
   if (!familyId) return [];
   const db = getFirestoreDb();
   const snaps = await getDocs(collection(db, "families", familyId, "members"));
-  return snaps.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snaps.docs.map((d) => ({ id: d.id, uid: d.id, ...d.data() }));
+}
+
+/** Persist permission overrides on families/{id}/members/{uid} (Owner RBAC). */
+export async function updateFamilyMemberPermissionOverrides({
+  familyId,
+  memberUid,
+  overrides,
+  actorUid,
+}) {
+  if (!familyId || !memberUid) throw new Error("family/member required");
+  if (actorUid) {
+    const actor = await getDoc(familyMemberRef(familyId, actorUid));
+    if (!actor.exists()) throw new Error("Actor is not a family member");
+    const actorRole = String(actor.data()?.role || "").toUpperCase();
+    if (actorRole !== "OWNER" && actorRole !== "ADMIN") {
+      throw new Error("Only OWNER/ADMIN can change permissions");
+    }
+  }
+  const list = Array.isArray(overrides) ? overrides : [];
+  await setDoc(
+    familyMemberRef(familyId, memberUid),
+    {
+      overrides: list,
+      permission_overrides: list,
+      updated_at: serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return { ok: true, memberUid, overrides: list };
 }
 
 export async function setFamilyMemberRole({ familyId, memberUid, role, actorUid }) {
@@ -323,6 +437,37 @@ export async function setFamilyMemberRole({ familyId, memberUid, role, actorUid 
     { merge: true },
   );
   return { ok: true, memberUid, role: String(role).toUpperCase() };
+}
+
+/** Owner (or self) updates family relationship label (Husband / Wife / …). */
+export async function setFamilyMemberRelationship({
+  familyId,
+  memberUid,
+  relationshipType,
+  actorUid,
+}) {
+  if (!familyId || !memberUid) throw new Error("family/member required");
+  const relation = String(relationshipType || "").trim();
+  if (!relation) throw new Error("relationship required");
+
+  if (actorUid && actorUid !== memberUid) {
+    const actor = await getDoc(familyMemberRef(familyId, actorUid));
+    if (!actor.exists() || String(actor.data()?.role || "").toUpperCase() !== "OWNER") {
+      throw new Error("Only OWNER can change another member's relationship");
+    }
+  }
+
+  await setDoc(
+    familyMemberRef(familyId, memberUid),
+    {
+      relationship_type: relation,
+      relationship: relation,
+      relationship_display_label: relation,
+      updated_at: serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return { ok: true, memberUid, relationship_type: relation };
 }
 
 export async function removeFamilyCloudMember({ familyId, memberUid, actorUid }) {

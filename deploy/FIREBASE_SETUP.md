@@ -30,7 +30,8 @@ See **`deploy/HYBRID_ARCHITECTURE_LOCK.md`**:
 
 1. Firebase Console → Firestore → **Rules**
 2. Paste contents of `deploy/firebase/firestore.rules`
-3. **Publish** (rules require **email verified** for cloud snapshot read/write)
+3. **Publish** (rules require **email verified** for cloud snapshot read/write).
+   Owners may update family `currency` / `default_currency` / `timezone` on `families/{familyId}`.
 
 4. Firebase Console → Storage → **Get started** (enable Storage; Blaze may be required for cross-service rules)
 5. Storage → **Rules** → paste `deploy/firebase/storage.rules` → **Publish**
@@ -95,6 +96,18 @@ See **`deploy/GOOGLE_DRIVE_SETUP.md`** for:
 - Firestore free tier is enough for early users
 - Cloud Storage for files needs Blaze plan (pay-as-you-go with free quota)
 
+## Instant verification email (recommended)
+
+Firebase Auth’s built-in mailer can take minutes on free/Spark. For near-instant delivery:
+
+1. Deploy a small HTTPS API (Cloud Function or your backend) that:
+   - Verifies `Authorization: Bearer <Firebase ID token>`
+   - Calls `admin.auth().generateEmailVerificationLink(email)`
+   - Sends that link via **Resend / Brevo / SMTP (Nodemailer)**
+2. Set in `frontend/.env`:
+   `VITE_CUSTOM_VERIFY_EMAIL_URL=https://your-api/verify-email`
+3. Restart Vite. The app still calls `sendEmailVerification` immediately on signup, and also POSTs to this URL in parallel.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -103,3 +116,4 @@ See **`deploy/GOOGLE_DRIVE_SETUP.md`** for:
 | Google popup blocked | Allow popups for `127.0.0.1:5173` |
 | Permission denied | Publish `firestore.rules` |
 | `auth/unauthorized-domain` | Add domain in Firebase Auth settings |
+| Verification email delayed | Use `VITE_CUSTOM_VERIFY_EMAIL_URL` (above); check spam; Auth → Templates |

@@ -25,7 +25,6 @@ export function SavingsPanel({
   onClose,
 }) {
   const [tab, setTab] = useState("goals");
-  const progress = Number(summary?.progressPercent || 0);
   const attention = Number(summary?.attentionCount || 0);
 
   return (
@@ -55,48 +54,22 @@ export function SavingsPanel({
         ))}
       </div>
 
-      <div className="settings-identity">
-        <div className={`sync-health ${attention ? "warn" : "ok"}`}>
-          <strong>{digits(progress)}%</strong>
-          <span>{t("overallProgress")}</span>
+      <div className="summary-metric-grid" role="group" aria-label={t("savings")}>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("activeSavingsGoals")}</span>
+          <strong className="summary-metric-value">{digits(summary?.activeCount || 0)}</strong>
         </div>
-        <div className="settings-identity-copy">
-          <h3 className="hero-money">{money(summary?.totalSaved)}</h3>
-          <p className="budget-hero-sub">
-            {digits(summary?.activeCount || 0)} {t("activeSavingsGoals")} · {t("totalTarget")}{" "}
-            {money(summary?.totalTarget)}
-          </p>
-          <div className="settings-badges">
-            <TypeChip type={attention ? "LOW" : "SAVINGS"}>
-              {t("needsAttention")}: {digits(attention)}
-            </TypeChip>
-            <TypeChip type="TRANSFER">
-              {t("savingsRemaining")}: {money(summary?.remaining)}
-            </TypeChip>
-          </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("totalSaved")}</span>
+          <strong className="summary-metric-value">{money(summary?.totalSaved)}</strong>
         </div>
-      </div>
-
-      <div className="settings-stat-row">
-        <div className="settings-stat">
-          <span>{t("activeSavingsGoals")}</span>
-          <strong>{digits(summary?.activeCount || 0)}</strong>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("totalTarget")}</span>
+          <strong className="summary-metric-value">{money(summary?.totalTarget)}</strong>
         </div>
-        <div className="settings-stat">
-          <span>{t("totalSaved")}</span>
-          <strong>
-            <MoneyPill tone="savings">{money(summary?.totalSaved)}</MoneyPill>
-          </strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("totalTarget")}</span>
-          <strong>
-            <MoneyPill>{money(summary?.totalTarget)}</MoneyPill>
-          </strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("needsAttention")}</span>
-          <strong>{digits(attention)}</strong>
+        <div className={`summary-metric-card ${attention ? "is-warn" : ""}`}>
+          <span className="summary-metric-label">{t("needsAttention")}</span>
+          <strong className="summary-metric-value">{digits(attention)}</strong>
         </div>
       </div>
 

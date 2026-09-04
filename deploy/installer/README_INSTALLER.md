@@ -1,12 +1,9 @@
-﻿S4 FAMILY FINANCE 143 - INSTALLER NOTE
+﻿S4 FAMILY FINANCE 143 — Windows installer
 
-This folder contains Inno Setup script:
-deploy\installer\S4_FAMILY_FINANCE_143_InnoSetup.iss
+Legacy Inno Setup scripts and bundled Setup.exe outputs were removed.
 
-To create Windows .exe installer later:
-1. Install Inno Setup on Windows.
-2. Open this .iss file.
-3. Click Compile.
-4. It will create S4-FAMILY-FINANCE-143-Setup.exe.
+Current Windows installer is built by the Tauri pipeline:
 
-Current setup creates installer script only; it does not compile .exe automatically.
+- Script: `deploy/scripts/build_tauri_windows.ps1`
+- CI: `.github/workflows/release.yml` → `build-windows-exe`
+- Artifact: `S4-Family-Finance-143-Setup.exe` (published on GitHub Releases)

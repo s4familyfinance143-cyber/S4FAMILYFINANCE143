@@ -5,6 +5,7 @@ import "./styles/design-polish.css";
 import "./styles/mobile-shell.css";
 import "./styles/shoyb-desktop.css";
 import "./styles/shoyb-mobile.css";
+import "./styles/layout-compact.css";
 import arMessages from "./i18n/messages/ar.json";
 import bnMessages from "./i18n/messages/bn.json";
 import enMessages from "./i18n/messages/en.json";
@@ -71,14 +72,26 @@ import {
   isFirebaseEmailVerified,
   firebaseReloadUser,
   firebaseResendEmailVerification,
+  formatFirebaseAuthError,
   pushCloudSnapshot,
   pullCloudSnapshot,
   getCloudSnapshotMeta,
   ensureUserProfile,
   getUserFamilyProfile,
+  getUserProfileDoc,
   createCloudFamilyAccount,
+  enableWebPushNotifications,
+  getNotificationPermission,
+  isWebFcmVapidConfigured,
+  subscribeForegroundMessages,
 } from "./firebase";
-import { uploadFamilyDocument, uploadTransactionAttachment } from "./firebase/cloudStorage";
+import {
+  uploadFamilyDocument,
+  uploadTransactionAttachment,
+  uploadProfilePhotoToFirebase,
+  removeProfilePhotoFromFirebase,
+  validateProfilePhotoFile,
+} from "./firebase/cloudStorage";
 import { joinFamilyByInviteCode } from "./firebase/familyCloud";
 import { buildBackupBlob, restoreBackupBlob } from "./lib/backupPayload";
 import {
@@ -238,8 +251,10 @@ const LOCALE_MESSAGES = {
 function localizedPack(messages, englishPack) {
   return Object.fromEntries(
     Object.keys(englishPack).map((key) => {
-      if (!(key in messages)) throw new Error(`Missing localized UI text: ${key}`);
-      return [key, messages[key]];
+      if (key in messages) return [key, messages[key]];
+      // Fall back to English instead of crashing the whole app at module load.
+      console.warn(`[i18n] Missing localized UI text: ${key} — using English`);
+      return [key, englishPack[key]];
     }),
   );
 }
@@ -355,6 +370,9 @@ const UI_TEXT = {
     selectMember: "সদস্য নির্বাচন",
     removeMember: "সদস্য সরান",
     deactivateFamily: "পরিবার নিষ্ক্রিয়",
+    deactivateFamilyHint: "এই পরিবার আর্কাইভ হবে। আগে pending ownership transfer বাতিল করুন।",
+    memberCapabilities: "কী কী করতে পারবে",
+    memberCapabilitiesHint: "ওনার (Husband) Wife / সদস্যের অ্যাক্সেস নিয়ন্ত্রণ করে",
     voidTransaction: "বাতিল (void)",
     apiBaseUrl: "API বেস URL",
     saveApiBase: "API URL সংরক্ষণ",
@@ -427,7 +445,7 @@ const UI_TEXT = {
     removePhoto: "ছবি সরান",
     photoUpdated: "প্রোফাইল ছবি আপডেট হয়েছে",
     photoRemoved: "প্রোফাইল ছবি সরানো হয়েছে",
-    photoUploadFailed: "ছবি আপলোড ব্যর্থ",
+    photoUploadFailed: "আপলোড ব্যর্থ। সর্বোচ্চ ২MB, শুধু JPG/PNG/WebP।",
     photoHint: "JPG / PNG / WebP · সর্বোচ্চ ২ MB",
     emailVerified: "ইমেইল যাচাই",
     timezone: "টাইমজোন",
@@ -684,6 +702,9 @@ const UI_TEXT = {
     selectMember: "Select member",
     removeMember: "Remove member",
     deactivateFamily: "Deactivate family",
+    deactivateFamilyHint: "Archive this family. Cancel any pending ownership transfer first.",
+    memberCapabilities: "What they can do",
+    memberCapabilitiesHint: "Owner (Husband) controls Wife / member access",
     voidTransaction: "Void",
     apiBaseUrl: "API base URL",
     saveApiBase: "Save API URL",
@@ -754,9 +775,9 @@ const UI_TEXT = {
     profilePhoto: "Profile photo",
     changePhoto: "Change photo",
     removePhoto: "Remove photo",
-    photoUpdated: "Profile photo updated",
+    photoUpdated: "Profile picture updated!",
     photoRemoved: "Profile photo removed",
-    photoUploadFailed: "Photo upload failed",
+    photoUploadFailed: "Failed to upload. Max size 2MB, JPG/PNG/WebP only.",
     photoHint: "JPG / PNG / WebP · max 2 MB",
     emailVerified: "Email verified",
     timezone: "Timezone",
@@ -993,8 +1014,8 @@ const EXTRA_UI_TEXT = {
     noOpenSyncConflicts: "কোনো ওপেন সিঙ্ক কনফ্লিক্ট নেই",
     noDetails: "বিস্তারিত নেই",
     lastPullPreview: "শেষ পুল প্রিভিউ",
-    refreshSessionHelp: "রিফ্রেশ সেশন রোটেট করে অ্যাক্সেস টোকেন আপডেট করে।",
-    passwordResetHelp: "লগইন করা ইমেইলের জন্য পাসওয়ার্ড রিসেট অনুরোধ করে। রিসেট টোকেন UI-তে দেখানো হয় না।",
+    refreshSessionHelp: "এই ডিভাইস নিরাপদ রাখতে সাইন-ইন রিফ্রেশ করুন।",
+    passwordResetHelp: "নতুন পাসওয়ার্ড বেছে নিতে ইমেইলে রিসেট লিংক পাঠান।",
     noPermissionSummary: "পারমিশন সারাংশ লোড হয়নি",
     familyMemberPermissions: "পরিবার সদস্য অনুমতি",
     ownerOnlyUnavailable: "এই ব্যবহারকারীর জন্য ওনার-অনলি সদস্য অনুমতি ওভারভিউ নেই।",
@@ -1395,8 +1416,8 @@ const EXTRA_UI_TEXT = {
     noOpenSyncConflicts: "No open sync conflicts",
     noDetails: "No details",
     lastPullPreview: "Last Pull Preview",
-    refreshSessionHelp: "Rotates the refresh session and updates the access token.",
-    passwordResetHelp: "Requests a password reset for the logged-in email. Reset tokens are not shown in UI.",
+    refreshSessionHelp: "Refresh your sign-in to keep this device secure.",
+    passwordResetHelp: "Send a reset link to your email so you can choose a new password.",
     noPermissionSummary: "No permission summary loaded",
     familyMemberPermissions: "Family Member Permissions",
     ownerOnlyUnavailable: "Owner-only member permission overview is unavailable for this user.",
@@ -1741,10 +1762,12 @@ const SETTINGS_UI_TEXT = {
     noOverrides: "কোনো পারমিশন ওভাররাইড নেই",
     relationship: "সম্পর্ক",
     refresh: "রিফ্রেশ",
-    emailDelivery: "ইমেইল ডেলিভারি",
-    smtpReady: "SMTP প্রস্তুত",
-    smtpNotConfigured: "SMTP কনফিগার নেই",
-    smtpHelp: "আসল মেইল পাঠাতে backend .env এ SMTP_HOST + SMTP_FROM_EMAIL দিন। ফেক সেন্ড হয় না।",
+    emailDelivery: "ইমেইল বিজ্ঞপ্তি",
+    smtpReady: "প্রস্তুত",
+    smtpNotConfigured: "উপলব্ধ নয়",
+    smtpHelp: "এই ডিভাইসে ইমেইল ডেলিভারি উপলব্ধ নয়।",
+    passwordResetHelp: "নতুন পাসওয়ার্ড বেছে নিতে ইমেইলে রিসেট লিংক পাঠান।",
+    refreshSessionHelp: "এই ডিভাইস নিরাপদ রাখতে সাইন-ইন রিফ্রেশ করুন।",
     testNotificationEmail: "টেস্ট নোটিফিকেশন ইমেইল",
     emailSent: "ইমেইল পাঠানো হয়েছে",
     emailNotSent: "ইমেইল পাঠানো হয়নি",
@@ -1761,10 +1784,10 @@ const SETTINGS_UI_TEXT = {
     noOverrides: "No permission overrides",
     relationship: "Relationship",
     refresh: "Refresh",
-    emailDelivery: "Email delivery",
-    smtpReady: "SMTP ready",
-    smtpNotConfigured: "SMTP not configured",
-    smtpHelp: "Set SMTP_HOST + SMTP_FROM_EMAIL in backend .env for real mail. No fake send.",
+    emailDelivery: "Email notifications",
+    smtpReady: "Ready",
+    smtpNotConfigured: "Unavailable",
+    smtpHelp: "Email delivery unavailable on this device.",
     testNotificationEmail: "Test notification email",
     emailSent: "Email sent",
     emailNotSent: "Email not sent",
@@ -2122,6 +2145,13 @@ const TOAST_UI_TEXT = {
     registerPushDevice: "পুশ ডিভাইস রেজিস্টার",
     pastePushToken: "FCM / Expo পুশ টোকেন পেস্ট করুন",
     pastePushTokenHint: "আসল FCM/Expo পুশ টোকেন পেস্ট করুন (কমপক্ষে ৮ অক্ষর)",
+    enableBrowserNotifications: "ব্রাউজার নোটিফিকেশন চালু করুন",
+    browserNotifyEnabled: "ব্রাউজার নোটিফিকেশন চালু হয়েছে",
+    browserNotifyFailed: "ব্রাউজার নোটিফিকেশন চালু করা যায়নি",
+    notifyPermissionDenied:
+      "ব্রাউজার নোটিফিকেশন ব্লক করা আছে। সাইট সেটিংসে অনুমতি দিন, তারপর Notifications → Devices থেকে আবার চেষ্টা করুন।",
+    notifyPermissionPrompt: "পুশ আপডেটের জন্য ব্রাউজার অ্যালার্ট চালু করুন। ইন-অ্যাপ অ্যালার্ট নিচে কাজ করবে।",
+    viewAllNotifications: "সব দেখুন",
     registerDevice: "ডিভাইস রেজিস্টার",
     unregisterDevice: "আনরেজিস্টার",
     noPushDevices: "কোনো ডিভাইস রেজিস্টার নেই",
@@ -2301,6 +2331,13 @@ const TOAST_UI_TEXT = {
     registerPushDevice: "Register push device",
     pastePushToken: "Paste FCM / Expo push token",
     pastePushTokenHint: "Paste a real FCM/Expo push token (min 8 chars)",
+    enableBrowserNotifications: "Enable browser notifications",
+    browserNotifyEnabled: "Browser notifications enabled",
+    browserNotifyFailed: "Could not enable browser notifications",
+    notifyPermissionDenied:
+      "Browser notifications are blocked. Allow them in site settings, then retry from Notifications → Devices.",
+    notifyPermissionPrompt: "Enable browser alerts for push updates. In-app alerts still work below.",
+    viewAllNotifications: "View all",
     registerDevice: "Register device",
     unregisterDevice: "Unregister",
     noPushDevices: "No devices registered",
@@ -2518,8 +2555,16 @@ function App() {
   const [token, setToken] = useState("");
   const [refreshToken, setRefreshToken] = useState("");
   const [families, setFamilies] = useState([]);
-  const [activeFamilyId, setActiveFamilyId] = useState("");
+  const [activeFamilyId, setActiveFamilyId] = useState(() => loadCloudFamilyId());
   const [familiesLoading, setFamiliesLoading] = useState(false);
+  /** True while restoring/selecting the user's active family after login or refresh. */
+  const [isFamilyLoading, setIsFamilyLoading] = useState(() =>
+    Boolean(loadCloudOnlyMode() || loadCloudFamilyId()),
+  );
+  /** True until first Firebase auth callback finishes when a cloud session is expected. */
+  const [sessionBootstrapping, setSessionBootstrapping] = useState(() =>
+    Boolean(FIREBASE_CONFIGURED && (loadCloudOnlyMode() || loadCloudFamilyId())),
+  );
   const [currentUser, setCurrentUser] = useState(null);
   const [myPermissions, setMyPermissions] = useState(null);
   const [memberPermissions, setMemberPermissions] = useState([]);
@@ -2620,6 +2665,10 @@ function App() {
   const [pushDevices, setPushDevices] = useState([]);
   const [pushTokenDraft, setPushTokenDraft] = useState("");
   const [pushPlatform, setPushPlatform] = useState("WEB");
+  const [notifyDropdownOpen, setNotifyDropdownOpen] = useState(false);
+  const [notifyPermission, setNotifyPermission] = useState("default");
+  const [notifyPermissionHint, setNotifyPermissionHint] = useState("");
+  const [fcmClientReady, setFcmClientReady] = useState(false);
   const [zakatRecords, setZakatRecords] = useState([]);
   const [zakatSummary, setZakatSummary] = useState(null);
   const [phase15Items, setPhase15Items] = useState([]);
@@ -2871,7 +2920,8 @@ function App() {
 
   function showToast(message, type = "success") {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    const ms = type === "error" || type === "warning" ? 8000 : 4500;
+    setTimeout(() => setToast(null), ms);
   }
 
   function setMessage(message, type = "success") {
@@ -2883,10 +2933,40 @@ function App() {
     }, 3000);
   }
 
-  const isAppAuthed = Boolean(token) || (cloudOnlyMode && Boolean(firebaseUser?.uid));
+  const isAppAuthed =
+    Boolean(token) ||
+    (cloudOnlyMode && Boolean(firebaseUser?.uid)) ||
+    (sessionBootstrapping && cloudOnlyMode);
 
   function isCloudLocalMode() {
     return cloudOnlyMode && !token && Boolean(activeFamilyId);
+  }
+
+  function selectActiveFamily(familyId, meta = {}) {
+    const id = String(familyId || "").trim();
+    if (!id) {
+      setActiveFamilyId("");
+      persistCloudFamilyId("");
+      return;
+    }
+    persistCloudFamilyId(id);
+    setActiveFamilyId(id);
+    if (meta && (meta.name || meta.default_currency || meta.timezone || meta.owner_uid)) {
+      setFamilies((prev) => {
+        const row = {
+          id,
+          name: meta.name || t("cloudOnlyFamilyLabel"),
+          default_currency: meta.default_currency,
+          timezone: meta.timezone,
+          owner_uid: meta.owner_uid,
+          ...meta,
+        };
+        if ((prev || []).some((f) => f.id === id)) {
+          return (prev || []).map((f) => (f.id === id ? { ...f, ...row } : f));
+        }
+        return [row, ...(prev || [])];
+      });
+    }
   }
 
   function isCloudEmailReady(user = firebaseUser) {
@@ -2955,8 +3035,32 @@ function App() {
       full_name: user.displayName || user.email || "Cloud User",
       email: user.email || "",
       is_email_verified: isFirebaseEmailVerified(user),
+      is_active: true,
+      uid: user.uid,
+      firebase_uid: user.uid,
     });
+    // Release loading gates immediately so splash is not followed by a stuck "Please wait" screen
+    setIsFamilyLoading(false);
+    setSessionBootstrapping(false);
+
+    await applyCloudUserAvatar(user);
     await hydrateFromCloudCache(familyId);
+    try {
+      const { loadOfflineSnapshot } = await import("./lib/offlineCache");
+      const profileRow = await loadOfflineSnapshot(familyId, "system", "familyProfile");
+      const profile = profileRow?.data || {};
+      setFamilies([
+        {
+          id: familyId,
+          name: profile.name || familyName || t("cloudOnlyFamilyLabel"),
+          default_currency: profile.default_currency || profile.currency || "BDT",
+          timezone: profile.timezone || "Asia/Dhaka",
+          owner_uid: profile.owner_uid || profile.owner_id || undefined,
+        },
+      ]);
+    } catch {
+      /* keep basic family row */
+    }
     try {
       await seedCloudModuleCaches(familyId, {
         ownerName: user.displayName || user.email || "Owner",
@@ -2967,10 +3071,10 @@ function App() {
     }
     await refreshFirebaseMeta(user.uid, user);
     enableCloudAutoSyncDefaults();
+    // Non-blocking cloud push — do not hold the UI
     if (isBrowserOnline() && isCloudEmailReady(user)) {
-      await pushCloudSnapshotIfReady(user, familyId);
+      void pushCloudSnapshotIfReady(user, familyId);
     }
-    // Backup onboarding only after email gate clears.
     if (isCloudEmailReady(user) && !loadBackupOnboardingDone(user.uid)) {
       setShowBackupOnboarding(true);
     }
@@ -3110,7 +3214,7 @@ function App() {
     setCloudBusy(true);
     setAuthLoading(true);
     try {
-      const { user, familyId, existing, verificationSent } = await createCloudFamilyAccount({
+      const { user, familyId, existing, verificationSent, verificationError } = await createCloudFamilyAccount({
         email,
         password,
         fullName,
@@ -3125,6 +3229,12 @@ function App() {
         setMessage(t("cloudFamilyRestored"), "success");
       } else if (verificationSent) {
         setMessage(t("cloudFamilyCreatedVerify"), "success");
+      } else if (verificationError) {
+        const lang = appLanguage === "bn" ? "bn" : "en";
+        setMessage(
+          `${t("cloudFamilyCreated")} — ${formatFirebaseAuthError(verificationError, lang)}`,
+          "warning",
+        );
       } else {
         setMessage(t("cloudFamilyCreated"), "success");
       }
@@ -3200,7 +3310,7 @@ function App() {
     try {
       const { blob } = await readLatestBackupFromFolder();
       const result = await restoreBackupBlob(blob);
-      if (result.familyId && !activeFamilyId) setActiveFamilyId(result.familyId);
+      if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
       setMessage(`${t("localBackupRestored")} (${result.restored})`, "success");
       if (token && (activeFamilyId || result.familyId)) await loadDashboard();
     } catch (err) {
@@ -3268,7 +3378,7 @@ function App() {
       if (!files.length) throw new Error(t("driveNoFiles"));
       const blob = await downloadDriveBackup(driveToken, files[0].id);
       const result = await restoreBackupBlob(blob);
-      if (result.familyId && !activeFamilyId) setActiveFamilyId(result.familyId);
+      if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
       setMessage(`${t("driveRestoreSuccess")} (${result.restored})`, "success");
       if (token && (activeFamilyId || result.familyId)) await loadDashboard();
     } catch (err) {
@@ -3484,7 +3594,7 @@ function App() {
       const result = await pullCloudSnapshot(firebaseUser.uid);
       await refreshFirebaseMeta(firebaseUser.uid);
       if (result.familyId && !activeFamilyId) {
-        setActiveFamilyId(result.familyId);
+        selectActiveFamily(result.familyId);
       }
       setMessage(`${t("firebaseRestoreSuccess")} (${result.restored})`, "success");
       if (token && activeFamilyId) {
@@ -3865,6 +3975,9 @@ function App() {
     setCloudOnlyMode(false);
     setFamilies([]);
     setActiveFamilyId("");
+    persistCloudFamilyId("");
+    setIsFamilyLoading(false);
+    setSessionBootstrapping(false);
     setCurrentUser(null);
     setMyPermissions(null);
     setMemberPermissions([]);
@@ -3985,7 +4098,7 @@ function App() {
 
   function changeActiveFamily(familyId) {
     clearFamilyData();
-    setActiveFamilyId(familyId);
+    selectActiveFamily(familyId);
   }
 
   function cloudApiUser() {
@@ -4067,13 +4180,29 @@ function App() {
 
   async function apiPatch(path, body) {
     if (isCloudLocalMode()) {
-      const hit = await cloudApiPatch({
-        familyId: activeFamilyId,
-        path,
-        body,
-        onAfterWrite: syncCloudAfterWrite,
-      });
-      if (hit.handled) return hit.data;
+      try {
+        const hit = await cloudApiPatch({
+          familyId: activeFamilyId,
+          path,
+          body,
+          currentUser: firebaseUser
+            ? { uid: firebaseUser.uid, email: firebaseUser.email, firebase_uid: firebaseUser.uid }
+            : currentUser,
+          onAfterWrite: syncCloudAfterWrite,
+        });
+        if (hit.handled) {
+          if (hit.error || hit.data?.ok === false) {
+            throw new Error(hit.error || hit.data?.detail || "Request failed");
+          }
+          return hit.data;
+        }
+      } catch (err) {
+        if (err?.status || err?.isPermission || /permission|denied|connection|database/i.test(String(err?.message || ""))) {
+          throw err;
+        }
+        // Unhandled cloud path — fall through to HTTP only when a JWT backend exists
+        if (!token) throw err;
+      }
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -4087,7 +4216,21 @@ function App() {
 
     const data = await res.json().catch(() => ({}));
 
-    if (!res.ok) throw new Error(data.detail || "Request failed");
+    if (!res.ok) {
+      const detail = data.detail || data.message || data.error || "";
+      const msg =
+        typeof detail === "string" && detail
+          ? detail
+          : res.status === 403
+            ? "Permission denied"
+            : res.status === 0 || res.status >= 500
+              ? "Database connection issue"
+              : "Request failed";
+      const err = new Error(msg);
+      err.status = res.status;
+      err.isPermission = res.status === 403 || /permission/i.test(msg);
+      throw err;
+    }
     return data;
   }
 
@@ -4186,6 +4329,7 @@ function App() {
     if (!token) return;
 
     setFamiliesLoading(true);
+    setIsFamilyLoading(true);
 
     try {
       const data = await apiGet("/families");
@@ -4194,25 +4338,29 @@ function App() {
 
       if (!familyList.length) {
         clearFamilyData();
-        setActiveFamilyId("");
+        selectActiveFamily("");
         setMessage(t("noActiveFamilyForUser"), "warning");
         return;
       }
 
+      const storedId = loadCloudFamilyId();
       setActiveFamilyId((current) => {
-        if (current && familyList.some((family) => family.id === current)) {
-          return current;
-        }
-
-        return familyList[0].id;
+        const preferred = current || storedId;
+        const next =
+          preferred && familyList.some((family) => family.id === preferred)
+            ? preferred
+            : familyList[0].id;
+        persistCloudFamilyId(next);
+        return next;
       });
     } catch {
       setFamilies([]);
-      setActiveFamilyId("");
+      selectActiveFamily("");
       clearFamilyData();
       setMessage(t("familyLoadFailed"), "error");
     } finally {
       setFamiliesLoading(false);
+      setIsFamilyLoading(false);
     }
   }
 
@@ -4228,17 +4376,97 @@ function App() {
   }
 
   function avatarUrl(user) {
-    const path = user?.avatar_url;
+    const path = user?.avatar_url || user?.photo_url || "";
     if (!path) return "";
     if (/^https?:\/\//i.test(path)) return path;
     return `${apiBase}${path.startsWith("/") ? path : `/${path}`}`;
   }
 
+  async function applyCloudUserAvatar(user, profileOverride = null) {
+    if (!user?.uid) return;
+    try {
+      const profile = profileOverride || (await getUserProfileDoc(user.uid));
+      const avatar =
+        profile?.avatar_url || profile?.photo_url || user.photoURL || "";
+      setCurrentUser((prev) => ({
+        ...(prev || {}),
+        full_name: prev?.full_name || user.displayName || user.email || "Cloud User",
+        email: prev?.email || user.email || "",
+        is_email_verified:
+          prev?.is_email_verified ?? isFirebaseEmailVerified(user),
+        avatar_url: avatar || null,
+        photo_url: avatar || null,
+        photo_storage_path: profile?.photo_storage_path || null,
+        is_active: true,
+      }));
+    } catch (err) {
+      console.warn("[S4 ProfilePhoto] could not load profile avatar", err);
+    }
+  }
+
   async function uploadProfilePhoto(file) {
-    if (!token || !file) return;
+    if (!file) return;
+
+    const clientCheck = validateProfilePhotoFile(file);
+    if (!clientCheck.ok) {
+      console.error("[S4 ProfilePhoto] client validation failed", clientCheck);
+      setMessage(clientCheck.message || t("photoUploadFailed"), "error");
+      return;
+    }
+
+    // Cloud / Firebase-first path (no backend JWT)
+    if (isCloudLocalMode() || (cloudOnlyMode && firebaseUser?.uid && !token)) {
+      try {
+        const result = await uploadProfilePhotoToFirebase({
+          uid: firebaseUser.uid,
+          file,
+        });
+        setCurrentUser((prev) => ({
+          ...(prev || {}),
+          avatar_url: result.avatar_url,
+          photo_url: result.avatar_url,
+          photo_storage_path: result.storage_path,
+        }));
+        console.info("[S4 ProfilePhoto] cloud upload success", result);
+        setMessage(t("photoUpdated"), "success");
+      } catch (err) {
+        console.error("[S4 ProfilePhoto] cloud upload error", err);
+        const code = String(err?.code || "");
+        let msg = err?.message || t("photoUploadFailed");
+        if (
+          err?.message?.includes("Max size") ||
+          err?.message?.includes("JPG")
+        ) {
+          msg = err.message;
+        } else if (
+          code.includes("unauthorized") ||
+          code.includes("permission-denied") ||
+          /storage\/unauthorized/i.test(msg)
+        ) {
+          msg = t("photoUploadFailed");
+          console.error(
+            "[S4 ProfilePhoto] Storage rules may block users/{uid}/profile — publish deploy/firebase/storage.rules"
+          );
+        }
+        setMessage(msg, "error");
+      }
+      return;
+    }
+
+    if (!token) {
+      console.error("[S4 ProfilePhoto] no auth token and not in cloud mode");
+      setMessage(t("photoUploadFailed"), "error");
+      return;
+    }
+
     const form = new FormData();
     form.append("file", file);
     try {
+      console.info("[S4 ProfilePhoto] API upload start", {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      });
       const res = await fetch(`${apiBase}/auth/me/avatar`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -4246,18 +4474,48 @@ function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setMessage(typeof data.detail === "string" ? data.detail : t("photoUploadFailed"), "error");
+        console.error("[S4 ProfilePhoto] API upload failed", res.status, data);
+        const detail =
+          typeof data.detail === "string"
+            ? data.detail
+            : t("photoUploadFailed");
+        setMessage(detail, "error");
         return;
       }
       setCurrentUser(data);
+      console.info("[S4 ProfilePhoto] API upload success", data?.avatar_url);
       setMessage(t("photoUpdated"), "success");
-    } catch {
+    } catch (err) {
+      console.error("[S4 ProfilePhoto] API upload exception", err);
       setMessage(t("photoUploadFailed"), "error");
     }
   }
 
   async function removeProfilePhoto() {
-    if (!token) return;
+    if (isCloudLocalMode() || (cloudOnlyMode && firebaseUser?.uid && !token)) {
+      try {
+        await removeProfilePhotoFromFirebase({
+          uid: firebaseUser.uid,
+          storagePath: currentUser?.photo_storage_path,
+        });
+        setCurrentUser((prev) => ({
+          ...(prev || {}),
+          avatar_url: null,
+          photo_url: null,
+          photo_storage_path: null,
+        }));
+        setMessage(t("photoRemoved"), "success");
+      } catch (err) {
+        console.error("[S4 ProfilePhoto] cloud remove error", err);
+        setMessage(t("photoUploadFailed"), "error");
+      }
+      return;
+    }
+
+    if (!token) {
+      setMessage(t("photoUploadFailed"), "error");
+      return;
+    }
     try {
       const res = await fetch(`${apiBase}/auth/me/avatar`, {
         method: "DELETE",
@@ -4276,29 +4534,50 @@ function App() {
   }
 
   async function loadSettingsData() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setSettingsLoading(true);
 
     try {
       const data = await apiGet(`/permissions/family/${activeFamilyId}/me`);
-      setMyPermissions(data);
-    } catch {
-      setMyPermissions(null);
+      if (data && (data.normalized_role || data.role)) {
+        setMyPermissions(data);
+      }
+    } catch (err) {
+      console.warn("[S4 Permissions] me load failed", err);
+      // Keep last known role — do not wipe to MEMBER/null on transient failures
     }
 
     try {
       const data = await apiGet(`/permissions/family/${activeFamilyId}/members`);
-      setMemberPermissions(Array.isArray(data) ? data : data?.members || []);
-    } catch {
-      setMemberPermissions([]);
+      const rows = Array.isArray(data) ? data : data?.members || [];
+      setMemberPermissions(rows);
+    } catch (err) {
+      console.warn("[S4 Permissions] members load failed", err);
+      // Keep last known list — clearing causes Family Governance toggles to flicker/hide
     }
 
     try {
       const status = await apiGet("/auth/email-status");
       setEmailStatus(status);
+      if (!status?.can_send) {
+        console.info(
+          "[S4 Security] Email delivery unavailable — set SMTP_HOST + SMTP_FROM_EMAIL in backend .env (see deploy docs). Server note:",
+          status?.note || "(none)"
+        );
+      } else if (status?.smtp?.host) {
+        console.info("[S4 Security] Email delivery ready", {
+          host: status.smtp.host,
+          port: status.smtp.port,
+          from: status.smtp.from_email,
+        });
+      }
     } catch {
       setEmailStatus(null);
+      console.info(
+        "[S4 Security] Could not load email-status (cloud mode or offline). SMTP config stays in backend .env / deploy docs."
+      );
     } finally {
       setSettingsLoading(false);
     }
@@ -4331,19 +4610,44 @@ function App() {
         timezone: nextTimezone,
       });
 
-      setFamilies((current) =>
-        current.map((family) =>
+      setFamilies((current) => {
+        const list = Array.isArray(current) ? current : [];
+        if (!list.some((family) => family.id === activeFamilyId)) {
+          return [
+            ...list,
+            {
+              id: activeFamilyId,
+              name: activeFamily?.name || t("cloudOnlyFamilyLabel") || "Family",
+              default_currency: nextCurrency,
+              timezone: nextTimezone,
+            },
+          ];
+        }
+        return list.map((family) =>
           family.id === activeFamilyId
             ? { ...family, default_currency: nextCurrency, timezone: nextTimezone }
-            : family
-        )
-      );
+            : family,
+        );
+      });
       setFamilyCurrencyForm(nextCurrency);
       setFamilyTimezoneForm(nextTimezone);
       setMessage(t("familySettingsUpdated"), "success");
-      await refreshAll();
+      try {
+        await refreshAll();
+      } catch {
+        /* settings already saved — refresh is best-effort */
+      }
     } catch (err) {
-      setMessage(err.message || "Family settings update failed", "error");
+      const raw = String(err?.message || "");
+      let msg = raw || t("familySettingsUpdateFailed") || "Family settings update failed";
+      if (err?.isPermission || /permission denied/i.test(raw)) {
+        msg = t("permissionDeniedSettings") || "Permission denied — Owner/Admin with settings.manage required";
+      } else if (/network|unavailable|connection|failed to fetch/i.test(raw)) {
+        msg = t("databaseConnectionIssue") || "Database connection issue — check your network and try again";
+      } else if (/request failed/i.test(raw)) {
+        msg = t("familySettingsUpdateFailed") || "Could not save family settings. Try again.";
+      }
+      setMessage(msg, "error");
     } finally {
       setSettingsSaving(false);
     }
@@ -4367,7 +4671,8 @@ function App() {
   }
 
   async function saveMemberPermission(member) {
-    const form = permissionForms[member.member_id] || {};
+    const memberId = member?.member_id || member?.id || member?.uid || member?.user_id;
+    const form = permissionForms[memberId] || {};
     const permissionKey = String(form.permission_key || "").trim();
 
     if (!permissionKey) {
@@ -4375,19 +4680,143 @@ function App() {
       return;
     }
 
-    setPermissionSavingMemberId(member.member_id);
+    setPermissionSavingMemberId(memberId);
 
     try {
-      await apiPatch(`/permissions/members/${member.member_id}`, {
+      await apiPatch(`/permissions/members/${memberId}`, {
         permission_key: permissionKey,
         allow: form.allow !== false,
         scope: form.scope || "family",
+        full_name: member.full_name || member.display_name || "",
+        email: member.email || "",
+        role: member.role || member.normalized_role || "MEMBER",
+        relationship: member.relationship || member.relationship_type || "",
       });
 
       setMessage(t("memberPermissionUpdated"), "success");
       await loadSettingsData();
     } catch (err) {
       setMessage(err.message || "Member permission update failed", "error");
+    } finally {
+      setPermissionSavingMemberId("");
+    }
+  }
+
+  async function toggleMemberPermission(member, permissionKey, allow) {
+    const memberId =
+      member?.uid ||
+      member?.user_id ||
+      member?.member_id ||
+      member?.id ||
+      "";
+    if (!memberId || !permissionKey) return;
+    if (String(member.normalized_role || member.role || "").toUpperCase() === "OWNER") {
+      setMessage(t("ownerPermissionsLocked"), "warning");
+      return;
+    }
+
+    const emailKey = String(member?.email || "").trim().toLowerCase();
+    const matchesRow = (row) => {
+      const ids = [row.member_id, row.id, row.uid, row.user_id].filter(Boolean).map(String);
+      if (ids.includes(String(memberId))) return true;
+      const rowEmail = String(row.email || "").trim().toLowerCase();
+      return Boolean(emailKey && rowEmail && emailKey === rowEmail);
+    };
+
+    setPermissionSavingMemberId(memberId);
+
+    // Optimistic UI so the switch feels instant
+    setMemberPermissions((current) => {
+      const rows = Array.isArray(current) ? current : [];
+      let found = false;
+      const next = rows.map((row) => {
+        if (!matchesRow(row)) return row;
+        found = true;
+        const overrides = Array.isArray(row.overrides) ? [...row.overrides] : [];
+        const idx = overrides.findIndex((o) => o.permission_key === permissionKey);
+        const patch = {
+          id: overrides[idx]?.id || `pov_${Date.now()}`,
+          permission_key: permissionKey,
+          allow: Boolean(allow),
+          scope: "family",
+          updated_at: new Date().toISOString(),
+        };
+        if (idx >= 0) overrides[idx] = patch;
+        else overrides.push(patch);
+        const effective = new Set(
+          Array.isArray(row.effective_permissions) ? row.effective_permissions : [],
+        );
+        if (effective.has("*")) {
+          /* owner-like — keep */
+        } else if (allow) effective.add(permissionKey);
+        else effective.delete(permissionKey);
+        return {
+          ...row,
+          member_id: row.member_id || memberId,
+          uid: row.uid || member.uid || memberId,
+          user_id: row.user_id || member.user_id || memberId,
+          overrides,
+          effective_permissions: [...effective],
+        };
+      });
+      if (found) return next;
+      const base = [
+        "dashboard.read",
+        "accounts.read",
+        "transactions.read",
+        "transactions.create",
+        "income.create",
+        "expense.create",
+        "reports.read",
+        "backup.read",
+        "sync.view",
+        "sync.pull",
+      ];
+      const effective = new Set(base);
+      if (allow) effective.add(permissionKey);
+      else effective.delete(permissionKey);
+      return [
+        ...next,
+        {
+          member_id: memberId,
+          id: memberId,
+          uid: member.uid || memberId,
+          user_id: member.user_id || memberId,
+          email: member.email || "",
+          full_name: member.full_name || member.display_name || "",
+          role: member.role || member.normalized_role || "MEMBER",
+          normalized_role: String(member.normalized_role || member.role || "MEMBER").toUpperCase(),
+          relationship: member.relationship || member.relationship_type || "",
+          overrides: [
+            {
+              id: `pov_${Date.now()}`,
+              permission_key: permissionKey,
+              allow: Boolean(allow),
+              scope: "family",
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          effective_permissions: [...effective],
+        },
+      ];
+    });
+
+    try {
+      await apiPatch(`/permissions/members/${memberId}`, {
+        permission_key: permissionKey,
+        allow: Boolean(allow),
+        scope: "family",
+        full_name: member.full_name || member.display_name || "",
+        email: member.email || "",
+        role: member.role || member.normalized_role || "MEMBER",
+        relationship: member.relationship || member.relationship_type || "",
+      });
+      updatePermissionForm(memberId, { permission_key: permissionKey, allow: Boolean(allow) });
+      setMessage(t("memberPermissionUpdated"), "success");
+      await loadSettingsData();
+    } catch (err) {
+      setMessage(err.message || "Member permission update failed", "error");
+      await loadSettingsData();
     } finally {
       setPermissionSavingMemberId("");
     }
@@ -4466,17 +4895,18 @@ function App() {
   }
 
   async function resendVerification() {
-    const targetEmail = currentUser?.email || email;
+    const targetEmail = currentUser?.email || email || firebaseUser?.email;
 
-    if (!targetEmail) {
-      setMessage(t("emailRequiredVerification"), "error");
-      return;
+    if (!targetEmail && !(cloudOnlyMode && firebaseUser)) {
+      const err = new Error(t("emailRequiredVerification"));
+      setMessage(err.message, "error");
+      throw err;
     }
 
     setSecurityAction("verification");
 
     try {
-      if (cloudOnlyMode && firebaseUser) {
+      if (cloudOnlyMode && (firebaseUser || FIREBASE_CONFIGURED)) {
         const result = await firebaseResendEmailVerification(firebaseUser);
         if (result.alreadyVerified) {
           const refreshed = await firebaseReloadUser();
@@ -4490,7 +4920,18 @@ function App() {
           }
           setMessage(t("emailVerified") || "Email verified", "success");
         } else {
-          setMessage(t("verifyEmailSent") || t("emailSent"), "success");
+          const sentTo = result.email || targetEmail || "";
+          const base =
+            t("verifyEmailSent") ||
+            t("emailSent") ||
+            "Verification email sent — check inbox/spam.";
+          const extra = result.domainHint
+            ? ` ${t("verifyEmailDomainHint") || ""}`.trim()
+            : "";
+          setMessage(
+            sentTo ? `${base} (${sentTo})${extra ? ` ${extra}` : ""}` : `${base}${extra ? ` ${extra}` : ""}`,
+            "success",
+          );
         }
         return;
       }
@@ -4517,7 +4958,14 @@ function App() {
         );
       }
     } catch (err) {
-      setMessage(err.message || "Verification resend failed", "error");
+      console.error("[resendVerification]", err);
+      const lang = appLanguage === "bn" ? "bn" : "en";
+      const friendly =
+        err?.code === "auth/resend-cooldown"
+          ? err.message
+          : formatFirebaseAuthError(err, lang);
+      setMessage(friendly || err.message || "Verification resend failed", "error");
+      throw err;
     } finally {
       setSecurityAction("");
     }
@@ -4563,6 +5011,8 @@ function App() {
     clearCloudSession();
     setCloudOnlyMode(false);
     setActiveFamilyId("");
+    setIsFamilyLoading(false);
+    setSessionBootstrapping(false);
     setCurrentUser(null);
     setFamilies([]);
     setMessage(t("loggedOut"), "warning");
@@ -4969,7 +5419,41 @@ function App() {
     }
   }
 
-  async function loadNotifications() {
+  function enrichNotificationDelivery(delivery, devices = [], readyOverride = null) {
+    const vapidOk = isWebFcmVapidConfigured();
+    const permission = getNotificationPermission();
+    const deviceCount = Array.isArray(devices) ? devices.length : 0;
+    const tokenReady = readyOverride === null ? fcmClientReady : Boolean(readyOverride);
+    const clientOn = tokenReady || (vapidOk && permission === "granted" && deviceCount > 0);
+    const fcmOn = Boolean(delivery?.fcm_configured) || vapidOk || clientOn;
+    return {
+      ...(delivery && typeof delivery === "object" ? delivery : {}),
+      fcm_configured: fcmOn,
+      browser_permission: permission,
+      web_fcm: {
+        ...(delivery?.web_fcm || {}),
+        vapid_configured: vapidOk,
+        permission,
+        token_ready: tokenReady,
+        device_count: deviceCount,
+        sw: "firebase-messaging-sw.js",
+      },
+      delivery_mode: fcmOn
+        ? delivery?.delivery_mode && delivery.delivery_mode !== "IN_APP_ONLY"
+          ? delivery.delivery_mode
+          : "IN_APP_BROWSER_FCM"
+        : delivery?.delivery_mode || "IN_APP_BROWSER",
+      note:
+        delivery?.note ||
+        (!vapidOk
+          ? "Set VITE_FIREBASE_VAPID_KEY in frontend/.env and restart Vite"
+          : permission === "granted"
+            ? "Browser push ready"
+            : "Click the bell to enable browser notifications"),
+    };
+  }
+
+  async function loadNotifications(options = {}) {
     if (!activeFamilyId) return;
     if (!token && !isCloudLocalMode()) return;
 
@@ -4983,11 +5467,23 @@ function App() {
         apiGet(`/notifications/devices/${activeFamilyId}`).catch(() => []),
       ]);
 
-      setNotifications(items);
+      const deviceList = Array.isArray(devices) ? devices : [];
+      setNotifications(Array.isArray(items) ? items : []);
       setNotificationSummary(summary);
-      setNotificationDelivery(delivery);
-      setPushDevices(Array.isArray(devices) ? devices : []);
+      setPushDevices(deviceList);
+      setNotificationDelivery(
+        enrichNotificationDelivery(delivery, deviceList, options.fcmReadyOverride ?? null)
+      );
+      if (delivery?.browser_permission) {
+        setNotifyPermission(delivery.browser_permission);
+      } else {
+        setNotifyPermission(getNotificationPermission());
+      }
+      if (deviceList.length > 0 && getNotificationPermission() === "granted" && isWebFcmVapidConfigured()) {
+        setFcmClientReady(true);
+      }
     } catch (err) {
+      console.error("[S4 Notify] loadNotifications failed", err);
       setNotifications([]);
       setNotificationSummary(null);
       setNotificationDelivery(null);
@@ -4998,8 +5494,52 @@ function App() {
     }
   }
 
+  async function enableBrowserPushNotifications({ silent = false } = {}) {
+    try {
+      const result = await enableWebPushNotifications({
+        familyId: activeFamilyId,
+        deviceLabel: "web-browser",
+        registerWithBackend: async (fcmToken) => {
+          if (!activeFamilyId) return;
+          if (!token && !isCloudLocalMode()) return;
+          await apiPost(`/notifications/devices/${activeFamilyId}`, {
+            token: fcmToken,
+            platform: "WEB",
+            provider: "FCM",
+            device_label: "web-browser",
+          });
+        },
+      });
+      setNotifyPermission(result.permission || getNotificationPermission());
+      setNotifyPermissionHint(result.hint || "");
+      if (result.ok) {
+        setFcmClientReady(true);
+        if (!silent) setMessage(t("browserNotifyEnabled") || "Browser notifications enabled", "success");
+        await loadNotifications({ fcmReadyOverride: true });
+        return result;
+      }
+      if (result.vapidConfigured) {
+        setNotificationDelivery((prev) =>
+          enrichNotificationDelivery(prev, pushDevices, result.permission === "granted" ? false : null)
+        );
+      }
+      if (!silent) {
+        const type = result.reason === "denied" || result.reason === "missing_vapid" ? "warning" : "error";
+        setMessage(result.hint || t("browserNotifyFailed") || "Could not enable browser notifications", type);
+      } else if (result.hint) {
+        console.warn("[S4 Notify]", result.hint);
+      }
+      return result;
+    } catch (err) {
+      console.error("[S4 Notify] enableBrowserPushNotifications failed", err);
+      if (!silent) setMessage(err.message || "Notification setup failed", "error");
+      return { ok: false, reason: "error", hint: err?.message };
+    }
+  }
+
   async function registerPushDevice() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     const pushToken = String(pushTokenDraft || "").trim();
     if (pushToken.length < 8) {
       setMessage(t("pastePushTokenHint") || "Paste a real FCM/Expo push token (min 8 chars)", "error");
@@ -5017,41 +5557,54 @@ function App() {
       setMessage(t("pushDeviceRegistered") || "Push device registered", "success");
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] registerPushDevice failed", err);
       setMessage(err.message || "Device register failed", "error");
       setNotificationsLoading(false);
     }
   }
 
   async function unregisterPushDevice(deviceId) {
-    if (!token || !deviceId) return;
+    if (!deviceId) return;
+    if (!token && !isCloudLocalMode()) return;
     setNotificationsLoading(true);
     try {
       await apiDelete(`/notifications/devices/${deviceId}`);
       setMessage(t("pushDeviceUnregistered") || "Device unregistered", "success");
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] unregisterPushDevice failed", err);
       setMessage(err.message || "Unregister failed", "error");
       setNotificationsLoading(false);
     }
   }
 
   async function sendTestPushNotification() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     setNotificationsLoading(true);
     try {
       const result = await apiPost(`/notifications/test-push/${activeFamilyId}`, {});
-      if (result?.sent) {
+      if (result?.sent && (result?.sent_count > 0 || result?.channel === "browser_notification")) {
         setMessage(
           (t("testPushSent") || "Test push sent to {n} device(s)").replace(
             "{n}",
-            digits(result?.sent_count || 0)
+            digits(result?.sent_count || 1)
           ),
           "success"
         );
+      } else if (result?.reason === "permission_denied") {
+        setNotifyPermission("denied");
+        setNotifyPermissionHint(
+          t("notifyPermissionDenied") ||
+            "Browser notifications are blocked. Enable them in site settings."
+        );
+        setMessage(t("notifyPermissionDenied") || "Browser notifications blocked", "warning");
       } else {
-        setMessage(result?.reason || t("testPushNotSent") || "Test push not sent", "warning");
+        setMessage(result?.reason || t("testPushNotSent") || "Test push not sent — check inbox for in-app copy", "warning");
       }
+      await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] sendTestPushNotification failed", err);
       setMessage(err.message || "Test push failed", "error");
     } finally {
       setNotificationsLoading(false);
@@ -5059,7 +5612,8 @@ function App() {
   }
 
   async function scanNotifications() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setNotificationsLoading(true);
 
@@ -5068,6 +5622,7 @@ function App() {
       setMessage(t("notificationScanCreated").replace("{n}", digits(result.created_notifications || 0)), "success");
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] scanNotifications failed", err);
       setMessage(err.message || "Notification scan failed", "error");
     } finally {
       setNotificationsLoading(false);
@@ -5075,29 +5630,38 @@ function App() {
   }
 
   async function markNotificationRead(notificationId) {
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     try {
       await apiPatch(`/notifications/read/${notificationId}`, {});
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] markNotificationRead failed", err);
       setMessage(err.message || "Notification update failed", "error");
     }
   }
 
   async function markAllNotificationsRead() {
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     try {
       const result = await apiPatch(`/notifications/read-all/${activeFamilyId}`, {});
       setMessage(t("markedReadCount").replace("{n}", digits(result.marked_read || 0)), "success");
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] markAllNotificationsRead failed", err);
       setMessage(err.message || "Notification update failed", "error");
     }
   }
 
   async function deleteNotification(notificationId) {
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     try {
       await apiDelete(`/notifications/${notificationId}`);
       await loadNotifications();
     } catch (err) {
+      console.error("[S4 Notify] deleteNotification failed", err);
       setMessage(err.message || "Notification delete failed", "error");
     }
   }
@@ -6265,20 +6829,48 @@ function App() {
               byEmail.set(String(m.email || m.uid || m.id).toLowerCase(), m);
             }
             for (const cm of cloudMembers) {
-              const key = String(cm.email || cm.uid).toLowerCase();
+              const key = String(cm.email || cm.uid || cm.id).toLowerCase();
+              const overrides = Array.isArray(cm.overrides)
+                ? cm.overrides
+                : Array.isArray(cm.permission_overrides)
+                  ? cm.permission_overrides
+                  : [];
               if (!byEmail.has(key)) {
                 members.push({
-                  id: cm.uid,
-                  member_id: cm.uid,
+                  id: cm.uid || cm.id,
+                  member_id: cm.uid || cm.id,
+                  user_id: cm.uid || cm.id,
+                  uid: cm.uid || cm.id,
                   full_name: cm.display_name || cm.email || "Member",
                   email: cm.email || "",
                   role: cm.role || "MEMBER",
+                  relationship: cm.relationship || cm.relationship_type || "",
+                  relationship_type: cm.relationship_type || cm.relationship || "",
                   status: cm.status || "ACTIVE",
+                  overrides,
                   source: "firestore_members",
                 });
               } else {
                 const existing = byEmail.get(key);
-                existing.role = cm.role || existing.role;
+                const rank = { OWNER: 5, ADMIN: 4, MEMBER: 3, VIEWER: 2, CHILD: 1 };
+                const cloudRole = String(cm.role || "").toUpperCase();
+                const localRole = String(existing.role || "").toUpperCase();
+                existing.role =
+                  (rank[cloudRole] || 0) >= (rank[localRole] || 0) ? cloudRole || localRole : localRole || cloudRole;
+                existing.full_name = cm.display_name || existing.full_name;
+                existing.uid = cm.uid || cm.id || existing.uid;
+                existing.user_id = cm.uid || cm.id || existing.user_id;
+                existing.member_id = cm.uid || cm.id || existing.member_id || existing.id;
+                existing.id = existing.member_id || existing.id;
+                const cloudRelation = String(
+                  cm.relationship_display_label || cm.relationship || cm.relationship_type || "",
+                ).trim();
+                if (cloudRelation) {
+                  existing.relationship = cloudRelation;
+                  existing.relationship_type = cloudRelation;
+                  existing.relationship_display_label = cloudRelation;
+                }
+                if (overrides.length) existing.overrides = overrides;
                 existing.source = existing.source || "merged";
               }
             }
@@ -6296,8 +6888,7 @@ function App() {
         setJoinRequests([]);
       }
     } catch (err) {
-      setGovernanceMembers([]);
-      setJoinRequests([]);
+      // Keep last known members so the panel does not blank / flicker while refreshing
       setMessage(err.message || "Family governance load failed", "error");
     } finally {
       setGovernanceLoading(false);
@@ -6331,8 +6922,7 @@ function App() {
           relationshipType: joinForm.relationship_type || "Other",
         });
         const nextFamilyId = result.familyId;
-        persistCloudFamilyId(nextFamilyId);
-        setActiveFamilyId(nextFamilyId);
+        selectActiveFamily(nextFamilyId);
         setMessage(t("joinRequestedOk") || "Joined family successfully", "success");
         await loadFamilyGovernance();
         await refreshAll();
@@ -6353,8 +6943,7 @@ function App() {
       const data = await apiPost("/invites/join", body);
       if (data?.family_id || data?.familyId) {
         const nextFamilyId = data.family_id || data.familyId;
-        persistCloudFamilyId(nextFamilyId);
-        setActiveFamilyId(nextFamilyId);
+        selectActiveFamily(nextFamilyId);
       }
       setMessage(t("joinRequestedOk") || "Join request sent", "success");
       await loadFamilyGovernance();
@@ -6758,7 +7347,8 @@ function App() {
   }
 
   async function refreshAll() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     await loadDashboard();
     await loadWallets();
@@ -8859,34 +9449,125 @@ function App() {
   }
 
   useEffect(() => {
-    if (!FIREBASE_CONFIGURED) return undefined;
-    return subscribeFirebaseAuth(async (user) => {
+    if (!FIREBASE_CONFIGURED) {
+      setSessionBootstrapping(false);
+      if (!loadCloudFamilyId()) setIsFamilyLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    // Never leave the user stuck if network/Firestore hangs during restore
+    const safetyTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      console.warn("[S4 Family] session bootstrap timed out — releasing loading gate");
+      setSessionBootstrapping(false);
+      setIsFamilyLoading(false);
+    }, 5000);
+
+    const unsub = subscribeFirebaseAuth(async (user) => {
       setFirebaseUser(user);
-      if (user) {
-        try {
-          await ensureUserProfile(user.uid, user);
-          await refreshFirebaseMeta(user.uid);
-        } catch {
-          /* ignore profile/meta errors on subscribe */
+
+      if (!user) {
+        setFirebaseMeta(null);
+        if (!cancelled) {
+          setSessionBootstrapping(false);
+          if (!token) setIsFamilyLoading(false);
         }
-        if (loadCloudOnlyMode()) {
-          const familyId = loadCloudFamilyId();
-          if (familyId) {
-            setCloudOnlyMode(true);
-            setActiveFamilyId(familyId);
-            setFamilies([{ id: familyId, name: t("cloudOnlyFamilyLabel") }]);
-            setCurrentUser({
-              full_name: user.displayName || user.email || "Cloud User",
-              email: user.email || "",
-              is_email_verified: isFirebaseEmailVerified(user),
-            });
-            await hydrateFromCloudCache(familyId);
+        return;
+      }
+
+      try {
+        await ensureUserProfile(user.uid, user);
+        await refreshFirebaseMeta(user.uid);
+      } catch {
+        /* ignore profile/meta errors on subscribe */
+      }
+
+      const expectCloudSession =
+        loadCloudOnlyMode() || Boolean(loadCloudFamilyId()) || (FIREBASE_FIRST_MODE && !token);
+
+      if (!expectCloudSession) {
+        if (!cancelled) {
+          setSessionBootstrapping(false);
+          setIsFamilyLoading(false);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setIsFamilyLoading(true);
+        setCloudOnlyMode(true);
+        persistCloudOnlyMode(true);
+      }
+
+      try {
+        let familyId = loadCloudFamilyId();
+        // Prefer stored id first so UI can unlock quickly; refresh profile in parallel later
+        if (!familyId) {
+          try {
+            familyId = await Promise.race([
+              resolveCloudFamilyId(user.uid, user),
+              new Promise((resolve) => {
+                window.setTimeout(() => resolve(""), 4000);
+              }),
+            ]);
+          } catch {
+            familyId = "";
           }
         }
-      } else {
-        setFirebaseMeta(null);
+        if (!familyId) familyId = loadCloudFamilyId();
+
+        if (familyId && !cancelled) {
+          // Unlock UI ASAP (flags cleared inside activateCloudSession)
+          void activateCloudSession(user, familyId).catch((err) => {
+            console.warn("[S4 Family] activateCloudSession failed", err);
+            setIsFamilyLoading(false);
+            setSessionBootstrapping(false);
+          });
+          setIsFamilyLoading(false);
+          setSessionBootstrapping(false);
+        } else if (!cancelled) {
+          setCurrentUser({
+            full_name: user.displayName || user.email || "Cloud User",
+            email: user.email || "",
+            is_email_verified: isFirebaseEmailVerified(user),
+            is_active: true,
+            uid: user.uid,
+            firebase_uid: user.uid,
+          });
+          await applyCloudUserAvatar(user);
+          setIsFamilyLoading(false);
+          setSessionBootstrapping(false);
+        }
+      } catch (err) {
+        console.warn("[S4 Family] session restore failed", err);
+        const storedId = loadCloudFamilyId();
+        if (storedId && !cancelled) {
+          try {
+            persistCloudOnlyMode(true);
+            setCloudOnlyMode(true);
+            setActiveFamilyId(storedId);
+            setFamilies([{ id: storedId, name: t("cloudOnlyFamilyLabel") }]);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (!cancelled) {
+          setIsFamilyLoading(false);
+          setSessionBootstrapping(false);
+        }
       }
     });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safetyTimer);
+      try {
+        unsub?.();
+      } catch {
+        /* ignore */
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -8950,8 +9631,55 @@ function App() {
   }, [cloudOnlyMode, token, activeFamilyId, firebaseUser?.uid, firebaseUser?.emailVerified, autoSyncEnabled, syncPushLoading, browserOnline]);
 
   useEffect(() => {
+    try {
+      setNotifyPermission(getNotificationPermission());
+    } catch (err) {
+      console.warn("[S4 Notify] permission read failed", err);
+    }
+    if (!isAppAuthed || !activeFamilyId) return undefined;
+    let unsub = () => {};
+    try {
+      unsub = subscribeForegroundMessages((payload) => {
+        const title = payload?.notification?.title || payload?.data?.title || "S4 Family Finance 143";
+        setMessage(title, "success");
+        loadNotifications().catch((e) => console.error("[S4 Notify] refresh after push failed", e));
+      });
+    } catch (err) {
+      console.error("[S4 Notify] subscribeForegroundMessages failed", err);
+    }
+    return () => {
+      try {
+        unsub();
+      } catch {
+        /* ignore */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAppAuthed, activeFamilyId, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!isAppAuthed || !activeFamilyId) return;
+    const timeoutId = window.setTimeout(() => {
+      loadNotifications().catch((e) => console.error("[S4 Notify] loadNotifications failed", e));
+      // Soft: if already granted, refresh FCM token silently; do not prompt automatically.
+      try {
+        if (getNotificationPermission() === "granted") {
+          enableBrowserPushNotifications({ silent: true }).catch((e) =>
+            console.warn("[S4 Notify] silent enable failed", e)
+          );
+        }
+      } catch (err) {
+        console.warn("[S4 Notify] silent enable skipped", err);
+      }
+    }, 400);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAppAuthed, activeFamilyId, firebaseUser?.uid]);
+
+  useEffect(() => {
     if (!token) return;
 
+    setIsFamilyLoading(true);
     const timeoutId = window.setTimeout(() => {
       loadProfile();
       loadFamilies();
@@ -8971,6 +9699,46 @@ function App() {
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeFamilyId]);
+
+  useEffect(() => {
+    if (!isCloudLocalMode() || !activeFamilyId) return;
+    const timeoutId = window.setTimeout(() => {
+      loadSettingsData();
+      loadFamilyGovernance();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudOnlyMode, activeFamilyId, firebaseUser?.uid]);
+
+  // Auto-fetch Family Governance + Permissions when those screens open
+  // (wait until activeFamilyId is ready so the query does not fail silently).
+  useEffect(() => {
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
+
+    const onFamily = activeMenu === "family";
+    const onDashboard = activeMenu === "dashboard";
+    const onSettings = isSettingsMenu(activeMenu);
+    if (!onFamily && !onSettings && !onDashboard) return;
+
+    const timeoutId = window.setTimeout(() => {
+      if (onFamily || onDashboard) {
+        loadFamilyGovernance();
+        // Role chips on Family/Dashboard use myPermissions
+        loadSettingsData();
+      }
+      if (onSettings) {
+        loadSettingsData();
+        // Member list for Permissions tab overlaps governance data
+        if (settingsTab === "permissions" || parseSettingsTab(activeMenu) === "permissions") {
+          loadFamilyGovernance();
+        }
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMenu, settingsTab, activeFamilyId, token, cloudOnlyMode, firebaseUser?.uid]);
 
   const activeFamily = families.find((family) => family.id === activeFamilyId);
   const effectivePermissions = myPermissions?.effective_permissions || [];
@@ -9255,13 +10023,30 @@ function App() {
 
   const navItems = navGroups.flatMap((group) => group.items);
 
-  if (showSplash && !isAppAuthed) {
+  // 1) Branded splash only (0→100). Do not chain another full-screen wait after it.
+  if (showSplash) {
     return (
       <SplashScreen
         brandTitle={digits("S4 FAMILY FINANCE 143")}
         hint={t("splashHint")}
         onDone={finishSplash}
       />
+    );
+  }
+
+  // 2) Brief gate only when we still have no family id to restore into.
+  // If localStorage already has activeFamilyId, enter the app immediately.
+  if (sessionBootstrapping && !activeFamilyId && !token) {
+    return (
+      <main className="splash-root" lang={currentLanguage.code} dir={currentLanguage.dir}>
+        <div className="auth-loading-overlay" role="status" aria-live="polite">
+          <div className="auth-loading-card">
+            <div className="auth-spinner" aria-hidden="true" />
+            <h2>{t("authLoadingTitle")}</h2>
+            <p>{t("authLoadingHint") || t("splashHint")}</p>
+          </div>
+        </div>
+      </main>
     );
   }
 
@@ -9321,7 +10106,10 @@ function App() {
         <EmailVerificationGate
           t={t}
           email={firebaseUser?.email || currentUser?.email || ""}
+          uid={firebaseUser?.uid || ""}
           busy={securityAction === "verification" || cloudBusy}
+          statusMessage={toast?.message || status || ""}
+          statusType={toast?.type || (status ? "info" : "")}
           onResend={resendVerification}
           onRefresh={handleVerifyEmailRefresh}
           onSignOut={handleVerifyEmailSignOut}
@@ -9657,18 +10445,46 @@ function App() {
       <main className="main-content">
         <TopHeader
           appLanguage={appLanguage}
+          activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           changeAppLanguage={changeAppLanguage}
           t={t}
           lockedLanguages={LOCKED_LANGUAGES}
-          unreadCount={notificationSummary?.unread_count || 0}
+          unreadCount={
+            Number(
+              notificationSummary?.unread_notifications ??
+                notificationSummary?.unread_count ??
+                notificationSummary?.unread ??
+                0
+            )
+          }
+          notifications={notifications}
+          notificationsLoading={notificationsLoading}
+          notifyPermission={notifyPermission}
+          notifyPermissionHint={notifyPermissionHint}
+          notifyDropdownOpen={notifyDropdownOpen}
+          setNotifyDropdownOpen={setNotifyDropdownOpen}
+          onEnablePush={() => enableBrowserPushNotifications({ silent: notifyPermission === "granted" })}
+          onRefreshNotifications={loadNotifications}
+          onMarkNotificationRead={markNotificationRead}
+          onMarkAllNotificationsRead={markAllNotificationsRead}
           onLogout={logout}
           avatarUrl={avatarUrl(currentUser)}
           currentUser={currentUser}
           email={email}
         />
 
-        {!activeFamilyId && (
+        {!activeFamilyId && (isFamilyLoading || familiesLoading || sessionBootstrapping) && (
+          <section className="family-boot-loading" aria-busy="true" aria-live="polite">
+            <div className="card family-boot-loading-card">
+              <div className="auth-spinner" aria-hidden="true" />
+              <h2>{t("authLoadingTitle") || t("loading")}</h2>
+              <p>{t("authLoadingHint") || t("loading")}</p>
+            </div>
+          </section>
+        )}
+
+        {!activeFamilyId && !isFamilyLoading && !familiesLoading && !sessionBootstrapping && (
           <section>
             <div className="card">
               <h2>{t("noActiveFamilySelected")}</h2>
@@ -10143,10 +10959,18 @@ function App() {
             digits={digits}
             currencyName={currencyName}
             activeFamily={activeFamily}
-            currentUser={currentUser}
-            email={email}
+            currentUser={{
+              ...(currentUser || {}),
+              uid: firebaseUser?.uid || currentUser?.uid,
+              firebase_uid: firebaseUser?.uid || currentUser?.firebase_uid,
+              email: currentUser?.email || firebaseUser?.email || email || "",
+            }}
+            email={email || firebaseUser?.email || ""}
             myPermissions={myPermissions}
             governanceMembers={governanceMembers}
+            memberPermissions={memberPermissions}
+            permissionSavingMemberId={permissionSavingMemberId}
+            toggleMemberPermission={toggleMemberPermission}
             joinRequests={joinRequests}
             governanceLoading={governanceLoading}
             inviteForm={inviteForm}
@@ -10498,6 +11322,7 @@ function App() {
             onRegisterDevice={registerPushDevice}
             onUnregisterDevice={unregisterPushDevice}
             onTestPush={sendTestPushNotification}
+            onEnableBrowserPush={() => enableBrowserPushNotifications()}
           />
         )}
 
@@ -10625,9 +11450,11 @@ function App() {
             effectivePermissions={effectivePermissions}
             permissionOverrides={permissionOverrides}
             memberPermissions={memberPermissions}
+            governanceMembers={governanceMembers}
             permissionForms={permissionForms}
             updatePermissionForm={updatePermissionForm}
             saveMemberPermission={saveMemberPermission}
+            toggleMemberPermission={toggleMemberPermission}
             permissionSavingMemberId={permissionSavingMemberId}
             commonPermissionKeys={COMMON_PERMISSION_KEYS}
             currentLanguage={currentLanguage}
@@ -10640,9 +11467,16 @@ function App() {
             requestPasswordReset={requestPasswordReset}
             resendVerification={resendVerification}
             emailStatus={emailStatus}
-            onRefresh={loadSettingsData}
+            onRefresh={() => {
+              loadSettingsData();
+              if (settingsTab === "permissions" || parseSettingsTab(activeMenu) === "permissions") {
+                loadFamilyGovernance();
+              }
+            }}
             apiBase={apiBase}
+            cloudOnlyMode={cloudOnlyMode}
             onApiBaseChange={(next) => setApiBase(persistApiBase(next))}
+            browserOnline={browserOnline}
             firebaseConfigured={FIREBASE_CONFIGURED}
             firebaseUser={firebaseUser}
             firebaseMeta={firebaseMeta}

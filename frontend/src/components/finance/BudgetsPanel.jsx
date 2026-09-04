@@ -55,54 +55,33 @@ export function BudgetsPanel({
         ))}
       </div>
 
-      <div className="settings-identity">
-        <div className={`sync-health ${overCount ? "warn" : "ok"}`}>
-          <strong>{digits(overCount)}</strong>
-          <span>{t("overBudgetCount")}</span>
+      <div className="summary-metric-grid" role="group" aria-label={t("budgets")}>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("totalActiveBudget")}</span>
+          <strong className="summary-metric-value">{money(summary?.totalBudget)}</strong>
         </div>
-        <div className="settings-identity-copy">
-          <h3 className="hero-money">{money(summary?.totalBudget)}</h3>
-          <p className="budget-hero-sub">
-            {t("totalActiveBudget")} · {digits(budgets.length)} {t("budgets")}
-          </p>
-          <div className="settings-badges">
-            <TypeChip type={overCount ? "OVER" : "INCOME"}>
-              OVER {digits(overCount)}
-            </TypeChip>
-            <TypeChip type={warnCount ? "WARN" : "SAVINGS"}>
-              WARN {digits(warnCount)}
-            </TypeChip>
-          </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("totalSpent")}</span>
+          <strong className="summary-metric-value">{money(summary?.totalSpent)}</strong>
+        </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("budgetRemaining")}</span>
+          <strong className="summary-metric-value">{money(summary?.remaining)}</strong>
+        </div>
+        <div className={`summary-metric-card ${overCount ? "is-warn" : ""}`}>
+          <span className="summary-metric-label">{t("overBudgetCount")}</span>
+          <strong className="summary-metric-value">{digits(overCount)}</strong>
         </div>
       </div>
 
-      <div className="settings-stat-row">
-        <div className="settings-stat">
-          <span>{t("totalActiveBudget")}</span>
-          <strong>
-            <MoneyPill>{money(summary?.totalBudget)}</MoneyPill>
-          </strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("totalSpent")}</span>
-          <strong>
-            <MoneyPill tone="expense">{money(summary?.totalSpent)}</MoneyPill>
-          </strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("budgetRemaining")}</span>
-          <strong>
-            <MoneyPill tone="income">{money(summary?.remaining)}</MoneyPill>
-          </strong>
-        </div>
-        <div className="settings-stat">
-          <span>{t("overBudgetCount")}</span>
-          <strong>{digits(overCount)}</strong>
-        </div>
-      </div>
+      {warnCount > 0 ? (
+        <p className="budget-hero-sub" style={{ marginTop: 0, marginBottom: 8 }}>
+          {t("budgetWarning") || "Warning"}: {digits(warnCount)}
+        </p>
+      ) : null}
 
       {alerts.length > 0 ? (
-        <div className="settings-block" style={{ marginBottom: 14 }}>
+        <div className="settings-block" style={{ marginBottom: 8 }}>
           <h4>{t("budgetAlerts")}</h4>
           <div className="finance-feed">
             {alerts.map((budget) => (

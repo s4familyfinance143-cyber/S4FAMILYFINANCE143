@@ -73,6 +73,7 @@ export function NotificationsPanel({
   onRegisterDevice,
   onUnregisterDevice,
   onTestPush,
+  onEnableBrowserPush,
 }) {
   const [notifyTab, setNotifyTab] = useState("inbox");
 
@@ -81,7 +82,13 @@ export function NotificationsPanel({
   const high = Number(notificationSummary?.high_notifications || 0);
   const medium = Number(notificationSummary?.medium_notifications || 0);
   const templates = notificationDelivery?.templates || [];
-  const fcmOn = Boolean(notificationDelivery?.fcm_configured);
+  const fcmOn = Boolean(
+    notificationDelivery?.fcm_configured ||
+      notificationDelivery?.web_fcm?.vapid_configured ||
+      notificationDelivery?.web_fcm?.token_ready ||
+      (pushDevices.length > 0 &&
+        String(notificationDelivery?.browser_permission || "").toLowerCase() === "granted")
+  );
   const emailOn = Boolean(notificationDelivery?.email_configured);
   const smtpHost = notificationDelivery?.smtp?.configured
     ? notificationDelivery.smtp.host
@@ -284,6 +291,14 @@ export function NotificationsPanel({
                 </p>
               </div>
               <div className="notify-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={notificationsLoading}
+                  onClick={onEnableBrowserPush}
+                >
+                  {t("enableBrowserNotifications") || "Enable browser notifications"}
+                </button>
                 <button type="button" className="btn" disabled={notificationsLoading} onClick={onTestPush}>
                   {t("sendTestPush") || "Send test push"}
                 </button>

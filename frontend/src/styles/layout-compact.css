@@ -1,0 +1,1022 @@
+/**
+ * Global compact / responsive layout polish — loaded LAST.
+ * Tightens density across all finance / settings / dashboard panels.
+ */
+
+:root {
+  --compact-gap: 10px;
+  --compact-gap-sm: 6px;
+  --compact-radius: 12px;
+  --compact-radius-sm: 9px;
+  --compact-pad: 12px;
+  --compact-pad-sm: 8px;
+  --compact-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+/* ===== Page shells ===== */
+.main-content > section,
+.main-content > .panel,
+.main-content > .page,
+.main-content > .arch-page {
+  padding: 14px 16px 20px !important;
+  max-width: 1480px !important;
+}
+
+.settings-smart,
+.panel.settings-panel,
+.finance-smart,
+.notify-smart {
+  padding: 12px 14px 16px !important;
+  border-radius: var(--compact-radius) !important;
+  box-shadow: var(--compact-shadow) !important;
+}
+
+.settings-smart .settings-head {
+  margin-bottom: 10px !important;
+  gap: 8px !important;
+}
+
+.settings-smart .settings-head h2,
+.settings-panel .settings-head h2 {
+  font-size: 18px !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.settings-smart .settings-kicker {
+  font-size: 9px !important;
+  margin-bottom: 1px !important;
+}
+
+/* ===== Tabs / toolbars ===== */
+.settings-tabs,
+.finance-toolbar,
+.head-actions,
+.filter-row,
+.tx-filters,
+.budget-filters {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-bottom: 10px !important;
+  padding: 4px !important;
+}
+
+.settings-tabs {
+  border-radius: var(--compact-radius-sm) !important;
+}
+
+.settings-tab {
+  padding: 6px 10px !important;
+  font-size: 11.5px !important;
+  border-radius: 8px !important;
+  white-space: nowrap !important;
+}
+
+.btn,
+button.btn {
+  min-height: 32px !important;
+  padding: 6px 11px !important;
+  font-size: 12px !important;
+  border-radius: var(--compact-radius-sm) !important;
+}
+
+.btn-primary {
+  box-shadow: none !important;
+}
+
+/* ===== Hero / identity ===== */
+.settings-identity,
+.notify-identity {
+  grid-template-columns: 72px minmax(0, 1fr) auto !important;
+  gap: 10px !important;
+  padding: 10px 12px !important;
+  margin-bottom: 10px !important;
+  border-radius: var(--compact-radius) !important;
+}
+
+.settings-avatar {
+  width: 72px !important;
+  height: 72px !important;
+  border-radius: 12px !important;
+  font-size: 22px !important;
+}
+
+.settings-identity-copy h3,
+.settings-identity-copy > h3.hero-money {
+  font-size: 17px !important;
+  margin: 0 0 2px !important;
+}
+
+.settings-identity-copy p,
+.budget-hero-sub {
+  margin: 0 0 6px !important;
+  font-size: 11.5px !important;
+  line-height: 1.35 !important;
+}
+
+.sync-health {
+  min-height: 72px !important;
+  border-radius: 12px !important;
+  padding: 8px !important;
+}
+
+.sync-health strong {
+  font-size: 22px !important;
+  line-height: 1.1 !important;
+}
+
+.sync-health span {
+  font-size: 10px !important;
+}
+
+/* ===== Summary metric grid (Wallets / Budgets / shared stats) ===== */
+.summary-metric-grid,
+.finance-smart .settings-stat-row,
+.wallets-smart .settings-stat-row {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 0 12px !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+}
+
+/* Hide leftover left-clumped finance hero blocks if any remain */
+.finance-smart > .settings-identity:not(.keep-identity) {
+  display: none !important;
+}
+
+.summary-metric-card,
+.finance-smart .settings-stat,
+.wallets-smart .settings-stat {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 6px !important;
+  min-height: 78px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 12px 10px !important;
+  border-radius: 12px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.summary-metric-card.is-warn {
+  border-color: color-mix(in srgb, var(--orange, #f59e0b) 35%, var(--line)) !important;
+  background: color-mix(in srgb, var(--orange-soft, #fff7ed) 70%, var(--surface)) !important;
+}
+
+.summary-metric-label,
+.finance-smart .settings-stat span,
+.wallets-smart .settings-stat span {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--muted) !important;
+  text-align: center !important;
+}
+
+.summary-metric-value,
+.finance-smart .settings-stat strong,
+.wallets-smart .settings-stat strong {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--text) !important;
+  text-align: center !important;
+}
+
+.finance-smart .settings-stat strong .money-pill,
+.wallets-smart .settings-stat strong .money-pill,
+.summary-metric-value .money-pill {
+  justify-content: center !important;
+  margin: 0 auto !important;
+}
+
+@media (min-width: 900px) {
+  .summary-metric-grid,
+  .wallets-smart .settings-stat-row,
+  .finance-smart .settings-stat-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 899px) {
+  .summary-metric-grid,
+  .wallets-smart .settings-stat-row,
+  .finance-smart .settings-stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .summary-metric-card,
+  .finance-smart .settings-stat {
+    min-height: 70px !important;
+    padding: 10px 8px !important;
+  }
+
+  .summary-metric-value,
+  .finance-smart .settings-stat strong {
+    font-size: 13.5px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .summary-metric-grid,
+  .wallets-smart .settings-stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+}
+
+/* Prevent left-clumped content inside metric cards */
+.summary-metric-grid > *,
+.finance-smart .settings-stat-row > * {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+/* ===== Settings Profile header card ===== */
+.settings-profile .profile-header-card {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+  padding: 14px 16px !important;
+  margin-bottom: 12px !important;
+  border-radius: 14px !important;
+  grid-template-columns: none !important;
+}
+
+.settings-profile .profile-header-main {
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.settings-profile .profile-header-avatar,
+.settings-profile .settings-avatar.profile-header-avatar {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  border-radius: 14px !important;
+  font-size: 20px !important;
+  flex: 0 0 64px !important;
+}
+
+.settings-profile .profile-header-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.settings-profile .profile-header-copy h3 {
+  margin: 0 !important;
+  font-size: 17px !important;
+  font-weight: 750 !important;
+  line-height: 1.2 !important;
+}
+
+.settings-profile .profile-header-copy p {
+  margin: 0 !important;
+  font-size: 12.5px !important;
+  color: var(--muted) !important;
+  line-height: 1.3 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.settings-profile .profile-header-copy .settings-badges {
+  margin-top: 4px !important;
+  gap: 6px !important;
+}
+
+.settings-profile .profile-header-actions {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  min-width: 168px !important;
+  max-width: 220px !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+}
+
+.settings-profile .profile-header-actions .btn,
+.settings-profile .profile-header-actions .settings-upload {
+  width: 100% !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.settings-profile .profile-header-actions small {
+  display: block !important;
+  text-align: center !important;
+  font-size: 10.5px !important;
+  line-height: 1.35 !important;
+  color: var(--muted) !important;
+}
+
+.settings-profile .profile-stat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+  gap: 0.75rem !important;
+  width: 100% !important;
+  margin: 0 0 12px !important;
+}
+
+.settings-profile .profile-stat-grid .settings-stat {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 6px !important;
+  min-height: 72px !important;
+  padding: 12px 10px !important;
+}
+
+.settings-profile .profile-stat-grid .settings-stat span {
+  text-align: center !important;
+  margin: 0 !important;
+}
+
+.settings-profile .profile-stat-grid .settings-stat strong {
+  text-align: center !important;
+  font-size: 14px !important;
+}
+
+@media (max-width: 720px) {
+  .settings-profile .profile-header-card {
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 1rem !important;
+    text-align: center !important;
+    padding: 14px 12px !important;
+  }
+
+  .settings-profile .profile-header-main {
+    flex-direction: column !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .settings-profile .profile-header-copy {
+    align-items: center !important;
+    text-align: center !important;
+  }
+
+  .settings-profile .profile-header-copy .settings-badges {
+    justify-content: center !important;
+  }
+
+  .settings-profile .profile-header-actions {
+    width: 100% !important;
+    max-width: 280px !important;
+    min-width: 0 !important;
+    margin-left: 0 !important;
+    align-items: center !important;
+  }
+
+  .settings-profile .profile-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+}
+
+/* ===== Settings > Family tab ===== */
+.family-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 7%, var(--surface)),
+    var(--surface)
+  );
+}
+
+.family-status-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 120px;
+  padding: 4px 8px;
+}
+
+.family-status-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.family-status-value {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--text);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.family-status-zone {
+  font-size: 12px;
+}
+
+.family-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  border: 1px solid var(--line);
+}
+
+.family-status-pill.is-online {
+  background: var(--primary-soft, #edf9f4);
+  color: var(--primary-2, #0f766e);
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
+}
+
+.family-status-pill.is-offline {
+  background: var(--orange-soft, #fff7ed);
+  color: var(--orange, #c2410c);
+}
+
+.family-skel {
+  display: block;
+  width: 72%;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--line) 70%, var(--surface)) 0%,
+    color-mix(in srgb, var(--surface-2, #f1f5f9) 80%, #fff) 45%,
+    color-mix(in srgb, var(--line) 70%, var(--surface)) 100%
+  );
+  background-size: 200% 100%;
+  animation: family-shimmer 1.2s ease-in-out infinite;
+}
+
+.family-skel-sm {
+  width: 56%;
+  height: 12px;
+}
+
+@keyframes family-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.family-settings-card h4 {
+  margin: 0 0 12px;
+}
+
+.family-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.family-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.family-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.family-field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.family-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.family-chip-row .chip {
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+  border-radius: 999px !important;
+  min-height: 0 !important;
+}
+
+.family-settings-card .settings-help {
+  margin: 4px 0 12px;
+}
+
+.family-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.family-save-btn {
+  min-width: 180px;
+}
+
+@media (max-width: 720px) {
+  .family-status-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .family-status-item {
+    flex: none;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  }
+
+  .family-settings-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .family-settings-actions {
+    justify-content: stretch;
+  }
+
+  .family-save-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+
+
+/* ===== Cards / lists / forms ===== */
+.card,
+.finance-card,
+.tx-card,
+.budget-card,
+.settings-block {
+  border-radius: var(--compact-radius) !important;
+  padding: 10px 12px !important;
+  margin-bottom: 8px !important;
+  box-shadow: none !important;
+  border: 1px solid var(--line) !important;
+}
+
+.card-head {
+  padding: 10px 12px 6px !important;
+  margin-bottom: 0 !important;
+}
+
+.card-body {
+  padding: 0 12px 12px !important;
+}
+
+.card-title {
+  font-size: 12.5px !important;
+}
+
+.card-sub {
+  font-size: 10px !important;
+}
+
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px !important;
+}
+
+.settings-block-head {
+  margin-bottom: 8px !important;
+  gap: 8px !important;
+}
+
+.settings-block-head h4 {
+  margin: 0 !important;
+  font-size: 13px !important;
+}
+
+.settings-block-head p,
+.settings-help,
+.settings-empty {
+  font-size: 11.5px !important;
+  margin: 2px 0 0 !important;
+  line-height: 1.4 !important;
+}
+
+.finance-form,
+.form-grid,
+.settings-form {
+  display: grid !important;
+  gap: 8px !important;
+}
+
+.finance-form input,
+.finance-form select,
+.finance-form textarea,
+.settings-block input,
+.settings-block select,
+.settings-block textarea,
+.panel input,
+.panel select,
+.panel textarea {
+  min-height: 34px !important;
+  padding: 7px 10px !important;
+  font-size: 12.5px !important;
+  border-radius: var(--compact-radius-sm) !important;
+}
+
+.tx-row,
+.finance-card .tx-row {
+  gap: 8px !important;
+  padding: 2px 0 !important;
+}
+
+.budget-card {
+  gap: 8px !important;
+}
+
+.budget-amount-row {
+  gap: 6px !important;
+}
+
+.budget-amount-cell {
+  padding: 8px 9px !important;
+  border-radius: 9px !important;
+  gap: 4px !important;
+}
+
+.budget-amount-cell > span {
+  font-size: 9.5px !important;
+}
+
+.progress-wrapper,
+.budget-progress {
+  margin: 2px 0 !important;
+}
+
+.page-head {
+  margin-bottom: 12px !important;
+  gap: 10px !important;
+}
+
+.page-title {
+  font-size: 22px !important;
+}
+
+.page-sub,
+.page-desc {
+  font-size: 12px !important;
+  margin-top: 2px !important;
+}
+
+/* Dashboard KPI density */
+.kpi-grid {
+  gap: 10px !important;
+  margin-bottom: 12px !important;
+}
+
+.kpi {
+  padding: 12px !important;
+}
+
+.kpi-value {
+  font-size: 18px !important;
+}
+
+.kpi-label {
+  font-size: 10.5px !important;
+}
+
+/* Two-column desktop content where space allows */
+@media (min-width: 1100px) {
+  .finance-smart > .settings-stack {
+    display: grid !important;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr) !important;
+    gap: 12px !important;
+    align-items: start !important;
+  }
+
+  .finance-smart > .settings-stack > .settings-block {
+    margin-bottom: 0 !important;
+  }
+
+  .finance-smart .finance-form {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .finance-smart .finance-form > .btn,
+  .finance-smart .finance-form > button,
+  .finance-smart .finance-form > textarea {
+    grid-column: 1 / -1;
+  }
+
+  .main-content .grid-12 {
+    gap: 12px !important;
+  }
+
+  .settings-stat-row:not(.security-grid),
+  .summary-metric-grid,
+  .finance-smart .settings-stat-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .kpi-grid:not(.dash-kpi-grid) {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (min-width: 961px) and (max-width: 1099px) {
+  .settings-stat-row:not(.security-grid),
+  .summary-metric-grid,
+  .kpi-grid:not(.dash-kpi-grid) {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+  }
+}
+
+/* ===== Mobile compact ===== */
+@media (max-width: 960px) {
+  .main-content > section,
+  .main-content > .panel,
+  .main-content > .page,
+  .main-content > .arch-page {
+    padding: 10px 10px 18px !important;
+  }
+
+  .settings-smart,
+  .panel.settings-panel,
+  .finance-smart,
+  .notify-smart {
+    padding: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  .settings-smart .settings-head h2 {
+    font-size: 16px !important;
+  }
+
+  .settings-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 8px !important;
+  }
+
+  .settings-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-tab {
+    flex: 0 0 auto !important;
+    padding: 6px 9px !important;
+    font-size: 11px !important;
+  }
+
+  .settings-identity:not(.profile-header-card),
+  .notify-identity {
+    grid-template-columns: 56px minmax(0, 1fr) !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+  }
+
+  .settings-avatar,
+  .sync-health {
+    width: 56px !important;
+    min-width: 56px !important;
+    height: 56px !important;
+    min-height: 56px !important;
+  }
+
+  .sync-health strong {
+    font-size: 18px !important;
+  }
+
+  .settings-identity-actions:not(.profile-header-actions) {
+    grid-column: 1 / -1 !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
+  }
+
+  .settings-identity-copy h3,
+  .settings-identity-copy > h3.hero-money {
+    font-size: 15px !important;
+  }
+
+  /* Side-by-side metric cards on mobile */
+  .settings-stat-row:not(.security-grid),
+  .kpi-grid:not(.dash-kpi-grid),
+  .summary-metric-row,
+  .finance-stat-row {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .settings-stat:not(.summary-metric-card),
+  .metric-card {
+    padding: 10px 8px !important;
+    text-align: center !important;
+    align-items: center !important;
+  }
+
+  .settings-stat strong {
+    font-size: 13px !important;
+    text-align: center !important;
+  }
+
+  .settings-stat span {
+    font-size: 9.5px !important;
+    text-align: center !important;
+  }
+
+  .budget-amount-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+  }
+
+  .budget-amount-cell {
+    padding: 6px 7px !important;
+  }
+
+  .budget-amount-cell > span {
+    font-size: 8.5px !important;
+  }
+
+  .notify-actions,
+  .settings-block-head .notify-actions,
+  .head-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .finance-form {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .settings-stat-row:not(.security-grid),
+  .summary-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .budget-amount-row {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Cloud & Backup settings */
+.settings-cloud-page,
+.cloud-providers-grid,
+.cloud-provider-card,
+.cloud-auto-bar {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 768px) {
+  .cloud-providers-grid {
+    gap: 0 !important;
+  }
+
+  .cloud-provider-card {
+    padding: 0.75rem !important;
+  }
+
+  .cloud-card-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.4rem !important;
+  }
+
+  .cloud-card-actions .btn {
+    flex: unset !important;
+    width: 100% !important;
+    font-size: 0.85rem !important;
+    padding: 0.4rem 0.8rem !important;
+  }
+}
+
+/* Security settings list */
+.security-panel,
+.security-list,
+.security-row {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 768px) {
+  .security-row {
+    padding: 0.75rem !important;
+  }
+
+  .security-row-action {
+    width: 100% !important;
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.85rem !important;
+  }
+}
+
+/* Prevent overflow / cut-off */
+.panel *,
+.settings-panel *,
+.finance-smart * {
+  min-width: 0;
+}
+
+.money-pill,
+.type-chip,
+.settings-badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-row-copy strong,
+.tx-row-sub,
+.card-title,
+.settings-block-head h4 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Shoyb mobile pages: keep bottom nav clear without huge top padding */
+@media (max-width: 960px) {
+  .app-layout.shoyb-shell .main-content > section,
+  .app-layout.shoyb-shell .main-content > .panel,
+  .app-layout.shoyb-shell .main-content > .page:not(.dash-shoyb),
+  .app-layout.shoyb-shell .main-content > .arch-page:not(.dash-shoyb) {
+    padding: 10px 10px calc(78px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .family-smart .settings-stat-row,
+  .finance-smart .settings-stat-row,
+  .summary-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

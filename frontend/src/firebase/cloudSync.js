@@ -184,14 +184,22 @@ export async function ensureUserProfile(uid, user) {
   const db = getFirestoreDb();
   if (!db) return;
   const ref = doc(db, "users", uid);
-  await setDoc(
-    ref,
-    {
-      email: user.email || null,
-      display_name: user.displayName || null,
-      photo_url: user.photoURL || null,
-      last_seen_at: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  const payload = {
+    email: user.email || null,
+    display_name: user.displayName || null,
+    last_seen_at: serverTimestamp(),
+  };
+  // Only write Auth photoURL when present — do not wipe Storage avatar uploads.
+  if (user.photoURL) {
+    payload.photo_url = user.photoURL;
+  }
+  await setDoc(ref, payload, { merge: true });
+}
+
+export async function getUserProfileDoc(uid) {
+  if (!uid) return null;
+  const db = getFirestoreDb();
+  if (!db) return null;
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? snap.data() : null;
 }

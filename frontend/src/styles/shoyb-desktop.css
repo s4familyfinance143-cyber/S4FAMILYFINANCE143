@@ -129,6 +129,8 @@
   .app-layout.shoyb-shell .topbar .topbar-logout,
   .app-layout.shoyb-shell .topbar .mobile-brand,
   .app-layout.shoyb-shell .topbar .mobile-menu,
+  .app-layout.shoyb-shell .topbar .mobile-back,
+  .app-layout.shoyb-shell .topbar .mobile-header-leading,
   .app-layout.shoyb-shell .topbar .icon-btn:not(.shoyb-bell) {
     display: none !important;
   }
@@ -282,53 +284,123 @@
 }
 
 .dash-shoyb .balance-card {
+  --bc-ink: #ffffff;
+  --bc-muted: rgba(255, 255, 255, 0.95);
+  --bc-brass: #f0d9a8;
+  --bc-mint: #7ec9a4;
+  --bc-coral: #e8a48f;
+  --bc-sky: #9ec9d8;
   grid-column: 1 / span 2;
   grid-row: 1;
-  background: var(--navy);
-  color: #f3efe2;
-  border-radius: 18px;
-  padding: 20px 28px;
+  color: #ffffff;
+  border-radius: 20px;
+  padding: 18px 24px 16px;
   position: relative;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-}
-
-.dash-shoyb .balance-card::after {
-  content: "";
-  position: absolute;
-  right: -40px;
-  top: -50px;
-  width: 180px;
-  height: 180px;
-  border: 1px solid rgba(243, 239, 226, 0.14);
-  border-radius: 50%;
+  gap: 28px;
+  isolation: isolate;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(120% 90% at 100% -10%, rgba(56, 189, 248, 0.16), transparent 42%),
+    radial-gradient(80% 70% at -5% 110%, rgba(99, 102, 241, 0.14), transparent 45%),
+    linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f4c81 100%);
 }
 
 .dash-shoyb .balance-card::before {
   content: "";
   position: absolute;
-  right: 20px;
-  top: 10px;
-  width: 110px;
-  height: 110px;
-  border: 1px solid rgba(243, 239, 226, 0.1);
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #38bdf8 0%, #6366f1 50%, #0ea5e9 100%);
+  border-radius: 20px 0 0 20px;
+  z-index: 2;
+}
+
+.dash-shoyb .balance-card::after {
+  content: "";
+  position: absolute;
+  right: -36px;
+  top: -48px;
+  width: 168px;
+  height: 168px;
+  border: 1.5px solid rgba(148, 163, 184, 0.28);
   border-radius: 50%;
+  box-shadow: 0 0 0 18px rgba(56, 189, 248, 0.06);
+  pointer-events: none;
+}
+
+.dash-shoyb .bc-shine {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 78% 22%, rgba(255, 255, 255, 0.08), transparent 28%),
+    repeating-linear-gradient(
+      -18deg,
+      transparent 0 10px,
+      rgba(255, 255, 255, 0.03) 10px 11px
+    );
+  opacity: 0.9;
 }
 
 .dash-shoyb .bc-left {
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
-.dash-shoyb .bc-top {
-  display: none;
-}
+/* Desktop only: ⋯ absolute top-right; leave room so chips don't collide */
+@media (min-width: 961px) {
+  .dash-shoyb .balance-card {
+    padding-right: 56px;
+  }
 
-.dash-shoyb .bc-more {
-  display: none;
+  .dash-shoyb .bc-top {
+    display: flex;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    left: auto;
+    z-index: 3;
+    margin: 0;
+    width: auto;
+    align-items: center;
+    justify-content: flex-end;
+    pointer-events: none;
+  }
+
+  .dash-shoyb .bc-top .bc-label {
+    display: none;
+  }
+
+  .dash-shoyb .bc-more {
+    pointer-events: auto;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 10px;
+    font-size: 16px;
+    line-height: 1;
+    color: #ffffff;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .dash-shoyb .bc-more:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.45);
+  }
 }
 
 .dash-shoyb .mobile-quick-actions {
@@ -342,97 +414,167 @@
 .dash-shoyb .bc-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11.5px;
-  color: rgba(243, 239, 226, 0.65);
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.dash-shoyb .bc-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffffff !important;
+}
+
+.dash-shoyb .balance-card .bc-kicker,
+.dash-shoyb .balance-card .bc-col-label,
+.dash-shoyb .balance-card .bc-label {
+  color: #ffffff !important;
 }
 
 .dash-shoyb .bc-eye {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: rgba(243, 239, 226, 0.15);
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   display: grid;
   place-items: center;
-  font-size: 8px;
-  border: 0;
-  color: inherit;
+  font-size: 10px;
+  color: #ffffff;
   cursor: pointer;
   padding: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.dash-shoyb .bc-eye:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 .dash-shoyb .bc-figure {
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 700;
-  margin-top: 5px;
-  letter-spacing: -0.01em;
+  margin-top: 6px;
+  letter-spacing: -0.03em;
   font-family: var(--serif);
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(15, 23, 42, 0.35);
 }
 
-.dash-shoyb .bc-figure sup {
+.dash-shoyb .bc-figure sup,
+.dash-shoyb .bc-figure .bc-currency {
   font-size: 15px;
-  font-weight: 400;
-  opacity: 0.7;
-  margin-right: 2px;
+  font-weight: 700;
+  margin-right: 4px;
   font-family: Inter, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 1;
+  letter-spacing: 0.02em;
+  vertical-align: super;
 }
 
 .dash-shoyb .bc-delta {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 10.5px;
-  color: #cfe0d4;
-  background: rgba(76, 120, 90, 0.28);
-  padding: 4px 10px;
-  border-radius: 20px;
+  font-weight: 650;
+  color: #ecfdf5;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(16, 185, 129, 0.16));
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  padding: 4px 11px;
+  border-radius: 999px;
 }
 
 .dash-shoyb .bc-delta.down {
-  color: #e3b7a6;
-  background: rgba(156, 74, 50, 0.28);
+  color: #fff1f2;
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.32), rgba(244, 63, 94, 0.12));
+  border-color: rgba(251, 113, 133, 0.45);
 }
 
 .dash-shoyb .bc-rows {
   display: flex;
-  gap: 26px;
+  gap: 10px;
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
 }
 
 .dash-shoyb .bc-col {
-  padding-left: 18px;
-  border-left: 1px solid rgba(243, 239, 226, 0.16);
+  min-width: 108px;
+  padding: 10px 12px;
+  border-left: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .dash-shoyb .bc-col:first-child {
   border-left: 0;
-  padding-left: 0;
+  padding-left: 12px;
 }
 
 .dash-shoyb .bc-col-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 9.5px;
-  color: rgba(243, 239, 226, 0.55);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.dash-shoyb .bc-col-label::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--bc-brass);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
+.dash-shoyb .bc-col.income .bc-col-label::before {
+  background: var(--bc-mint);
+  box-shadow: 0 0 0 3px rgba(126, 201, 164, 0.22);
+}
+
+.dash-shoyb .bc-col.expense .bc-col-label::before {
+  background: var(--bc-coral);
+  box-shadow: 0 0 0 3px rgba(232, 164, 143, 0.22);
+}
+
+.dash-shoyb .bc-col.savings .bc-col-label::before {
+  background: var(--bc-sky);
+  box-shadow: 0 0 0 3px rgba(158, 201, 216, 0.22);
 }
 
 .dash-shoyb .bc-col-value {
   font-size: 15px;
-  font-weight: 700;
-  margin-top: 3px;
+  font-weight: 750;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: #ffffff !important;
 }
 
 .dash-shoyb .bc-col.income .bc-col-value {
-  color: #b9dabf;
+  color: #bbf7d0 !important;
 }
 
 .dash-shoyb .bc-col.expense .bc-col-value {
-  color: #e3b7a6;
+  color: #fecdd3 !important;
 }
 
 .dash-shoyb .bc-col.savings .bc-col-value {
-  color: #cfe0d4;
+  color: #bae6fd !important;
 }
 
 .dash-shoyb .quick-panel {
@@ -525,28 +667,41 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: visible;
 }
 
 .dash-shoyb .stat-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 10px;
+  min-height: 1.25rem;
+  flex: 0 0 auto;
 }
 
 .dash-shoyb .stat-title {
   font-size: 12.5px;
   font-weight: 700;
   color: var(--ink);
+  min-width: 0;
 }
 
-.dash-shoyb .stat-more {
+.dash-shoyb .stat-more,
+.dash-shoyb .stat-period {
   font-size: 11px;
   color: var(--ink-muted);
   background: none;
   border: 0;
-  cursor: pointer;
+  cursor: default;
   padding: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.dash-shoyb .stat-more {
+  cursor: pointer;
 }
 
 .dash-shoyb .donut {
@@ -574,36 +729,201 @@
 .dash-shoyb .spend-body {
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-
-.dash-shoyb .budget-figs {
+  gap: 14px;
+  min-width: 0;
   flex: 1;
+  overflow: visible;
 }
 
-.dash-shoyb .bf-row {
-  font-size: 10px;
-  color: var(--ink-muted);
+/* Monthly Budget — generous viewBox so stroke never clips */
+.dash-shoyb .budget-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  box-sizing: border-box;
 }
 
-.dash-shoyb .bf-row b {
+.dash-shoyb .budget-ring-svg {
+  width: 100%;
+  height: 100%;
   display: block;
-  font-size: 13.5px;
-  color: var(--ink);
-  font-weight: 700;
+  overflow: visible;
+  transform: rotate(-90deg);
 }
 
-.dash-shoyb .bf-left {
-  margin-top: 6px;
-  font-size: 9.5px;
-  color: var(--sage);
-  font-weight: 700;
+.dash-shoyb .budget-ring-track,
+.dash-shoyb .budget-ring-arc {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
 }
 
+.dash-shoyb .budget-ring-track {
+  stroke: color-mix(in srgb, var(--surface-alt, #efe7d4) 70%, #d5cbb5);
+}
+
+.dash-shoyb .budget-ring-arc {
+  stroke: var(--navy, #1f3a5f);
+  transition: stroke-dasharray 0.4s ease;
+}
+
+.dash-shoyb .budget-ring[data-empty="1"] .budget-ring-track {
+  stroke: color-mix(in srgb, var(--surface-alt, #efe7d4) 55%, #cfc4ad);
+  stroke-width: 10;
+}
+
+.dash-shoyb .budget-ring[data-empty="1"] .budget-ring-arc {
+  stroke-dasharray: 0.01 100;
+  opacity: 0;
+}
+
+.dash-shoyb .budget-ring-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dash-shoyb .budget-ring-center strong {
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink, #252017);
+  letter-spacing: -0.02em;
+}
+
+.dash-shoyb .budget-legend {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.dash-shoyb .budget-leg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.dash-shoyb .budget-leg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dash-shoyb .budget-leg-dot.is-budget {
+  background: color-mix(in srgb, var(--navy, #1f3a5f) 35%, #c9c0ae);
+}
+
+.dash-shoyb .budget-leg-dot.is-used {
+  background: var(--navy, #1f3a5f);
+}
+
+.dash-shoyb .budget-leg-dot.is-left {
+  background: var(--sage, #5a8f6a);
+}
+
+.dash-shoyb .budget-leg-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-muted, #8a7f6b);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-shoyb .budget-leg-val {
+  flex: 0 0 auto;
+  font-weight: 750;
+  color: var(--ink, #252017);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dash-shoyb .budget-leg-row.is-left .budget-leg-val {
+  color: var(--sage, #5a8f6a);
+}
+
+.dash-shoyb .spend-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+.dash-shoyb .spend-ring-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.dash-shoyb .spend-ring-track,
+.dash-shoyb .spend-ring-arc {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: butt;
+}
+
+.dash-shoyb .spend-ring-track {
+  stroke: color-mix(in srgb, var(--surface-alt, #efe7d4) 70%, #d5cbb5);
+}
+
+.dash-shoyb .spend-ring-arc {
+  transition: stroke-dasharray 0.35s ease;
+}
+
+.dash-shoyb .spend-ring[data-empty="1"] .spend-ring-track {
+  stroke: color-mix(in srgb, var(--surface-alt, #efe7d4) 55%, #cfc4ad);
+  stroke-width: 10;
+}
+
+.dash-shoyb .spend-ring-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 1;
+  padding: 0.35rem;
+  text-align: center;
+}
+
+.dash-shoyb .spend-ring-center strong {
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--ink, #252017);
+  letter-spacing: -0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Legacy CSS-donut size hooks (kept inert if unused) */
 .dash-shoyb .spend-total {
   width: 72px;
   height: 72px;
-  flex: 0 0 auto;
+  flex: 0 0 72px;
 }
 
 .dash-shoyb .spend-total .donut-inner {
@@ -647,83 +967,248 @@
 .dash-shoyb .family-banner {
   grid-column: 2;
   grid-row: 2;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: 11px;
-  row-gap: 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(15, 76, 129, 0.08), transparent 55%),
+    linear-gradient(165deg, #ffffff 0%, #f7f4ec 100%);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, #0f4c81 30%);
+  border-radius: 18px;
+  padding: 16px 16px 14px;
   cursor: pointer;
   text-align: left;
   color: inherit;
   width: 100%;
+  min-width: 0;
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.dash-shoyb .fb-top {
+.dash-shoyb .family-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #0f172a 0%, #0f4c81 55%, #38bdf8 100%);
+  border-radius: 18px 0 0 18px;
+  z-index: 1;
+}
+
+.dash-shoyb .family-banner:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, #0f4c81 45%, var(--line));
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.dash-shoyb .fb-top,
+.dash-shoyb .fb-mid {
   display: none;
 }
 
-.dash-shoyb .fb-icon {
-  grid-column: 1;
-  grid-row: 1;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--sage-soft);
-  color: var(--sage);
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  flex: 0 0 auto;
+.dash-shoyb .fb-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding-left: 4px;
 }
 
-.dash-shoyb .fb-mid {
-  grid-column: 2;
-  grid-row: 1;
-  flex: 1;
+.dash-shoyb .fb-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #0f172a 0%, #0f4c81 100%);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 76, 129, 0.28);
+  margin-top: 0;
+}
+
+.dash-shoyb .fb-icon-mark {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffffff !important;
+}
+
+.dash-shoyb .fb-chip-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffffff !important;
+  background: linear-gradient(145deg, #0f172a, #0f4c81);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.dash-shoyb .fb-member-chip.tone-1 .fb-chip-avatar {
+  background: linear-gradient(145deg, #0f172a, #1e3a5f);
+  color: #ffffff !important;
+}
+
+.dash-shoyb .fb-member-chip.tone-2 .fb-chip-avatar {
+  background: linear-gradient(145deg, #0f4c81, #2563eb);
+  color: #ffffff !important;
+}
+
+.dash-shoyb .fb-member-chip.tone-3 .fb-chip-avatar {
+  background: linear-gradient(145deg, #0f766e, #14b8a6);
+  color: #ffffff !important;
+}
+
+.dash-shoyb .fb-member-chip.tone-4 .fb-chip-avatar {
+  background: linear-gradient(145deg, #9a3412, #ea580c);
+  color: #ffffff !important;
+}
+
+.dash-shoyb .fb-copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .dash-shoyb .fb-title {
-  font-size: 9.5px;
-  color: var(--ink-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
 .dash-shoyb .fb-count {
-  font-size: 12.5px;
+  margin-top: 2px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.dash-shoyb .fb-count-extra {
+  display: none;
+}
+
+.dash-shoyb .fb-cta {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
   font-weight: 700;
-  color: var(--ink);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f4c81;
+  background: rgba(15, 76, 129, 0.08);
+  border: 1px solid rgba(15, 76, 129, 0.14);
+  border-radius: 999px;
+  padding: 5px 10px;
 }
 
 .dash-shoyb .fb-arrow {
-  grid-column: 3;
-  grid-row: 1;
-  font-size: 14px;
-  color: var(--ink-muted);
+  display: none;
 }
 
-.dash-shoyb .fb-avatars {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  display: flex;
-}
-
-.dash-shoyb .fb-avatars .av {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--gold-soft);
-  border: 1.5px solid var(--surface);
+.dash-shoyb .fb-member-chips {
   display: grid;
-  place-items: center;
-  font-size: 8.5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  padding-left: 4px;
+}
+
+.dash-shoyb .fb-member-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.65rem 0.55rem 0.5rem;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.dash-shoyb .family-banner:hover .fb-member-chip {
+  border-color: rgba(15, 76, 129, 0.16);
+}
+
+.dash-shoyb .fb-member-chip.is-more {
+  background: linear-gradient(145deg, rgba(15, 76, 129, 0.06), rgba(15, 23, 42, 0.03));
+  border-style: dashed;
+}
+
+.dash-shoyb .fb-chip-avatar.has-photo {
+  background: transparent;
+  border-radius: 12px;
+}
+
+.dash-shoyb .fb-chip-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dash-shoyb .fb-chip-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.dash-shoyb .fb-chip-name {
+  font-size: 0.82rem;
+  font-weight: 750;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-transform: none;
+  letter-spacing: -0.01em;
+}
+
+.dash-shoyb .fb-chip-role {
+  display: inline-flex;
+  align-self: flex-start;
+  font-size: 0.62rem;
   font-weight: 700;
-  color: var(--navy);
-  margin-left: -7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f4c81;
+  background: rgba(15, 76, 129, 0.08);
+  border-radius: 999px;
+  padding: 2px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Legacy stacked avatars (kept inert if present) */
+.dash-shoyb .fb-avatars {
+  display: none;
 }
 
 .dash-shoyb .fb-avatars .av:first-child {
@@ -856,7 +1341,6 @@
 }
 
 .main-content .dash-shoyb button.qa-btn,
-.main-content .dash-shoyb button.family-banner,
 .main-content .dash-shoyb button.tx-row,
 .main-content .dash-shoyb .tx-head button,
 .main-content .dash-shoyb .stat-more,
@@ -883,10 +1367,44 @@
 }
 
 .main-content .dash-shoyb button.family-banner {
-  border-radius: 16px !important;
-  padding: 14px 18px !important;
-  background: var(--surface) !important;
-  border: 1px solid var(--line) !important;
+  min-height: 0 !important;
+  height: auto !important;
+  box-shadow:
+    0 10px 28px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border-radius: 18px !important;
+  padding: 16px 16px 14px !important;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(15, 76, 129, 0.08), transparent 55%),
+    linear-gradient(165deg, #ffffff 0%, #f7f4ec 100%) !important;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, #0f4c81 30%) !important;
+  color: #0f172a !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-icon,
+.main-content .dash-shoyb button.family-banner .fb-icon-mark,
+.main-content .dash-shoyb button.family-banner .fb-chip-avatar {
+  color: #ffffff !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-chip-name {
+  color: #0f172a !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-chip-role {
+  color: #0f4c81 !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-title {
+  color: #64748b !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-count {
+  color: #0f172a !important;
+}
+
+.main-content .dash-shoyb button.family-banner .fb-cta {
+  color: #0f4c81 !important;
 }
 
 .main-content .dash-shoyb button.tx-row {
@@ -920,10 +1438,25 @@
   height: 16px !important;
   padding: 0 !important;
   border-radius: 50% !important;
-  background: rgba(243, 239, 226, 0.15) !important;
+  background: rgba(255, 255, 255, 0.15) !important;
   border: 0 !important;
+  color: #ffffff !important;
 }
 
-@media (max-width: 960px) {
-  /* mobile layout handled in shoyb-mobile.css */
+@media (min-width: 961px) {
+  .main-content .dash-shoyb button.bc-more {
+    min-height: 0 !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+    font-size: 16px !important;
+    line-height: 1 !important;
+  }
 }

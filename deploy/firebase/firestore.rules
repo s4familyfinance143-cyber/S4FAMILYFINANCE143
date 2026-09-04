@@ -24,6 +24,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role == 'OWNER';
     }
 
+    function familyAdminOrOwner(familyId) {
+      return familyMember(familyId)
+        && get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role in ['OWNER', 'ADMIN'];
+    }
+
+    // Keys allowed when Owner/Admin updates currency / timezone (settings.manage)
+    function familySettingsKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['currency', 'default_currency', 'timezone', 'updated_at', 'name']);
+    }
+
     match /users/{userId} {
       allow read, write: if isOwner(userId);
 
@@ -40,9 +51,14 @@ service cloud.firestore {
     match /families/{familyId} {
       allow read: if familyMember(familyId);
       allow create: if signedIn() && emailOk();
-      // Owner updates OR bootstrap while creating (member already written as self)
+
+      // Owner: full meta updates (incl. currency / timezone / name)
+      // Admin: currency + timezone (+ name) only — settings.manage surface
+      // Member: bootstrap merge that does not change owner_uid
       allow update: if familyOwner(familyId)
-        || (signedIn() && emailOk() && familyMember(familyId));
+        || (familyAdminOrOwner(familyId) && familySettingsKeysOnly())
+        || (signedIn() && emailOk() && familyMember(familyId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner_uid']));
 
       match /members/{memberId} {
         allow read: if familyMember(familyId) || (signedIn() && request.auth.uid == memberId);

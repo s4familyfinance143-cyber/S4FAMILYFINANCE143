@@ -36,22 +36,69 @@
     min-width: 0 !important;
   }
 
-  /* ===== Top bar (menu | brand | bell+avatar) ===== */
+  /* ===== Top bar: [← ☰] | centered title | [🔔 SA] ===== */
   .app-layout.shoyb-shell .topbar.arch-shell-topbar,
   .app-layout.shoyb-shell .main-content > .topbar {
     flex: 0 0 auto !important;
-    display: flex !important;
+    display: grid !important;
+    grid-template-columns: minmax(68px, auto) minmax(0, 1fr) minmax(68px, auto) !important;
     align-items: center !important;
-    justify-content: space-between !important;
-    gap: 8px !important;
+    column-gap: 4px !important;
+    row-gap: 0 !important;
     height: auto !important;
     min-height: 0 !important;
-    padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 8px !important;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px !important;
     background: var(--paper, #f6f1e4) !important;
     border-bottom: 0 !important;
     box-shadow: none !important;
-    position: static !important;
+    position: relative !important;
     backdrop-filter: none !important;
+  }
+
+  .app-layout.shoyb-shell .mobile-header-leading {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 4px !important;
+    grid-column: 1 !important;
+    flex-shrink: 0 !important;
+    min-width: 0 !important;
+    z-index: 2;
+  }
+
+  .app-layout.shoyb-shell .mobile-back {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    border-radius: 9px !important;
+    background: #fffdf7 !important;
+    border: 1px solid #ded2b3 !important;
+    color: var(--navy, #22344a) !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    font-family: inherit !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+  }
+
+  .app-layout.shoyb-shell .mobile-back:disabled {
+    opacity: 0.4 !important;
+    cursor: default !important;
+  }
+
+  .app-layout.shoyb-shell .mobile-back-icon {
+    display: block !important;
+    transform: translateY(-0.5px);
+  }
+
+  .app-layout.shoyb-shell .mobile-back-label {
+    display: none !important;
   }
 
   .app-layout.shoyb-shell .shoyb-top-copy {
@@ -69,12 +116,12 @@
   .app-layout.shoyb-shell .mobile-menu {
     display: grid !important;
     place-items: center !important;
-    width: 34px !important;
-    min-width: 34px !important;
-    height: 34px !important;
-    min-height: 34px !important;
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
     padding: 0 !important;
-    border-radius: 10px !important;
+    border-radius: 9px !important;
     background: #fffdf7 !important;
     border: 1px solid #ded2b3 !important;
     color: var(--navy, #22344a) !important;
@@ -82,7 +129,7 @@
   }
 
   .app-layout.shoyb-shell .mobile-menu-bars {
-    width: 14px;
+    width: 13px;
     gap: 2.5px;
   }
 
@@ -95,10 +142,15 @@
     flex-direction: column !important;
     align-items: center !important;
     justify-content: center !important;
-    flex: 1 1 auto !important;
+    grid-column: 2 !important;
+    justify-self: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
     min-width: 0 !important;
     gap: 0 !important;
     text-align: center !important;
+    pointer-events: none;
+    z-index: 1;
   }
 
   .app-layout.shoyb-shell .mobile-brand-mark {
@@ -109,15 +161,21 @@
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
+    justify-content: center !important;
     min-width: 0;
+    width: 100%;
   }
 
   .app-layout.shoyb-shell .mobile-brand-title {
-    font-size: 14px !important;
+    font-size: 13px !important;
     font-weight: 800 !important;
     letter-spacing: 0.01em !important;
     color: var(--ink, #252017) !important;
-    line-height: 1.2 !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 100% !important;
   }
 
   .app-layout.shoyb-shell .mobile-brand-title .s4 {
@@ -125,37 +183,41 @@
   }
 
   .app-layout.shoyb-shell .mobile-brand-sub {
-    font-size: 9.5px !important;
+    font-size: 9px !important;
     color: var(--ink-muted, #8a7f6b) !important;
     margin-top: 1px !important;
     font-weight: 500 !important;
+    line-height: 1.2 !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 52vw;
+    max-width: 100%;
   }
 
   .app-layout.shoyb-shell .top-actions {
     display: flex !important;
     align-items: center !important;
-    gap: 8px !important;
+    justify-content: flex-end !important;
+    gap: 6px !important;
     margin-left: 0 !important;
+    grid-column: 3 !important;
     flex-shrink: 0;
+    z-index: 2;
   }
 
   .app-layout.shoyb-shell .main-content .icon-btn.shoyb-bell,
   .app-layout.shoyb-shell .main-content button.shoyb-bell {
     position: relative !important;
-    width: 34px !important;
-    height: 34px !important;
-    min-width: 34px !important;
-    min-height: 34px !important;
-    border-radius: 10px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    border-radius: 9px !important;
     background: #fffdf7 !important;
     border: 1px solid #ded2b3 !important;
     display: grid !important;
     place-items: center !important;
-    font-size: 14px !important;
+    font-size: 13px !important;
     color: var(--navy, #22344a) !important;
     padding: 0 !important;
     box-shadow: none !important;
@@ -166,9 +228,9 @@
     position: absolute !important;
     top: -3px !important;
     right: -3px !important;
-    width: 15px !important;
-    height: 15px !important;
-    min-width: 15px !important;
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
     border-radius: 50% !important;
     background: var(--rust, #9c4a32) !important;
     color: #fff !important;
@@ -181,16 +243,16 @@
 
   .app-layout.shoyb-shell .main-content button.avatar-mini {
     display: grid !important;
-    width: 34px !important;
-    height: 34px !important;
-    min-width: 34px !important;
-    min-height: 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
     border-radius: 50% !important;
     background: var(--gold-soft, #f1e3c7) !important;
     color: var(--navy, #22344a) !important;
     place-items: center !important;
     font-weight: 700 !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     border: 1.5px solid #ded2b3 !important;
     padding: 0 !important;
     box-shadow: none !important;
@@ -204,12 +266,14 @@
     max-width: none !important;
     width: 100% !important;
     margin: 0 !important;
-    padding: 6px 16px 8px !important;
-    padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important;
-    overflow: hidden !important;
+    padding: 2px 12px 4px !important;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     display: flex !important;
     flex-direction: column !important;
     background: transparent !important;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Other pages scroll */
@@ -229,14 +293,15 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  /* Grow with content so Family + Recent TX scroll into view */
   .dash-shoyb-grid {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
-    height: 100% !important;
+    flex: 0 0 auto !important;
+    min-height: min-content !important;
+    height: auto !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 9px !important;
-    overflow: hidden !important;
+    gap: 6px !important;
+    overflow: visible !important;
     grid-template-columns: none !important;
     grid-template-rows: none !important;
   }
@@ -247,100 +312,280 @@
 
   .dash-shoyb .mobile-quick-actions {
     display: flex !important;
-    gap: 7px;
+    gap: 6px;
     flex: 0 0 auto;
   }
 
+  /* Deep blue balance card — high-contrast labels (compact mobile) */
   .dash-shoyb .balance-card {
+    --bc-ink: #ffffff;
+    --bc-muted: rgba(255, 255, 255, 0.95);
+    --bc-brass: #f0d9a8;
+    --bc-mint: #7ec9a4;
+    --bc-coral: #e8a48f;
+    --bc-sky: #9ec9d8;
     flex: 0 0 auto !important;
     flex-direction: column !important;
     align-items: stretch !important;
     justify-content: flex-start !important;
     gap: 0 !important;
     border-radius: 16px !important;
-    padding: 14px 16px !important;
+    padding: 9px 11px 8px 13px !important;
+    isolation: isolate !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    box-shadow:
+      0 12px 28px rgba(15, 23, 42, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+    background:
+      radial-gradient(110% 90% at 100% -10%, rgba(56, 189, 248, 0.18), transparent 44%),
+      radial-gradient(80% 70% at 0% 120%, rgba(99, 102, 241, 0.14), transparent 48%),
+      linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f4c81 100%) !important;
+  }
+
+  .dash-shoyb .balance-card::before {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 auto 0 0 !important;
+    width: 3px !important;
+    height: auto !important;
+    right: auto !important;
+    top: 0 !important;
+    border: 0 !important;
+    border-radius: 16px 0 0 16px !important;
+    background: linear-gradient(180deg, #38bdf8 0%, #6366f1 50%, #0ea5e9 100%) !important;
+    box-shadow: none !important;
+    z-index: 2 !important;
+  }
+
+  .dash-shoyb .balance-card::after {
+    width: 92px !important;
+    height: 92px !important;
+    right: -26px !important;
+    top: -34px !important;
+    border: 1.5px solid rgba(148, 163, 184, 0.28) !important;
+    border-radius: 50% !important;
+    box-shadow: 0 0 0 12px rgba(56, 189, 248, 0.06) !important;
+    background: transparent !important;
+  }
+
+  .dash-shoyb .bc-shine {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.08), transparent 30%),
+      repeating-linear-gradient(
+        -18deg,
+        transparent 0 9px,
+        rgba(255, 255, 255, 0.03) 9px 10px
+      );
   }
 
   .dash-shoyb .bc-label-desktop {
     display: none !important;
   }
 
+  /* Mobile: restore original header row — title + eye + ⋯ (no absolute overlay) */
   .dash-shoyb .bc-top {
     display: flex !important;
-    justify-content: space-between;
-    align-items: center;
-    position: relative;
-    z-index: 1;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    z-index: 1 !important;
+    margin: 0 0 2px !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    pointer-events: auto !important;
+  }
+
+  .dash-shoyb .bc-top .bc-label {
+    display: flex !important;
+    width: auto !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    align-items: center !important;
+    gap: 8px !important;
   }
 
   .dash-shoyb .bc-more {
-    display: block !important;
-    background: none;
-    border: 0;
+    display: grid !important;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
     font-size: 14px;
-    color: rgba(243, 239, 226, 0.55);
+    color: #ffffff;
     padding: 0;
     cursor: pointer;
     line-height: 1;
+    pointer-events: auto !important;
   }
 
   .dash-shoyb .bc-left {
     position: relative;
     z-index: 1;
+    display: flex !important;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 3px;
   }
 
   .dash-shoyb .bc-label {
-    font-size: 11px;
+    font-size: 9.5px !important;
+    letter-spacing: 0.02em;
+    width: auto;
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .bc-kicker {
+    font-size: 0.58rem !important;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .balance-card .bc-kicker,
+  .dash-shoyb .balance-card .bc-col-label,
+  .dash-shoyb .balance-card .bc-label {
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .bc-eye {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 9px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    color: #ffffff !important;
   }
 
   .dash-shoyb .bc-figure {
-    font-size: 28px;
-    margin-top: 4px;
+    font-size: 24px !important;
+    margin-top: 0 !important;
+    line-height: 1 !important;
+    letter-spacing: -0.03em !important;
+    color: #ffffff !important;
   }
 
-  .dash-shoyb .bc-figure sup {
-    font-size: 13px;
+  .dash-shoyb .bc-figure sup,
+  .dash-shoyb .bc-figure .bc-currency {
+    font-size: 11px !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+    opacity: 1 !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
   }
 
   .dash-shoyb .bc-delta {
-    margin-top: 6px;
-    font-size: 10px;
-    padding: 3px 9px;
+    margin-top: 0 !important;
+    font-size: 9px !important;
+    font-weight: 650 !important;
+    padding: 3px 8px !important;
+    border-radius: 999px !important;
+    color: #ecfdf5 !important;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(16, 185, 129, 0.16)) !important;
+    border: 1px solid rgba(52, 211, 153, 0.45) !important;
+    white-space: nowrap;
+  }
+
+  .dash-shoyb .bc-delta.down {
+    color: #fff1f2 !important;
+    background: linear-gradient(135deg, rgba(244, 63, 94, 0.32), rgba(244, 63, 94, 0.12)) !important;
+    border-color: rgba(251, 113, 133, 0.45) !important;
   }
 
   .dash-shoyb .bc-rows {
     display: flex;
-    margin-top: 12px;
-    gap: 0;
+    margin-top: 8px !important;
+    gap: 5px !important;
     width: 100%;
+    padding-top: 0 !important;
+    border-top: 0 !important;
   }
 
   .dash-shoyb .bc-col {
     flex: 1;
-    padding: 0 8px;
-    border-left: 1px solid rgba(243, 239, 226, 0.16);
+    min-width: 0;
+    padding: 6px 7px !important;
+    border-left: 0 !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
   }
 
   .dash-shoyb .bc-col:first-child {
-    border-left: 0;
-    padding-left: 0;
+    border-left: 0 !important;
+    padding-left: 7px !important;
   }
 
   .dash-shoyb .bc-col-label {
-    font-size: 8.5px;
+    display: flex !important;
+    align-items: center;
+    gap: 4px;
+    font-size: 7.5px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.95) !important;
+  }
+
+  .dash-shoyb .bc-col-label::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: var(--bc-brass, #f0d9a8);
+  }
+
+  .dash-shoyb .bc-col.income .bc-col-label::before {
+    background: var(--bc-mint, #7ec9a4);
+  }
+
+  .dash-shoyb .bc-col.expense .bc-col-label::before {
+    background: var(--bc-coral, #e8a48f);
+  }
+
+  .dash-shoyb .bc-col.savings .bc-col-label::before {
+    background: var(--bc-sky, #9ec9d8);
   }
 
   .dash-shoyb .bc-col-value {
-    font-size: 12px;
-    margin-top: 2px;
+    font-size: 11.5px !important;
+    margin-top: 2px !important;
+    font-variant-numeric: tabular-nums;
+    font-weight: 750 !important;
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .bc-col.income .bc-col-value {
+    color: #bbf7d0 !important;
+  }
+
+  .dash-shoyb .bc-col.expense .bc-col-value {
+    color: #fecdd3 !important;
+  }
+
+  .dash-shoyb .bc-col.savings .bc-col-value {
+    color: #bae6fd !important;
   }
 
   .dash-shoyb .mobile-quick-actions .qa-btn {
     flex: 1;
     background: #fffdf7 !important;
     border: 1px solid #ded2b3 !important;
-    border-radius: 12px !important;
-    padding: 8px 2px 7px !important;
+    border-radius: 10px !important;
+    padding: 5px 2px 4px !important;
     min-height: 0 !important;
     height: auto !important;
     box-shadow: none !important;
@@ -348,9 +593,9 @@
   }
 
   .dash-shoyb .mobile-quick-actions .qa-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 9px;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
     display: grid;
     place-items: center;
     margin: 0 auto;
@@ -363,33 +608,42 @@
   }
 
   .dash-shoyb .mobile-quick-actions .qa-label {
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: 600;
-    margin-top: 4px;
+    margin-top: 2px;
     color: var(--ink, #252017);
   }
 
   .dash-shoyb .stats-row {
     display: flex !important;
     flex-direction: row !important;
-    gap: 9px !important;
-    flex: 1 1 auto !important;
+    gap: 7px !important;
+    flex: 0 0 auto !important;
     min-height: 0 !important;
   }
 
   .dash-shoyb .stat-card {
-    flex: 1;
-    min-width: 0;
-    border-radius: 14px;
-    padding: 10px 11px;
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    border-radius: 12px;
+    padding: 7px 8px !important;
+    overflow: visible !important;
+  }
+
+  .dash-shoyb .stat-head {
+    margin-bottom: 0.35rem !important;
+    align-items: center !important;
+    gap: 0.3rem !important;
   }
 
   .dash-shoyb .stat-title {
-    font-size: 10.5px;
+    font-size: 0.72rem !important;
   }
 
-  .dash-shoyb .stat-more {
-    font-size: 10px !important;
+  .dash-shoyb .stat-more,
+  .dash-shoyb .stat-period {
+    font-size: 0.62rem !important;
+    flex-shrink: 0 !important;
   }
 
   .dash-shoyb .spend-title-full {
@@ -400,120 +654,181 @@
     display: inline !important;
   }
 
-  .dash-shoyb .donut {
-    width: 70px;
-    height: 70px;
-    margin: 0 auto;
-  }
-
-  .dash-shoyb .donut-inner {
-    width: 46px;
-    height: 46px;
-    font-size: 12px;
-  }
-
-  .dash-shoyb .budget-body {
-    gap: 10px;
-    flex: 1;
-  }
-
-  .dash-shoyb .bf-row {
-    font-size: 9px;
-  }
-
-  .dash-shoyb .bf-row b {
-    font-size: 11.5px;
-  }
-
-  .dash-shoyb .bf-left {
-    margin-top: 4px;
-    font-size: 8.5px;
-  }
-
+  .dash-shoyb .budget-body,
   .dash-shoyb .spend-body {
-    gap: 9px;
-    flex: 1;
-    min-height: 0;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.45rem !important;
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    min-height: 52px !important;
+    overflow: visible !important;
   }
 
-  .dash-shoyb .spend-total {
-    width: 60px;
-    height: 60px;
+  .dash-shoyb .budget-ring,
+  .dash-shoyb .spend-ring {
+    width: 52px !important;
+    height: 52px !important;
+    flex: 0 0 52px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    contain: none !important;
   }
 
-  .dash-shoyb .spend-total .donut-inner {
-    width: 40px;
-    height: 40px;
-    font-size: 8px;
+  .dash-shoyb .budget-ring-svg,
+  .dash-shoyb .spend-ring-svg {
+    width: 52px !important;
+    height: 52px !important;
+    max-width: 52px !important;
+    max-height: 52px !important;
+    overflow: visible !important;
+  }
+
+  .dash-shoyb .budget-ring-track,
+  .dash-shoyb .budget-ring-arc,
+  .dash-shoyb .spend-ring-track,
+  .dash-shoyb .spend-ring-arc {
+    stroke-width: 8 !important;
+  }
+
+  .dash-shoyb .budget-ring[data-empty="1"] .budget-ring-track,
+  .dash-shoyb .spend-ring[data-empty="1"] .spend-ring-track {
+    stroke-width: 8 !important;
+  }
+
+  .dash-shoyb .budget-ring-center strong {
+    font-size: 0.7rem !important;
+  }
+
+  .dash-shoyb .spend-ring-center strong {
+    font-size: 0.58rem !important;
+  }
+
+  .dash-shoyb .budget-legend,
+  .dash-shoyb .spend-legend {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    gap: 0.28rem !important;
+  }
+
+  .dash-shoyb .budget-leg-row {
+    font-size: 0.68rem !important;
+    gap: 0.35rem !important;
+  }
+
+  .dash-shoyb .budget-leg-row.is-left {
+    display: none !important;
+  }
+
+  .dash-shoyb .budget-leg-name,
+  .dash-shoyb .budget-leg-val {
+    font-size: 0.68rem !important;
+  }
+
+  .dash-shoyb .budget-gauge,
+  .dash-shoyb .budget-figs {
+    display: none !important;
   }
 
   .dash-shoyb .spend-legend {
-    gap: 2px;
+    gap: 0.2rem !important;
   }
 
   .dash-shoyb .leg-row {
-    font-size: 8.3px;
-    gap: 5px;
+    font-size: 0.65rem !important;
+    gap: 0.3rem !important;
   }
 
   .dash-shoyb .leg-dot {
-    width: 6px;
-    height: 6px;
+    width: 6px !important;
+    height: 6px !important;
   }
 
   .dash-shoyb .family-banner {
     flex: 0 0 auto !important;
     display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    gap: 11px !important;
-    border-radius: 14px !important;
-    padding: 9px 12px !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    border-radius: 12px !important;
+    padding: 8px 10px !important;
     text-align: left !important;
     grid-template-columns: none !important;
     grid-template-rows: none !important;
   }
 
+  .dash-shoyb .fb-head {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-width: 0 !important;
+    padding-left: 0 !important;
+  }
+
   .dash-shoyb .fb-icon,
   .dash-shoyb .fb-mid,
-  .dash-shoyb .fb-avatars,
+  .dash-shoyb .fb-copy,
   .dash-shoyb .fb-arrow {
     grid-column: auto !important;
     grid-row: auto !important;
   }
 
   .dash-shoyb .fb-icon {
-    width: 34px;
-    height: 34px;
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 10px !important;
+    font-size: 14px;
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .fb-icon-mark {
+    font-size: 0.62rem !important;
+    color: #ffffff !important;
+  }
+
+  .dash-shoyb .fb-copy {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
   }
 
   .dash-shoyb .fb-title {
-    font-size: 9px;
+    font-size: 9px !important;
   }
 
   .dash-shoyb .fb-count {
-    font-size: 12px;
+    font-size: 12px !important;
   }
 
   .dash-shoyb .fb-count-extra {
-    font-weight: 500;
-    color: var(--ink-muted, #8a7f6b);
+    display: none !important;
   }
 
-  .dash-shoyb .fb-avatars .av {
-    width: 24px;
-    height: 24px;
-    font-size: 8px;
+  .dash-shoyb .fb-cta {
+    display: none !important;
+  }
+
+  /* Dense: hide tall chip grid on mobile so Family + TX stay on screen */
+  .dash-shoyb .fb-member-chips {
+    display: none !important;
+  }
+
+  .dash-shoyb .fb-avatars {
+    display: none !important;
   }
 
   .dash-shoyb .fb-arrow {
-    font-size: 13px;
+    display: block !important;
+    font-size: 16px;
     flex: 0 0 auto;
+    color: var(--ink-muted, #8a7f6b);
+    margin-top: 0 !important;
   }
 
   .dash-shoyb .tx-section {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
+    flex: 0 0 auto !important;
+    min-height: auto !important;
   }
 
   .dash-shoyb .tx-head {
@@ -570,6 +885,11 @@
   .main-content .dash-shoyb button.family-banner {
     border-radius: 14px !important;
     padding: 9px 12px !important;
+  }
+
+  .main-content .dash-shoyb button.family-banner .fb-icon,
+  .main-content .dash-shoyb button.family-banner .fb-icon-mark {
+    color: #ffffff !important;
   }
 
   .main-content .dash-shoyb button.tx-row {
@@ -655,11 +975,43 @@
     text-align: right;
   }
 
-  /* empty donut: flat surface when 0% */
+  /* empty donut legacy */
   .dash-shoyb .spend-total[data-empty="1"] {
     background: var(--surface-alt, #efe7d4) !important;
   }
+
+  .dash-shoyb .spend-ring[data-empty="1"] .spend-ring-track {
+    stroke: color-mix(in srgb, var(--surface-alt, #efe7d4) 55%, #cfc4ad) !important;
+  }
 }
+
+@media (max-width: 768px) {
+  .dash-shoyb .family-banner {
+    padding: 7px 10px !important;
+  }
+
+  .dash-shoyb .tx-section {
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+  }
+
+  .dash-shoyb .spend-legend .leg-row:nth-child(n + 5) {
+    display: none !important;
+  }
+
+  .dash-shoyb .bc-figure {
+    font-size: 22px !important;
+  }
+
+  .dash-shoyb .stats-row {
+    gap: 6px !important;
+  }
+
+  .dash-shoyb .stat-card {
+    padding: 7px 8px !important;
+  }
+}
+
 
 @media (min-width: 961px) {
   .dash-shoyb .mobile-quick-actions {
@@ -678,8 +1030,29 @@
     display: none;
   }
 
+  .dash-shoyb .balance-card {
+    padding-right: 56px !important;
+  }
+
   .dash-shoyb .bc-top {
-    display: none;
+    display: flex !important;
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    z-index: 3 !important;
+    margin: 0 !important;
+    width: auto !important;
+    pointer-events: none !important;
+  }
+
+  .dash-shoyb .bc-top .bc-label {
+    display: none !important;
+  }
+
+  .dash-shoyb .bc-more {
+    display: grid !important;
+    pointer-events: auto !important;
   }
 
   .dash-shoyb .balance-card .bc-left .bc-label,

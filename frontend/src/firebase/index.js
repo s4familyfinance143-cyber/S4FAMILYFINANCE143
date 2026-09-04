@@ -10,8 +10,12 @@ export {
   isFirebaseEmailVerified,
   firebaseReloadUser,
   firebaseResendEmailVerification,
+  formatFirebaseAuthError,
+  markVerificationEmailSent,
+  getVerificationResendRemainingMs,
+  VERIFY_RESEND_COOLDOWN_MS,
 } from "./auth";
-export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile } from "./cloudSync";
+export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile, getUserProfileDoc } from "./cloudSync";
 export { createCloudFamilyAccount, seedNewFamilyCache } from "./cloudOnboarding";
 export {
   ensureFamilyCloudShell,
@@ -20,4 +24,22 @@ export {
   pushFamilyCloudSnapshot,
   pullFamilyCloudSnapshot,
 } from "./familyCloud";
-export { uploadFamilyDocument, uploadTransactionAttachment } from "./cloudStorage";
+export {
+  uploadFamilyDocument,
+  uploadTransactionAttachment,
+  uploadProfilePhotoToFirebase,
+  removeProfilePhotoFromFirebase,
+  validateProfilePhotoFile,
+} from "./cloudStorage";
+export {
+  enableWebPushNotifications,
+  getFirebaseVapidKey,
+  getNotificationPermission,
+  isNotificationSupported,
+  isWebFcmVapidConfigured,
+  registerMessagingServiceWorker,
+  requestBrowserNotificationPermission,
+  showLocalBrowserNotification,
+  storeFcmTokenInFirestore,
+  subscribeForegroundMessages,
+} from "./messaging";

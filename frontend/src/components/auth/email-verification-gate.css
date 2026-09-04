@@ -52,12 +52,61 @@
 
 .email-verify-body,
 .email-verify-hint,
+.email-verify-setup,
+.email-verify-sent-note,
 .email-verify-card p {
   margin: 0 0 0.75rem;
   font-size: 0.98rem;
   line-height: 1.5;
   color: #334155 !important;
   -webkit-text-fill-color: #334155 !important;
+}
+
+.email-verify-sent-note {
+  margin: 0 0 0.35rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: #eff6ff !important;
+  border: 1px solid #bfdbfe !important;
+  font-size: 0.9rem !important;
+  font-weight: 650;
+  color: #1e3a8a !important;
+  -webkit-text-fill-color: #1e3a8a !important;
+}
+
+.email-verify-setup {
+  display: none; /* developer tips live in console only */
+}
+
+.email-verify-status {
+  margin: 0.5rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.email-verify-status--success {
+  background: #ecfdf5 !important;
+  border: 1px solid #6ee7b7 !important;
+  color: #065f46 !important;
+  -webkit-text-fill-color: #065f46 !important;
+}
+
+.email-verify-status--error {
+  background: #fef2f2 !important;
+  border: 1px solid #fca5a5 !important;
+  color: #991b1b !important;
+  -webkit-text-fill-color: #991b1b !important;
+}
+
+.email-verify-status--warning,
+.email-verify-status--info {
+  background: #fffbeb !important;
+  border: 1px solid #fcd34d !important;
+  color: #92400e !important;
+  -webkit-text-fill-color: #92400e !important;
 }
 
 .email-verify-mail {
