@@ -68,6 +68,17 @@ mobile/.git.nested.bak/
 # Accidental root uploads
 file_*.png
 
+# One-off historical codegen / patch scripts (not part of runtime)
+backend/add-*.py
+backend/insert-*.py
+backend/fix-*.py
+backend/register-*.py
+backend/safe-fix-*.py
+frontend/insert-*.py
+frontend/fix-*.py
+**/*.before-*
+frontend/src/App.backup-before-history.css
+
 # Optional design mockups / legacy installer binaries (not used by Firebase-first app)
 deploy/mockups/
 deploy/installer/Output/
