@@ -17,14 +17,22 @@ function newFamilyId() {
 
 export async function seedNewFamilyCache(
   familyId,
-  { familyName, ownerName, ownerEmail = "", currency = "BDT", timezone = "Asia/Dhaka", ownerRelation = "Owner" },
+  {
+    familyName,
+    ownerName,
+    ownerEmail = "",
+    currency = "BDT",
+    timezone = "Asia/Dhaka",
+    ownerRelation = "Owner",
+    ownerUid = "",
+  },
 ) {
   await saveOfflineSnapshot(familyId, "finance", "wallets", []);
   await saveOfflineSnapshot(familyId, "finance", "categories", DEFAULT_CLOUD_CATEGORIES);
   await saveOfflineSnapshot(familyId, "finance", "transactions", []);
   await saveOfflineSnapshot(familyId, "finance", "savings", []);
   await saveOfflineSnapshot(familyId, "finance", "loans", []);
-  await saveOfflineSnapshot(familyId, "finance", "budgets", { data: [], statusData: {} });
+  await saveOfflineSnapshot(familyId, "finance", "budgets", []);
   await saveOfflineSnapshot(familyId, "finance", "recurring", []);
   await saveOfflineSnapshot(familyId, "finance", "goals", []);
   await saveOfflineSnapshot(familyId, "finance", "goalSummary", { total: 0, goals: [] });
@@ -37,6 +45,7 @@ export async function seedNewFamilyCache(
     timezone,
     owner_name: ownerName,
     owner_relation: ownerRelation,
+    owner_uid: ownerUid || undefined,
     created_at: new Date().toISOString(),
     source: "firebase_cloud",
   });
@@ -44,6 +53,8 @@ export async function seedNewFamilyCache(
     ownerName,
     ownerEmail,
     ownerRelation,
+    ownerUid,
+    seedAsOwner: true,
   });
 }
 
@@ -108,6 +119,7 @@ export async function createCloudFamilyAccount({
     currency,
     timezone,
     ownerRelation,
+    ownerUid: user.uid,
   });
 
   const db = getFirestoreDb();

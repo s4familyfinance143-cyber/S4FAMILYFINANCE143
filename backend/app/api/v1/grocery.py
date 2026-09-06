@@ -221,7 +221,7 @@ def create_grocery_vendor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = GroceryVendor(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -271,7 +271,7 @@ def update_grocery_vendor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_vendor(db, payload.family_id, vendor_id)
     row.name = payload.name.strip()
     row.phone = clean_text(payload.phone)
@@ -302,7 +302,7 @@ def deactivate_grocery_vendor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_vendor(db, payload.family_id, vendor_id)
     row.is_active = False
     write_audit_log(
@@ -327,7 +327,7 @@ def create_grocery_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     mobile_sync_key = clean_text(payload.mobile_sync_key)
     if mobile_sync_key:
         existing = (
@@ -398,7 +398,7 @@ def update_grocery_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_list(db, payload.family_id, list_id)
     require_expected_version(row, payload.expected_sync_version)
     try:
@@ -434,7 +434,7 @@ def close_grocery_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_list(db, payload.family_id, list_id)
     require_expected_version(row, payload.expected_sync_version)
     row.status = "CLOSED"
@@ -461,7 +461,7 @@ def create_grocery_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     get_list(db, payload.family_id, payload.grocery_list_id)
     mobile_sync_key = clean_text(payload.mobile_sync_key)
     if mobile_sync_key:
@@ -682,7 +682,7 @@ def grocery_ocr_parse(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, payload.family_id, current_user.id, "report.read")
+    require_permission(db, payload.family_id, current_user.id, "transaction.create")
     from app.services.ocr_service import grocery_ocr_parse as run_ocr
 
     if not (payload.raw_text or "").strip():
@@ -701,7 +701,7 @@ async def grocery_ocr_parse_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "report.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     from app.services.ocr_service import grocery_ocr_parse as run_ocr
 
     image_bytes = await file.read()
@@ -834,7 +834,7 @@ def update_grocery_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_item(db, payload.family_id, item_id)
     require_expected_version(row, payload.expected_sync_version)
     row.name = payload.name.strip()
@@ -870,7 +870,7 @@ def mark_grocery_item_bought(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     row = get_item(db, payload.family_id, item_id)
     require_expected_version(row, payload.expected_sync_version)
     row.is_bought = True

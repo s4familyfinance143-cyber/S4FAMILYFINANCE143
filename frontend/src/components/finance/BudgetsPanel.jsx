@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MoneyPill, TypeChip } from "../ui/FinanceChips";
 
 const TABS = ["manage", "create"];
@@ -7,7 +7,7 @@ export function BudgetsPanel({
   t,
   digits,
   money,
-  budgets: _budgets = [],
+  budgets = [],
   filteredBudgets = [],
   expenseCategories = [],
   summary,
@@ -23,10 +23,22 @@ export function BudgetsPanel({
   onEdit,
   onClose,
   onClearFilters,
+  busy = false,
 }) {
   const [tab, setTab] = useState("manage");
   const overCount = Number(summary?.overBudgetCount || 0);
   const warnCount = Number(summary?.warningCount || 0);
+
+  useEffect(() => {
+    if (!budgetForm?.category_id && expenseCategories[0]?.id) {
+      setBudgetForm((prev) => ({ ...prev, category_id: expenseCategories[0].id }));
+    }
+  }, [expenseCategories, budgetForm?.category_id, setBudgetForm]);
+
+  async function handleCreate() {
+    const ok = await onCreate?.();
+    if (ok) setTab("manage");
+  }
 
   return (
     <section className="panel settings-panel settings-smart finance-smart">
@@ -35,7 +47,7 @@ export function BudgetsPanel({
           <p className="settings-kicker">{t("budgets")}</p>
           <h2>{t("budgets")}</h2>
         </div>
-        <button type="button" className="btn" onClick={onRefresh}>
+        <button type="button" className="btn" onClick={onRefresh} disabled={busy}>
           {t("refreshBudgets")}
         </button>
       </div>
@@ -92,7 +104,7 @@ export function BudgetsPanel({
                 <div className="tx-row">
                   <div className="tx-row-type">
                     <TypeChip type={budget.is_over_budget ? "OVER" : "WARN"}>
-                      {budget.is_over_budget ? "OVER" : "WARNING"}
+                      {budget.is_over_budget ? t("overBudget") || "OVER" : t("budgetWarning") || "WARNING"}
                     </TypeChip>
                   </div>
                   <div className="tx-row-copy">
@@ -115,31 +127,41 @@ export function BudgetsPanel({
         <div className="settings-stack">
           <div className="settings-block">
             <h4>{t("createBudget")}</h4>
+            {expenseCategories.length === 0 ? (
+              <p className="settings-empty">
+                {t("noExpenseCategories") || "No expense categories yet — open Transactions once to seed defaults."}
+              </p>
+            ) : null}
             <div className="finance-form">
               <input
                 placeholder={t("budgetName")}
-                value={budgetForm.name}
+                value={budgetForm.name || ""}
                 onChange={(e) => setBudgetForm({ ...budgetForm, name: e.target.value })}
+                aria-label={t("budgetName")}
               />
               <select
-                value={budgetForm.category_id}
+                value={budgetForm.category_id || ""}
                 onChange={(e) => setBudgetForm({ ...budgetForm, category_id: e.target.value })}
+                aria-label={t("selectCategory")}
               >
                 <option value="">{t("selectCategory")}</option>
                 {expenseCategories.map((category) => (
                   <option key={category.id} value={category.id}>
-                    {category.name_en || category.name}
+                    {category.name_en || category.name_bn || category.name}
                   </option>
                 ))}
               </select>
               <input
                 placeholder={t("budgetAmount")}
-                value={budgetForm.budget_amount}
+                value={budgetForm.budget_amount || ""}
                 onChange={(e) => setBudgetForm({ ...budgetForm, budget_amount: e.target.value })}
+                inputMode="decimal"
+                aria-label={t("budgetAmount")}
               />
               <select
-                value={budgetForm.period_type}
+                value={budgetForm.period_type || "MONTHLY"}
                 onChange={(e) => setBudgetForm({ ...budgetForm, period_type: e.target.value })}
+                aria-label={t("period") || "Period"}
               >
                 <option value="MONTHLY">{t("monthly")}</option>
                 <option value="WEEKLY">{t("weekly")}</option>
@@ -147,11 +169,17 @@ export function BudgetsPanel({
               </select>
               <input
                 placeholder={t("note")}
-                value={budgetForm.note}
+                value={budgetForm.note || ""}
                 onChange={(e) => setBudgetForm({ ...budgetForm, note: e.target.value })}
+                aria-label={t("note")}
               />
-              <button type="button" className="btn btn-primary" onClick={onCreate}>
-                {t("createBudget")}
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || expenseCategories.length === 0}
+                onClick={handleCreate}
+              >
+                {busy ? t("loading") : t("createBudget")}
               </button>
             </div>
           </div>
@@ -163,24 +191,35 @@ export function BudgetsPanel({
             <div className="finance-form">
               <input
                 placeholder={t("searchBudgetCategoryNote")}
-                value={budgetSearch}
+                value={budgetSearch || ""}
                 onChange={(e) => setBudgetSearch(e.target.value)}
               />
-              <select value={budgetStatusFilter} onChange={(e) => setBudgetStatusFilter(e.target.value)}>
+              <select
+                value={budgetStatusFilter || "ALL"}
+                onChange={(e) => setBudgetStatusFilter(e.target.value)}
+              >
                 <option value="ALL">{t("allStatus")}</option>
                 <option value="ACTIVE">{t("activeStatus")}</option>
                 <option value="CLOSED">{t("closedStatus")}</option>
               </select>
               <button type="button" className="btn" onClick={onClearFilters}>
-                Clear Filter
+                {t("clearFilter") || "Clear Filter"}
               </button>
             </div>
           </div>
 
           <div className="settings-block">
-            <h4>{t("budgets")}</h4>
+            <h4>
+              {t("budgets")}
+              {budgets.length ? ` (${digits(filteredBudgets.length)})` : ""}
+            </h4>
             {filteredBudgets.length === 0 ? (
-              <p className="settings-empty">{t("budgets")}: 0</p>
+              <div>
+                <p className="settings-empty">{t("noBudgetsYet") || t("noBudgetsFound") || "No budgets yet"}</p>
+                <button type="button" className="btn btn-primary" onClick={() => setTab("create")}>
+                  {t("createBudget")}
+                </button>
+              </div>
             ) : (
               <div className="finance-feed">
                 {filteredBudgets.map((budget) => {
@@ -194,14 +233,20 @@ export function BudgetsPanel({
                       <div className="tx-row budget-row-head">
                         <div className="tx-row-type budget-chip-col">
                           <TypeChip type={budget.is_over_budget ? "OVER" : budget.status}>
-                            {budget.is_over_budget ? "OVER" : budget.status}
+                            {budget.is_over_budget
+                              ? t("overBudget") || "OVER"
+                              : budget.status === "ACTIVE"
+                                ? t("activeStatus")
+                                : budget.status === "CLOSED"
+                                  ? t("closedStatus")
+                                  : budget.status}
                           </TypeChip>
                           <TypeChip type="TRANSFER">{budget.period_type}</TypeChip>
                         </div>
                         <div className="tx-row-copy">
                           <strong title={budget.name}>{budget.name}</strong>
                           <span className="tx-row-sub">
-                            {budget.category_name}
+                            {budget.category_name || t("selectCategory")}
                             {budget.note ? ` · ${budget.note}` : ""}
                           </span>
                         </div>
@@ -218,11 +263,11 @@ export function BudgetsPanel({
 
                       <div className="budget-amount-row">
                         <div className="budget-amount-cell">
-                          <span>{t("budgets")}</span>
+                          <span>{t("budgetAmount") || t("budgets")}</span>
                           <MoneyPill>{money(budget.budget_amount, budget.currency)}</MoneyPill>
                         </div>
                         <div className="budget-amount-cell">
-                          <span>{t("totalExpense")}</span>
+                          <span>{t("totalSpent") || t("totalExpense")}</span>
                           <MoneyPill tone="expense">{money(budget.spent_amount, budget.currency)}</MoneyPill>
                         </div>
                         <div className="budget-amount-cell">
@@ -231,12 +276,14 @@ export function BudgetsPanel({
                         </div>
                       </div>
 
-                      <div className="finance-actions">
-                        <button type="button" className="btn" onClick={() => onEdit(budget)}>
-                          {t("edit")}
-                        </button>
-                        {budget.status === "ACTIVE" ? (
-                          <button type="button" className="btn" onClick={() => onClose(budget)}>
+                      <div className="wallet-card-actions">
+                        {String(budget.status || "").toUpperCase() === "ACTIVE" ? (
+                          <button type="button" className="btn" disabled={busy} onClick={() => onEdit(budget)}>
+                            {t("edit")}
+                          </button>
+                        ) : null}
+                        {String(budget.status || "").toUpperCase() === "ACTIVE" ? (
+                          <button type="button" className="btn" disabled={busy} onClick={() => onClose(budget)}>
                             {t("close")}
                           </button>
                         ) : null}

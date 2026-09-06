@@ -123,6 +123,7 @@ export async function flushPendingUploads({ familyId, uploadFn }) {
   const pending = await listPendingUploads(familyId);
   let synced = 0;
   let failed = 0;
+  let skipped = 0;
   for (const row of pending) {
     try {
       if (!row.base64) {
@@ -132,14 +133,19 @@ export async function flushPendingUploads({ familyId, uploadFn }) {
       }
       const blob = base64ToBlob(row.base64, row.mime);
       const file = new File([blob], row.fileName, { type: row.mime });
-      await uploadFn(row.itemId, file);
+      const result = await uploadFn(row.itemId, file);
+      // Temp ids (e.g. web-p16-*) must stay queued — do not mark synced or drop the blob.
+      if (result && result.skipped) {
+        skipped += 1;
+        continue;
+      }
       await markUploadDone(row.id, "synced");
       synced += 1;
     } catch {
       failed += 1;
     }
   }
-  return { synced, failed, total: pending.length };
+  return { synced, failed, skipped, total: pending.length };
 }
 
 export function exportCacheKey(familyId, type, format) {
@@ -156,7 +162,7 @@ export async function cacheReportExport(familyId, type, format, blob) {
     format: String(format),
     mime: blob.type || "application/octet-stream",
     buffer,
-    fileName: `s4_${type}_report.${format === "excel" ? "xlsx" : "pdf"}`,
+    fileName: `s4_${type}_report.${format === "excel" ? "xls" : "pdf"}`,
     updated_at: new Date().toISOString(),
   };
   const db = await openDb();

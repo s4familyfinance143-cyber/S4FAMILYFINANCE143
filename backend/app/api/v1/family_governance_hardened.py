@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.timeutil import utc_now
 from app.models.user import User
+from app.services.permission_service import PERMISSIONS, normalize_role
 
 
 _phase5b_get_current_user = get_current_user
@@ -21,6 +22,23 @@ _phase5b_get_current_user = get_current_user
 
 router = APIRouter(tags=["Family Governance Hardened"])
 
+# Map Phase5B-era keys → architecture role-matrix keys
+_PHASE5B_KEY_ALIASES = {
+    "accounts.create": "wallet.create",
+    "accounts.view_all": "wallet.read",
+    "accounts.update": "wallet.update",
+    "accounts.delete": "wallet.delete",
+    "transactions.create": "transaction.create",
+    "transactions.view_all": "transaction.read",
+    "transactions.update": "transaction.update",
+    "transactions.delete": "transaction.delete",
+    "reports.view": "report.read",
+    "audit.view": "audit.read",
+    "audit.view_all": "audit.read",
+    "sync.view": "dashboard.read",
+    "sync.pull": "dashboard.read",
+    "sync.push": "transaction.create",
+}
 
 class FamilyCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=180)
@@ -750,7 +768,6 @@ def family_response(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/families")
-@router.post("/api/v1/families")
 def create_family_hardened(
     payload: FamilyCreateRequest,
     db: Session = Depends(get_db),
@@ -831,7 +848,6 @@ def create_family_hardened(
 
 
 @router.get("/families")
-@router.get("/api/v1/families")
 def list_my_families_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -858,7 +874,6 @@ def list_my_families_hardened(
 
 
 @router.post("/invites/generate/{family_id}")
-@router.post("/api/v1/invites/generate/{family_id}")
 def generate_invite_hardened(
     family_id: str,
     payload: InviteGenerateRequest = InviteGenerateRequest(),
@@ -952,7 +967,6 @@ def generate_invite_hardened(
 
 
 @router.post("/invites/join")
-@router.post("/api/v1/invites/join")
 def join_invite_hardened(
     payload: JoinInviteRequest,
     db: Session = Depends(get_db),
@@ -1117,7 +1131,6 @@ def join_invite_hardened(
 
 
 @router.post("/join-requests/{request_id}/decision")
-@router.post("/api/v1/join-requests/{request_id}/decision")
 def decide_join_request_hardened(
     request_id: str,
     payload: JoinDecisionRequest,
@@ -1251,7 +1264,6 @@ def decide_join_request_hardened(
 
 
 @router.get("/families/{family_id}/members")
-@router.get("/api/v1/families/{family_id}/members")
 def list_family_members_hardened(
     family_id: str,
     db: Session = Depends(get_db),
@@ -1470,7 +1482,18 @@ def _phase5b_has_permission(
     if _phase5b_is_owner(current_member):
         return True
 
+    mapped = _PHASE5B_KEY_ALIASES.get(permission_key, permission_key)
+    role = normalize_role(
+        current_member.get("normalized_role")
+        or current_member.get("role")
+        or current_member.get("member_role")
+    )
+    if mapped in PERMISSIONS.get(role, set()):
+        return True
+
     row = _phase5b_permission_row(db, str(current_member.get("id")), permission_key)
+    if not row:
+        row = _phase5b_permission_row(db, str(current_member.get("id")), mapped)
     if not row:
         return False
 
@@ -1606,7 +1629,6 @@ def _phase5b_set_permission(
 
 
 @router.get("/families/{family_id}/permissions/me")
-@router.get("/api/v1/families/{family_id}/permissions/me")
 def phase5b_my_family_permissions(
     family_id: str,
     db: _Phase5BSession = _Phase5BDepends(get_db),
@@ -1645,7 +1667,6 @@ def phase5b_my_family_permissions(
 
 
 @router.get("/families/{family_id}/members/{member_id}/permissions")
-@router.get("/api/v1/families/{family_id}/members/{member_id}/permissions")
 def phase5b_get_member_permissions(
     family_id: str,
     member_id: str,
@@ -1718,7 +1739,6 @@ def phase5b_set_member_permission(
 
 
 @router.post("/families/{family_id}/permissions/check")
-@router.post("/api/v1/families/{family_id}/permissions/check")
 def phase5b_check_permission(
     family_id: str,
     payload: Phase5BPermissionCheckRequest,
@@ -1740,7 +1760,6 @@ def phase5b_check_permission(
 
 
 @router.post("/families/{family_id}/permissions/protected-action")
-@router.post("/api/v1/families/{family_id}/permissions/protected-action")
 def phase5b_protected_action(
     family_id: str,
     payload: Phase5BPermissionCheckRequest,

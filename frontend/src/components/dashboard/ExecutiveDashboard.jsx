@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { MobileDashboardOnescreen } from "./MobileDashboardOnescreen";
 
 function EmptyState({ label }) {
   return <div className="empty">{label}</div>;
@@ -176,11 +177,12 @@ function formatTxWhen(raw, t) {
 
 export function ExecutiveDashboard({
   dashboard,
-  wallets: _wallets,
+  wallets = [],
   transactions,
   budgets,
   categories = [],
   activeFamily,
+  syncStatus = null,
   governanceMembers,
   setActiveMenu,
   budgetSummary,
@@ -197,9 +199,16 @@ export function ExecutiveDashboard({
     "BDT";
   const mark = currencyMark(currency, appLanguage);
   const summary = dashboard?.summary || {};
-  const walletBalance = Number(summary.total_wallet_balance || 0);
-  const incomeTotal = Number(summary.total_income || 0);
-  const expenseTotal = Number(summary.total_expense || 0);
+  const walletsList = Array.isArray(wallets) ? wallets : [];
+  const walletsSum = walletsList
+    .filter((w) => !w?.deleted_at && w?.is_active !== false)
+    .reduce((s, w) => s + Number(w.current_balance ?? w.balance ?? 0), 0);
+  // Prefer live wallets when available (cloud cache + dashboard shape can diverge)
+  const walletBalance = walletsList.length
+    ? walletsSum
+    : Number(summary.total_wallet_balance ?? dashboard?.wallet_balance ?? 0);
+  const incomeTotal = Number(summary.total_income ?? dashboard?.total_income ?? 0);
+  const expenseTotal = Number(summary.total_expense ?? dashboard?.total_expense ?? 0);
   const netSavings = incomeTotal - expenseTotal;
 
   const monthSeries = buildMonthSeries(transactions?.length ? transactions : dashboard?.recent_transactions, appLanguage);
@@ -242,6 +251,23 @@ export function ExecutiveDashboard({
 
   return (
     <section className="page active arch-page dash-shoyb">
+      <MobileDashboardOnescreen
+        t={t}
+        digits={digits}
+        appLanguage={appLanguage}
+        activeFamily={activeFamily}
+        walletBalance={walletBalance}
+        incomeTotal={incomeTotal}
+        expenseTotal={expenseTotal}
+        netSavings={netSavings}
+        deltaPct={deltaPct}
+        deltaUp={deltaUp}
+        hideBalance={hideBalance}
+        setHideBalance={setHideBalance}
+        setActiveMenu={setActiveMenu}
+        mark={mark}
+        syncStatus={syncStatus}
+      />
       <div className="dash-shoyb-grid">
         <div className="balance-card">
           <div className="bc-shine" aria-hidden="true" />

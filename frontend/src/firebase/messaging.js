@@ -112,7 +112,8 @@ function tokenDocId(token) {
 }
 
 /**
- * Persist FCM token on user + family member docs (merge).
+ * Persist FCM token on user (+ optional family) docs.
+ * User write is required; family writes are best-effort (email/rules may block).
  */
 export async function storeFcmTokenInFirestore({
   uid,
@@ -146,7 +147,18 @@ export async function storeFcmTokenInFirestore({
       },
       { merge: true },
     );
-    if (familyId) {
+  } catch (err) {
+    // Rules not published yet — push still works in-browser; Firestore registry optional
+    console.warn(
+      LOG_PREFIX,
+      "user FCM token store skipped (publish deploy/firebase/firestore.rules)",
+      err?.code || err?.message || err,
+    );
+    return;
+  }
+
+  if (familyId) {
+    try {
       await setDoc(
         doc(db, "families", familyId, "members", uid),
         {
@@ -160,12 +172,11 @@ export async function storeFcmTokenInFirestore({
         { ...payload, uid },
         { merge: true },
       );
+    } catch (familyErr) {
+      console.warn(LOG_PREFIX, "family FCM token store skipped", familyErr?.code || familyErr?.message || familyErr);
     }
-    console.info(LOG_PREFIX, "FCM token stored in Firestore");
-  } catch (err) {
-    console.error(LOG_PREFIX, "Firestore token store failed", err);
-    throw err;
   }
+  console.info(LOG_PREFIX, "FCM token stored in Firestore");
 }
 
 /**
@@ -270,7 +281,7 @@ export async function enableWebPushNotifications({
       try {
         await storeFcmTokenInFirestore({ uid, familyId, token, deviceLabel });
       } catch (err) {
-        console.error(LOG_PREFIX, "token store failed (non-fatal)", err);
+        console.error(LOG_PREFIX, "token store failed (non-fatal)", err?.code || err?.message || err);
       }
     }
 

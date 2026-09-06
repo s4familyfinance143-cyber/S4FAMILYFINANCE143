@@ -56,11 +56,12 @@ export function GroceryPanel({
   groceryPendingRows = [],
   onReplayPendingSync,
   syncPushLoading = false,
+  cloudLocalMode = false,
 }) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const boughtCount = groceryItems.filter((item) => item.is_bought).length;
   const pendingCount = groceryItems.length - boughtCount;
-  const activeList = groceryLists.find((list) => list.id === activeGroceryListId);
+  const activeList = groceryLists.find((list) => String(list.id) === String(activeGroceryListId));
   const wsConnected = groceryWsState === "connected";
   const syncMode = groceryCollaboration?.mode || "polling";
   const openLists = Number(groceryCollaboration?.open_lists || 0);
@@ -176,7 +177,7 @@ export function GroceryPanel({
             ) : (
               <div className="finance-feed">
                 {groceryLists.map((list) => {
-                  const selected = activeGroceryListId === list.id;
+                  const selected = String(activeGroceryListId) === String(list.id);
                   return (
                     <div
                       className={`finance-card tx-card ${selected ? "is-savings" : "is-transfer"}`}
@@ -289,10 +290,13 @@ export function GroceryPanel({
               >
                 <option value="">{t("selectExpenseCategory")}</option>
                 {categories
-                  .filter((category) => category.category_type === "EXPENSE")
+                  .filter((category) => {
+                    const type = String(category.category_type || category.type || "").toUpperCase();
+                    return !type || type === "EXPENSE";
+                  })
                   .map((category) => (
                     <option key={category.id} value={category.id}>
-                      {category.name}
+                      {category.name || category.name_en || category.id}
                     </option>
                   ))}
               </select>
@@ -450,30 +454,36 @@ export function GroceryPanel({
               <button type="button" className="btn btn-primary" onClick={onParseOcr}>
                 {t("parseReceipt")}
               </button>
-              <label className="btn settings-upload">
-                {t("parseReceiptImage")}
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) onParseOcrImage?.(file);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              {!cloudLocalMode ? (
+                <label className="btn settings-upload">
+                  {t("parseReceiptImage")}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) onParseOcrImage?.(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              ) : (
+                <p className="settings-help" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                  {t("ocrImageHint") || "Image OCR is unavailable in cloud mode — paste receipt text instead."}
+                </p>
+              )}
               {groceryOcrPreview?.suggestions?.length > 0 ? (
                 <button type="button" className="btn" disabled={!activeGroceryListId} onClick={onAddAllOcrSuggestions}>
                   {t("addAllToList")}
                 </button>
               ) : null}
             </div>
-            <p className="settings-help">{t("ocrImageHint")}</p>
+            {!cloudLocalMode ? <p className="settings-help">{t("ocrImageHint")}</p> : null}
             {groceryOcrPreview?.suggestions?.length > 0 ? (
               <div className="finance-feed" style={{ marginTop: 12 }}>
                 {groceryOcrPreview.suggestions.slice(0, 10).map((suggestion) => (
-                  <div className="finance-card tx-card is-savings" key={suggestion.raw_line}>
+                  <div className="finance-card tx-card is-savings" key={suggestion.id || suggestion.raw_line || suggestion.name}>
                     <div className="tx-row">
                       <div className="tx-row-type">
                         <TypeChip type="TRANSFER">
@@ -574,7 +584,7 @@ export function GroceryPanel({
                     <div className="tx-row">
                       <div className="tx-row-type">
                         <TypeChip type="LOAN">
-                          {digits(vendor.bought_count)} {t("bought")}
+                          {digits(vendor.bought_count ?? vendor.purchase_count)} {t("bought")}
                         </TypeChip>
                       </div>
                       <div className="tx-row-copy">
@@ -603,10 +613,10 @@ export function GroceryPanel({
                         <TypeChip type="TRANSFER">{entry.vendor_name || t("noVendor")}</TypeChip>
                       </div>
                       <div className="tx-row-copy">
-                        <strong>{entry.name}</strong>
+                        <strong>{entry.name || entry.item_name}</strong>
                       </div>
                       <div className="tx-row-amount">
-                        <MoneyPill tone="savings">{money(entry.actual_price)}</MoneyPill>
+                        <MoneyPill tone="savings">{money(entry.actual_price ?? entry.price)}</MoneyPill>
                       </div>
                     </div>
                   </div>

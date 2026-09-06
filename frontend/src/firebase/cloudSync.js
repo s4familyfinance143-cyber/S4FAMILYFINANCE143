@@ -79,7 +79,8 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
         email,
         displayName,
         familyName: familyId,
-        role: "OWNER",
+        // Never pass OWNER here — only meta.owner_uid / first-member logic may elevate
+        role: "MEMBER",
       });
       await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
     } catch {
@@ -146,7 +147,9 @@ export async function pullCloudSnapshot(uid) {
     .filter((row) => row && typeof row.data === "string")
     .sort((a, b) => Number(a.index) - Number(b.index));
   const jsonText = ordered.map((p) => p.data).join("");
-  const result = await restoreBackupBlob(new Blob([jsonText], { type: "application/json" }));
+  const result = await restoreBackupBlob(new Blob([jsonText], { type: "application/json" }), {
+    expectedFamilyId: familyId || meta.family_id || null,
+  });
   return {
     restored: result.restored,
     exportedAt: result.exportedAt || meta.exported_at || null,

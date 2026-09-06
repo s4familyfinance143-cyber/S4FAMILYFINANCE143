@@ -25,6 +25,7 @@ import {
   mergePullIntoGroceryState,
 } from "./lib/offlineSync";
 import { loadOfflineSnapshot, saveOfflineSnapshot } from "./lib/offlineCache";
+import { defaultPermissionsForRole, applyPermissionOverrides } from "./lib/familyRoles";
 import {
   cacheReportExport,
   flushPendingUploads,
@@ -60,6 +61,7 @@ import {
   lifeSummaryPath,
   loadLifeGroup,
   offlineEntityType as lifeOfflineEntityType,
+  summarizeLifeItems,
   updatePath as lifeUpdatePath,
 } from "./lifeArchitectureApi";
 import {
@@ -72,6 +74,7 @@ import {
   isFirebaseEmailVerified,
   firebaseReloadUser,
   firebaseResendEmailVerification,
+  firebaseSendPasswordReset,
   formatFirebaseAuthError,
   pushCloudSnapshot,
   pullCloudSnapshot,
@@ -112,17 +115,41 @@ import {
   clearCloudSession,
 } from "./lib/cloudSession";
 import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hydrateFromCache";
+import { buildReportExportBlob } from "./lib/clientReportExport";
 import { isNativeApp } from "./lib/runtimeEnv";
 import { loadBackupOnboardingDone, saveBackupOnboardingDone } from "./lib/cloudOnboardingStorage";
 import {
   DEFAULT_CLOUD_CATEGORIES,
-  applyWalletBalances,
+  recomputeWalletBalancesFromLedger,
   buildLocalTransaction,
+  sortTransactionsNewestFirst,
   buildLocalSavingsGoal,
+  enrichSavingsGoals,
+  normalizeSavingsList,
+  buildSavingsMovementTx,
+  recomputeSavingsFromLedger,
+  buildSavingsAnnualPlan,
   buildLocalLoan,
+  buildLoanMovementTx,
+  loanHistoryFromLedger,
+  applyLoanPayment,
+  walletBalance,
   buildLocalBudget,
+  enrichBudgetsFromLedger,
+  normalizeBudgetsList,
+  persistableBudgets,
+  budgetDuplicateKey,
+  buildBudgetStatusSummary,
   buildLocalGoal,
+  enrichGoals,
+  buildGoalSummary,
+  buildGoalMovementTx,
+  recomputeGoalsFromLedger,
+  goalHistoryFromLedger,
   buildLocalRecurring,
+  buildRecurringPostTx,
+  advanceRecurringAfterPost,
+  recurringHistoryFromLedger,
 } from "./lib/cloudLocalFinance";
 import {
   cloudApiGet,
@@ -890,6 +917,27 @@ const EXTRA_UI_TEXT = {
     cash: "ক্যাশ",
     bank: "ব্যাংক",
     mobileBanking: "মোবাইল ব্যাংকিং",
+    card: "কার্ড",
+    gold: "স্বর্ণ",
+    asset: "সম্পদ",
+    bkash: "bKash",
+    nagad: "নগদ",
+    rocket: "রকেট",
+    noWalletsYet: "এখনো কোনো ওয়ালেট নেই",
+    totalWallets: "মোট ওয়ালেট",
+    editWallet: "ওয়ালেট এডিট",
+    saveWallet: "ওয়ালেট সেভ",
+    walletUpdated: "ওয়ালেট আপডেট হয়েছে",
+    walletDeleted: "ওয়ালেট মুছে ফেলা হয়েছে",
+    walletCreatedOffline: "ওয়ালেট সেভ হয়েছে (অফলাইন — অনলাইনে সিঙ্ক হবে)",
+    walletCreatedVerifyEmail: "ওয়ালেট তৈরি হয়েছে — সিঙ্কের জন্য ইমেইল ভেরিফাই করুন",
+    confirmDeleteWallet: "এই ওয়ালেট মুছবেন?",
+    sharedFamilyWallet: "পারিবারিক শেয়ারড ওয়ালেট",
+    ownerOnlyWallet: "শুধু মালিকের ওয়ালেট",
+    sharedShort: "শেয়ারড",
+    ownerShort: "মালিক",
+    accountType: "অ্যাকাউন্ট টাইপ",
+    delete: "মুছুন",
     savingsName: "সঞ্চয় নাম",
     note: "নোট",
     targetAmount: "লক্ষ্য পরিমাণ",
@@ -907,6 +955,13 @@ const EXTRA_UI_TEXT = {
     refreshLoans: "ঋণ রিফ্রেশ",
     loanSearchFilter: "ঋণ সার্চ / ফিল্টার",
     searchPersonNote: "ব্যক্তি বা নোট সার্চ",
+    clearFilter: "ফিল্টার মুছুন",
+    noBudgetsYet: "এখনো কোনো বাজেট নেই",
+    confirmCloseBudget: "এই বাজেট বন্ধ করবেন?",
+    noExpenseCategories: "খরচের ক্যাটাগরি নেই — আগে Transactions খুলুন",
+    budgetDuplicateActive: "এই ক্যাটাগরি ও পিরিয়ডে ইতিমধ্যে সক্রিয় বাজেট আছে",
+    budgetCreatedOffline: "বাজেট অফলাইনে সেভ হয়েছে — অনলাইন হলে সিঙ্ক হবে",
+    period: "পিরিয়ড",
     createBudget: "বাজেট তৈরি",
     budgetName: "বাজেট নাম",
     budgetAmount: "বাজেট পরিমাণ",
@@ -922,7 +977,6 @@ const EXTRA_UI_TEXT = {
     yearly: "বার্ষিক",
     allStatus: "সব স্ট্যাটাস",
     allType: "সব ধরন",
-    clearFilter: "ফিল্টার ক্লিয়ার",
     refreshRecurring: "পুনরাবৃত্তি রিফ্রেশ",
     postNow: "এখন পোস্ট",
     pause: "পজ",
@@ -1292,6 +1346,27 @@ const EXTRA_UI_TEXT = {
     cash: "Cash",
     bank: "Bank",
     mobileBanking: "Mobile Banking",
+    card: "Card",
+    gold: "Gold",
+    asset: "Asset",
+    bkash: "bKash",
+    nagad: "Nagad",
+    rocket: "Rocket",
+    noWalletsYet: "No wallets yet",
+    totalWallets: "Total wallets",
+    editWallet: "Edit wallet",
+    saveWallet: "Save wallet",
+    walletUpdated: "Wallet updated",
+    walletDeleted: "Wallet deleted",
+    walletCreatedOffline: "Wallet saved offline — will sync when online",
+    walletCreatedVerifyEmail: "Wallet created — verify email to sync across devices",
+    confirmDeleteWallet: "Delete this wallet?",
+    sharedFamilyWallet: "Shared family wallet",
+    ownerOnlyWallet: "Owner-only wallet",
+    sharedShort: "Shared",
+    ownerShort: "Owner",
+    accountType: "Account type",
+    delete: "Delete",
     savingsName: "Savings name",
     note: "Note",
     targetAmount: "Target amount",
@@ -1309,6 +1384,13 @@ const EXTRA_UI_TEXT = {
     refreshLoans: "Refresh Loans",
     loanSearchFilter: "Loan Search / Filter",
     searchPersonNote: "Search person or note",
+    clearFilter: "Clear Filter",
+    noBudgetsYet: "No budgets yet",
+    confirmCloseBudget: "Close this budget?",
+    noExpenseCategories: "No expense categories — open Transactions once to seed defaults",
+    budgetDuplicateActive: "An active budget already exists for this category and period",
+    budgetCreatedOffline: "Budget saved offline — will sync when online",
+    period: "Period",
     createBudget: "Create Budget",
     budgetName: "Budget name",
     budgetAmount: "Budget amount",
@@ -1324,7 +1406,6 @@ const EXTRA_UI_TEXT = {
     yearly: "Yearly",
     allStatus: "All Status",
     allType: "All Type",
-    clearFilter: "Clear Filter",
     refreshRecurring: "Refresh Recurring",
     postNow: "Post Now",
     pause: "Pause",
@@ -2105,6 +2186,32 @@ const TOAST_UI_TEXT = {
     toWalletRequired: "গন্তব্য ওয়ালেট প্রয়োজন",
     transactionLoadFailed: "লেনদেন লোড ব্যর্থ",
     transactionPosted: "লেনদেন পোস্ট হয়েছে",
+    transactionPostedOffline: "লেনদেন সেভ হয়েছে (অফলাইন)",
+    transactionPostedVerifyEmail: "লেনদেন পোস্ট হয়েছে — সিঙ্কের জন্য ইমেইল ভেরিফাই করুন",
+    transactionVoided: "লেনদেন বাতিল হয়েছে",
+    transactionVoidedVerifyEmail: "লেনদেন বাতিল হয়েছে — সিঙ্কের জন্য ইমেইল ভেরিফাই করুন",
+    transactionAlreadyVoided: "ইতিমধ্যে বাতিল",
+    transactionFailed: "লেনদেন ব্যর্থ",
+    createWalletFirst: "আগে একটি ওয়ালেট তৈরি করুন",
+    splitExpense: "খরচ ভাগ (২ সদস্য)",
+    splitMembersRequired: "স্প্লিটের জন্য দুই সদস্য নির্বাচন করুন",
+    splitMembersDifferent: "স্প্লিট সদস্য আলাদা হতে হবে",
+    voidReason: "বাতিলের কারণ (ঐচ্ছিক)",
+    billScanOcr: "বিল স্ক্যান OCR",
+    pasteBillText: "বিলের টেক্সট পেস্ট করুন…",
+    parseBillFillAmount: "বিল পার্স → অ্যামাউন্ট ভরুন",
+    suggestedTotal: "প্রস্তাবিত মোট",
+    attachmentUploaded: "অ্যাটাচমেন্ট আপলোড হয়েছে",
+    attachmentFailed: "অ্যাটাচমেন্ট ব্যর্থ",
+    attach: "অ্যাটাচ",
+    uploading: "আপলোড হচ্ছে…",
+    scanning: "স্ক্যান হচ্ছে…",
+    fileSelected: "ফাইল",
+    memberA: "সদস্য ক",
+    memberB: "সদস্য খ",
+    splitShort: "স্প্লিট",
+    lines: "লাইন",
+    voidFailed: "বাতিল ব্যর্থ",
     validAmountRequired: "সঠিক পরিমাণ প্রয়োজন",
     validBudgetAmountRequired: "সঠিক বাজেট পরিমাণ প্রয়োজন",
     validCurrencyRequired: "সঠিক মুদ্রা কোড প্রয়োজন",
@@ -2116,8 +2223,10 @@ const TOAST_UI_TEXT = {
     validTimezoneRequired: "সঠিক টাইমজোন প্রয়োজন",
     vendorNameRequired: "ভেন্ডরের নাম প্রয়োজন",
     walletCreated: "ওয়ালেট তৈরি হয়েছে",
+    walletUpdated: "ওয়ালেট আপডেট হয়েছে",
+    walletDeleted: "ওয়ালেট মুছে ফেলা হয়েছে",
     walletLoadFailed: "ওয়ালেট লোড ব্যর্থ",
-    walletNameRequired: "ওয়ালেটের নাম প্রয়োজন",
+    walletNameRequired: "ওয়ালেটের নাম প্রয়োজন (কমপক্ষে ২ অক্ষর)",
     walletRequired: "ওয়ালেট প্রয়োজন",
     languageLockedPrefix: "ভাষা লক",
     notificationScanCreated: "নোটিফিকেশন স্ক্যান: {n} তৈরি",
@@ -2291,6 +2400,32 @@ const TOAST_UI_TEXT = {
     toWalletRequired: "To wallet required",
     transactionLoadFailed: "Transaction load failed",
     transactionPosted: "Transaction posted",
+    transactionPostedOffline: "Transaction saved offline",
+    transactionPostedVerifyEmail: "Transaction posted — verify email to sync across devices",
+    transactionVoided: "Transaction voided",
+    transactionVoidedVerifyEmail: "Transaction voided — verify email to sync across devices",
+    transactionAlreadyVoided: "Already voided",
+    transactionFailed: "Transaction failed",
+    createWalletFirst: "Create a wallet first to post transactions",
+    splitExpense: "Split expense (2 members)",
+    splitMembersRequired: "Select both members for split expense",
+    splitMembersDifferent: "Split members must be different",
+    voidReason: "Void reason (optional)",
+    billScanOcr: "Bill scan OCR",
+    pasteBillText: "Paste bill text lines (item + price)…",
+    parseBillFillAmount: "Parse bill → fill amount",
+    suggestedTotal: "Suggested total",
+    attachmentUploaded: "Attachment uploaded",
+    attachmentFailed: "Attachment failed",
+    attach: "Attach",
+    uploading: "Uploading…",
+    scanning: "Scanning…",
+    fileSelected: "File",
+    memberA: "Member A",
+    memberB: "Member B",
+    splitShort: "SPLIT",
+    lines: "lines",
+    voidFailed: "Void failed",
     validAmountRequired: "Valid amount required",
     validBudgetAmountRequired: "Valid budget amount required",
     validCurrencyRequired: "Valid currency code required",
@@ -2302,8 +2437,10 @@ const TOAST_UI_TEXT = {
     validTimezoneRequired: "Valid timezone required",
     vendorNameRequired: "Vendor name required",
     walletCreated: "Wallet created",
+    walletUpdated: "Wallet updated",
+    walletDeleted: "Wallet deleted",
     walletLoadFailed: "Wallet load failed",
-    walletNameRequired: "Wallet name required",
+    walletNameRequired: "Wallet name required (min 2 characters)",
     walletRequired: "Wallet required",
     languageLockedPrefix: "Language locked",
     notificationScanCreated: "Notification scan: {n} created",
@@ -2796,6 +2933,8 @@ function App() {
     name: "",
     budget_amount: "",
     note: "",
+    category_id: "",
+    period_type: "MONTHLY",
   });
 
   const [recurringEditModal, setRecurringEditModal] = useState({
@@ -2840,6 +2979,75 @@ function App() {
     is_shared_family: true,
     is_owner_wallet: false,
   });
+  const [editingWalletId, setEditingWalletId] = useState("");
+  const [walletBusyId, setWalletBusyId] = useState("");
+  const [budgetBusyId, setBudgetBusyId] = useState("");
+  const [savingsBusyId, setSavingsBusyId] = useState("");
+
+  function emptyWalletForm() {
+    return {
+      name: "",
+      account_type: "CASH",
+      currency: currencyCode(),
+      opening_balance: "0",
+      is_shared_family: true,
+      is_owner_wallet: false,
+    };
+  }
+
+  function activeWalletRows(list) {
+    return (Array.isArray(list) ? list : []).filter(
+      (w) => !w?.deleted_at && w?.is_active !== false,
+    );
+  }
+
+  function isActiveWalletId(walletId, list = wallets) {
+    if (!walletId) return false;
+    return activeWalletRows(list).some((w) => String(w.id) === String(walletId));
+  }
+
+  /** Keep tx/savings/loan/recurring forms pointing at live wallets after create/delete/load. */
+  function bindActiveWalletForms(activeList) {
+    const data = activeWalletRows(activeList);
+    const first = data[0]?.id || "";
+    const second = data[1]?.id || "";
+    setTxForm((prev) => {
+      const fromId = isActiveWalletId(prev.account_id, data) ? prev.account_id : first;
+      let toId = isActiveWalletId(prev.to_account_id, data) ? prev.to_account_id : second;
+      if (!toId || String(toId) === String(fromId)) {
+        toId = second && String(second) !== String(fromId) ? second : "";
+      }
+      return {
+        ...prev,
+        account_id: fromId,
+        to_account_id: toId,
+      };
+    });
+    setSavingsForm((prev) => ({
+      ...prev,
+      wallet_account_id: isActiveWalletId(prev.wallet_account_id, data) ? prev.wallet_account_id : first,
+    }));
+    setSavingsAction((prev) => ({
+      ...prev,
+      wallet_account_id: isActiveWalletId(prev.wallet_account_id, data) ? prev.wallet_account_id : first,
+    }));
+    setLoanForm((prev) => ({
+      ...prev,
+      wallet_account_id: isActiveWalletId(prev.wallet_account_id, data) ? prev.wallet_account_id : first,
+    }));
+    setLoanPaymentForm((prev) => ({
+      ...prev,
+      wallet_account_id: isActiveWalletId(prev.wallet_account_id, data) ? prev.wallet_account_id : first,
+    }));
+    setGoalContributionForm((prev) => ({
+      ...prev,
+      wallet_account_id: isActiveWalletId(prev.wallet_account_id, data) ? prev.wallet_account_id : first,
+    }));
+    setRecurringForm((prev) => ({
+      ...prev,
+      account_id: isActiveWalletId(prev.account_id, data) ? prev.account_id : first,
+    }));
+  }
 
   const [txForm, setTxForm] = useState({
     type: "income",
@@ -2939,7 +3147,10 @@ function App() {
     (sessionBootstrapping && cloudOnlyMode);
 
   function isCloudLocalMode() {
-    return cloudOnlyMode && !token && Boolean(activeFamilyId);
+    // Firebase-first: always use IndexedDB shim when cloud-only is on.
+    // Do not require !token — a stale JWT would otherwise skip the shim and
+    // hit a dead localhost backend, so creates appear to do nothing.
+    return Boolean(cloudOnlyMode && activeFamilyId);
   }
 
   function selectActiveFamily(familyId, meta = {}) {
@@ -2975,11 +3186,16 @@ function App() {
     return isFirebaseEmailVerified(user);
   }
 
+  /** Finance snapshot sync: allow even before email verify (rules allow own snapshots). */
+  function canSyncCloudFinance(user = firebaseUser) {
+    return Boolean(user?.uid);
+  }
+
   async function pushCloudSnapshotIfReady(userOverride = null, familyIdOverride = null) {
     const user = userOverride || firebaseUser;
     const familyId = familyIdOverride || activeFamilyId;
     if (!user?.uid || !familyId) return;
-    if (!isCloudEmailReady(user)) return;
+    if (!canSyncCloudFinance(user)) return;
     if (!isBrowserOnline()) return;
     try {
       await pushCloudSnapshot({
@@ -2989,9 +3205,46 @@ function App() {
         email: user.email || null,
         displayName: user.displayName || null,
       });
-    } catch {
-      /* ignore background sync errors */
+    } catch (err) {
+      console.warn("[S4 Sync] push failed", err);
     }
+  }
+
+  /** Pull shared cloud snapshot into IDB, then refresh React state (multi-device wallets/tx). */
+  async function pullAndHydrateCloudLocal(userOverride = null, familyIdOverride = null) {
+    const user = userOverride || firebaseUser;
+    const familyId = familyIdOverride || activeFamilyId || loadCloudFamilyId();
+    if (!user?.uid || !familyId) return { restored: 0 };
+    if (!canSyncCloudFinance(user) || !isBrowserOnline()) return { restored: 0 };
+    try {
+      const result = await pullCloudSnapshot(user.uid);
+      const fid = result?.familyId || familyId;
+      if (fid) {
+        persistCloudFamilyId(fid);
+        if (String(fid) !== String(activeFamilyId || "")) {
+          setActiveFamilyId(fid);
+        }
+        try {
+          const { reconcileWalletBalancesForFamily, reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
+          await reconcileWalletBalancesForFamily(fid);
+          await reconcileSavingsFromLedgerForFamily(fid);
+        } catch {
+          /* ignore */
+        }
+        await hydrateFromCloudCache(fid);
+        await refreshCloudLocalAll();
+      }
+      return result || { restored: 0 };
+    } catch (err) {
+      console.warn("[S4 Sync] pull failed", err);
+      return { restored: 0, error: err };
+    }
+  }
+
+  /** Push local first, then pull-merge — prevents empty remote bags from racing over new writes. */
+  async function syncCloudLocalBidirectional(userOverride = null, familyIdOverride = null) {
+    await pushCloudSnapshotIfReady(userOverride, familyIdOverride);
+    await pullAndHydrateCloudLocal(userOverride, familyIdOverride);
   }
 
   async function loadOfflineFinanceCache(module, name) {
@@ -3022,6 +3275,16 @@ function App() {
     await loadRecurring();
     await loadGoals();
     await loadDashboard();
+    await loadGrocery({ silent: true });
+    await loadPhase15();
+    await loadPhase16();
+    await loadZakat();
+    await loadCurrencyData();
+    await loadAuditTrail();
+    await loadNotifications();
+    await loadReports();
+    await loadBackups();
+    await loadSyncStatus();
   }
 
   async function activateCloudSession(user, familyId, familyName = "") {
@@ -3044,7 +3307,32 @@ function App() {
     setSessionBootstrapping(false);
 
     await applyCloudUserAvatar(user);
+    // Pull shared family snapshot BEFORE hydrating UI so wallets from other devices appear
+    if (isBrowserOnline() && canSyncCloudFinance(user)) {
+      try {
+        const restored = await pullCloudSnapshot(user.uid);
+        if (restored?.familyId) {
+          persistCloudFamilyId(restored.familyId);
+          familyId = restored.familyId;
+          setActiveFamilyId(restored.familyId);
+        }
+        try {
+          const { reconcileWalletBalancesForFamily, reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
+          await reconcileWalletBalancesForFamily(familyId);
+          await reconcileSavingsFromLedgerForFamily(familyId);
+        } catch {
+          /* ignore */
+        }
+      } catch (err) {
+        console.warn("[S4 Sync] activate pull failed", err);
+      }
+    }
     await hydrateFromCloudCache(familyId);
+    try {
+      await refreshCloudLocalAll();
+    } catch {
+      /* loaders may depend on family id already set */
+    }
     try {
       const { loadOfflineSnapshot } = await import("./lib/offlineCache");
       const profileRow = await loadOfflineSnapshot(familyId, "system", "familyProfile");
@@ -3063,16 +3351,17 @@ function App() {
     }
     try {
       await seedCloudModuleCaches(familyId, {
-        ownerName: user.displayName || user.email || "Owner",
-        ownerEmail: user.email || "",
-      });
+    ownerName: user.displayName || user.email || "Owner",
+    ownerEmail: user.email || "",
+    ownerUid: user.uid || "",
+  });
     } catch {
       /* already seeded or storage unavailable */
     }
     await refreshFirebaseMeta(user.uid, user);
     enableCloudAutoSyncDefaults();
     // Non-blocking cloud push — do not hold the UI
-    if (isBrowserOnline() && isCloudEmailReady(user)) {
+    if (isBrowserOnline() && canSyncCloudFinance(user)) {
       void pushCloudSnapshotIfReady(user, familyId);
     }
     if (isCloudEmailReady(user) && !loadBackupOnboardingDone(user.uid)) {
@@ -3149,23 +3438,104 @@ function App() {
     if (Array.isArray(cache["finance/wallets"])) setWallets(cache["finance/wallets"]);
     if (Array.isArray(cache["finance/categories"])) setCategories(cache["finance/categories"]);
     if (Array.isArray(cache["finance/transactions"])) setTransactions(cache["finance/transactions"]);
-    if (Array.isArray(cache["finance/savings"])) setSavings(cache["finance/savings"]);
+    {
+      const rawSav = cache["finance/savings"];
+      const list = normalizeSavingsList(rawSav);
+      if (list.length || Array.isArray(rawSav)) {
+        const txs = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : transactions;
+        setSavings(recomputeSavingsFromLedger(list, txs));
+      }
+    }
     if (Array.isArray(cache["finance/loans"])) setLoans(cache["finance/loans"]);
-    if (Array.isArray(cache["finance/budgets"])) setBudgets(cache["finance/budgets"]);
+    {
+      const rawBudgets = cache["finance/budgets"];
+      const list = normalizeBudgetsList(rawBudgets);
+      if (list.length || Array.isArray(rawBudgets) || (rawBudgets && typeof rawBudgets === "object")) {
+        const cats = Array.isArray(cache["finance/categories"]) ? cache["finance/categories"] : categories;
+        const txs = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : transactions;
+        setBudgets(enrichBudgetsFromLedger(list, txs, cats));
+      }
+    }
     if (Array.isArray(cache["finance/recurring"])) setRecurringItems(cache["finance/recurring"]);
     if (Array.isArray(cache["finance/goals"])) setGoals(cache["finance/goals"]);
     if (cache["finance/goalSummary"]) setGoalSummary(cache["finance/goalSummary"]);
-    if (phase15?.items) setPhase15Items(phase15.items);
-    if (phase15?.summary) setPhase15Summary(phase15.summary);
-    if (phase16?.items) setPhase16Items(phase16.items);
-    if (phase16?.summary) setPhase16Summary(phase16.summary);
-    if (cache["zakat/main"]) setZakatRecords(Array.isArray(cache["zakat/main"]) ? cache["zakat/main"] : cache["zakat/main"]?.records || []);
-    if (cache["reports/overview"]) setFinancialReport(cache["reports/overview"]);
-    if (cache["system/currency"]) setCurrencySummary(cache["system/currency"]);
+    if (Array.isArray(phase15?.items)) {
+      // Don't clobber non-empty React state with an empty hydrate bag (race after create).
+      setPhase15Items((prev) => (phase15.items.length || !prev?.length ? phase15.items : prev));
+      if (phase15.summary?.modules) {
+        setPhase15Summary(phase15.summary);
+      } else if (phase15.items.length) {
+        setPhase15Summary(summarizeLifeItems(phase15.items, LIFE15));
+      }
+    }
+    if (Array.isArray(phase16?.items)) {
+      setPhase16Items((prev) => (phase16.items.length || !prev?.length ? phase16.items : prev));
+      if (phase16.summary?.modules) {
+        setPhase16Summary(phase16.summary);
+      } else if (phase16.items.length) {
+        setPhase16Summary(summarizeLifeItems(phase16.items, LIFE16));
+      }
+    }
+    if (cache["zakat/main"]) {
+      const raw = cache["zakat/main"];
+      const records = Array.isArray(raw) ? raw : raw?.records || raw?.items || [];
+      setZakatRecords((prev) => (records.length || !prev?.length ? records : prev));
+      if (cache["zakat/summary"]) {
+        setZakatSummary(cache["zakat/summary"]);
+      } else if (records.length) {
+        setZakatSummary({
+          record_count: records.length,
+          count: records.length,
+          total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
+          latest: records[0] || null,
+        });
+      }
+    } else if (cache["zakat/summary"]) {
+      setZakatSummary(cache["zakat/summary"]);
+    }
+    if (cache["reports/overview"]) {
+      const raw = cache["reports/overview"];
+      if (raw?.financial || raw?.wallet) {
+        setFinancialReport(raw.financial || null);
+        setWalletReport(raw.wallet || null);
+      } else if (raw?.summary) {
+        setFinancialReport(raw);
+      }
+    }
+    if (cache["system/currency"]) {
+      const bag = cache["system/currency"];
+      if (bag && typeof bag === "object" && (bag.currencies || bag.exchangeRates || bag.currencySummary)) {
+        if (Array.isArray(bag.currencies)) setCurrencies(bag.currencies);
+        if (Array.isArray(bag.exchangeRates)) setExchangeRates(bag.exchangeRates);
+        if (bag.currencySummary) setCurrencySummary(bag.currencySummary);
+        else if (bag.base_currency || bag.code) {
+          setCurrencySummary({
+            base_currency: bag.base_currency || bag.code,
+            wallet_count: bag.wallet_count || 0,
+            total_converted_balance: bag.total_converted_balance || 0,
+            wallets: bag.wallets || [],
+          });
+        }
+      } else {
+        setCurrencySummary(bag);
+      }
+    }
+    if (cache["system/backup"]) {
+      const bag = cache["system/backup"];
+      if (bag?.integrity) setBackupIntegrity(bag.integrity);
+      if (bag?.list) setBackupList(bag.list);
+    }
     setDashboard(buildDashboardFromCache(cache));
   }
 
   async function hydrateFromCloudCache(familyId) {
+    // Always reconcile savings from ledger before UI hydrate (anti stale progress)
+    try {
+      const { reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
+      await reconcileSavingsFromLedgerForFamily(familyId);
+    } catch {
+      /* ignore */
+    }
     const cache = await hydrateFamilyFromOfflineCache(familyId);
     applyOfflineCacheToState(cache);
     return cache;
@@ -3309,7 +3679,7 @@ function App() {
     setCloudBusy(true);
     try {
       const { blob } = await readLatestBackupFromFolder();
-      const result = await restoreBackupBlob(blob);
+      const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
       if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
       setMessage(`${t("localBackupRestored")} (${result.restored})`, "success");
       if (token && (activeFamilyId || result.familyId)) await loadDashboard();
@@ -3377,7 +3747,7 @@ function App() {
       const files = await listDriveBackups(driveToken, 1);
       if (!files.length) throw new Error(t("driveNoFiles"));
       const blob = await downloadDriveBackup(driveToken, files[0].id);
-      const result = await restoreBackupBlob(blob);
+      const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
       if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
       setMessage(`${t("driveRestoreSuccess")} (${result.restored})`, "success");
       if (token && (activeFamilyId || result.familyId)) await loadDashboard();
@@ -3562,16 +3932,10 @@ function App() {
     }
     setCloudBusy(true);
     try {
-      const result = await pushCloudSnapshot({
-        uid: firebaseUser.uid,
-        familyId: activeFamilyId || null,
-        deviceLabel: SYNC_DEVICE_ID,
-      });
+      // Pull first so other devices' wallets aren't wiped by a stale push
+      await syncCloudLocalBidirectional(firebaseUser, activeFamilyId || loadCloudFamilyId());
       await refreshFirebaseMeta(firebaseUser.uid);
-      setMessage(
-        `${t("firebaseSyncSuccess")} (${result.rowCount} rows)`,
-        "success",
-      );
+      setMessage(t("firebaseSyncSuccess"), "success");
     } catch (err) {
       setMessage(err.message || t("firebaseSyncFailed"), "error");
     } finally {
@@ -3593,8 +3957,13 @@ function App() {
     try {
       const result = await pullCloudSnapshot(firebaseUser.uid);
       await refreshFirebaseMeta(firebaseUser.uid);
-      if (result.familyId && !activeFamilyId) {
-        selectActiveFamily(result.familyId);
+      const fid = result.familyId || activeFamilyId || loadCloudFamilyId();
+      if (fid) {
+        persistCloudFamilyId(fid);
+        if (!activeFamilyId) selectActiveFamily(fid);
+        else setActiveFamilyId(fid);
+        await hydrateFromCloudCache(fid);
+        await refreshCloudLocalAll();
       }
       setMessage(`${t("firebaseRestoreSuccess")} (${result.restored})`, "success");
       if (token && activeFamilyId) {
@@ -3675,7 +4044,9 @@ function App() {
   }
 
   function expenseCategories() {
-    return categories.filter((category) => category.category_type === "EXPENSE");
+    return categories.filter((category) =>
+      String(category.category_type || "").toUpperCase().includes("EXPENSE"),
+    );
   }
 
   function totalLoanRemaining(type) {
@@ -3722,33 +4093,30 @@ function App() {
       };
     }
 
-    const active = budgets.filter((budget) => budget.status === "ACTIVE");
-    const totalBudget = active.reduce(
-      (sum, budget) => sum + Number(budget.budget_amount || 0),
-      0
-    );
-    const totalSpent = active.reduce(
-      (sum, budget) => sum + Number(budget.spent_amount || 0),
-      0
-    );
-    const overBudgetCount = active.filter((budget) => budget.is_over_budget).length;
-
+    const status = buildBudgetStatusSummary(budgets);
     return {
-      totalBudget: totalBudget.toFixed(2),
-      totalSpent: totalSpent.toFixed(2),
-      remaining: (totalBudget - totalSpent).toFixed(2),
-      activeCount: active.length,
-      overBudgetCount,
-      warningCount: active.filter((budget) => Number(budget.used_percent || 0) >= 80 && !budget.is_over_budget).length,
+      totalBudget: status.summary.total_budget,
+      totalSpent: status.summary.total_spent,
+      remaining: status.summary.remaining_amount,
+      activeCount: status.summary.active_count,
+      overBudgetCount: status.summary.over_budget_count,
+      warningCount: status.summary.warning_count,
     };
   }
 
 
   function budgetAlerts() {
-    return [
-      ...(budgetStatus?.summary?.over_budget || []),
-      ...(budgetStatus?.summary?.warning || []),
-    ];
+    if (budgetStatus?.summary?.over_budget || budgetStatus?.summary?.warning) {
+      return [
+        ...(budgetStatus?.summary?.over_budget || []),
+        ...(budgetStatus?.summary?.warning || []),
+      ];
+    }
+    return budgets.filter(
+      (b) =>
+        String(b.status || "").toUpperCase() === "ACTIVE" &&
+        (b.is_over_budget || Number(b.used_percent || 0) >= 80),
+    );
   }
 
 
@@ -3768,8 +4136,9 @@ function App() {
   }
 
   function recurringCategories() {
+    const want = String(recurringForm.transaction_type || "").toUpperCase();
     return categories.filter(
-      (category) => category.category_type === recurringForm.transaction_type
+      (category) => String(category.category_type || "").toUpperCase() === want,
     );
   }
 
@@ -3825,8 +4194,9 @@ function App() {
         String(budget.category_name || "").toLowerCase().includes(search) ||
         String(budget.note || "").toLowerCase().includes(search);
 
+      const status = String(budget.status || "").toUpperCase();
       const matchStatus =
-        budgetStatusFilter === "ALL" || budget.status === budgetStatusFilter;
+        budgetStatusFilter === "ALL" || status === String(budgetStatusFilter || "").toUpperCase();
 
       return matchSearch && matchStatus;
     });
@@ -4120,6 +4490,11 @@ function App() {
         currentUser: cloudApiUser(),
       });
       if (hit.handled) return hit.data;
+      // Never fall through to localhost backend in Firebase-only mode
+      if (!token) {
+        console.warn("[S4 Cloud] unhandled GET (skipped backend):", path);
+        return [];
+      }
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -4146,7 +4521,10 @@ function App() {
   async function syncCloudAfterWrite() {
     if (!isCloudLocalMode()) return;
     if (isBrowserOnline()) {
+      // Push local truth first (includes the write we just made), then pull-merge.
+      // Pull-before-push was wiping brand-new life/grocery rows when remote still had empty bags.
       await pushCloudSnapshotIfReady();
+      await pullAndHydrateCloudLocal();
       runCloudAutoBackup({ force: true });
     }
   }
@@ -4160,7 +4538,15 @@ function App() {
         currentUser: cloudApiUser(),
         onAfterWrite: syncCloudAfterWrite,
       });
-      if (hit.handled) return hit.data;
+      if (hit.handled) {
+        if (hit.error || hit.data?.ok === false) {
+          throw new Error(hit.error || hit.data?.detail || "Request failed");
+        }
+        return hit.data;
+      }
+      if (!token) {
+        throw new Error(`Cloud mode: unsupported API POST ${path}`);
+      }
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -4185,9 +4571,7 @@ function App() {
           familyId: activeFamilyId,
           path,
           body,
-          currentUser: firebaseUser
-            ? { uid: firebaseUser.uid, email: firebaseUser.email, firebase_uid: firebaseUser.uid }
-            : currentUser,
+          currentUser: cloudApiUser(),
           onAfterWrite: syncCloudAfterWrite,
         });
         if (hit.handled) {
@@ -4196,8 +4580,11 @@ function App() {
           }
           return hit.data;
         }
+        if (!token) {
+          throw new Error(`Cloud mode: unsupported API PATCH ${path}`);
+        }
       } catch (err) {
-        if (err?.status || err?.isPermission || /permission|denied|connection|database/i.test(String(err?.message || ""))) {
+        if (err?.status || err?.isPermission || /permission|denied|connection|database|Cloud mode/i.test(String(err?.message || ""))) {
           throw err;
         }
         // Unhandled cloud path — fall through to HTTP only when a JWT backend exists
@@ -4240,9 +4627,18 @@ function App() {
         familyId: activeFamilyId,
         path,
         body,
+        currentUser: cloudApiUser(),
         onAfterWrite: syncCloudAfterWrite,
       });
-      if (hit.handled) return hit.data;
+      if (hit.handled) {
+        if (hit.error || hit.data?.ok === false) {
+          throw new Error(hit.error || hit.data?.detail || "Request failed");
+        }
+        return hit.data;
+      }
+      if (!token) {
+        throw new Error(`Cloud mode: unsupported API PUT ${path}`);
+      }
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -4265,9 +4661,20 @@ function App() {
       const hit = await cloudApiDelete({
         familyId: activeFamilyId,
         path,
+        currentUser: firebaseUser
+          ? { uid: firebaseUser.uid, email: firebaseUser.email, firebase_uid: firebaseUser.uid }
+          : currentUser,
         onAfterWrite: syncCloudAfterWrite,
       });
-      if (hit.handled) return hit.data;
+      if (hit.handled) {
+        if (hit.error || hit.data?.ok === false) {
+          throw new Error(hit.error || hit.data?.detail || "Request failed");
+        }
+        return hit.data;
+      }
+      if (!token) {
+        throw new Error(`Cloud mode: unsupported API DELETE ${path}`);
+      }
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -4308,6 +4715,7 @@ function App() {
           file,
           uid: firebaseUser?.uid,
         });
+        await persistDocumentFileMeta(parts[1], result);
         await syncCloudAfterWrite();
         return result;
       }
@@ -4443,7 +4851,8 @@ function App() {
           code.includes("permission-denied") ||
           /storage\/unauthorized/i.test(msg)
         ) {
-          msg = t("photoUploadFailed");
+          msg =
+            "Photo upload blocked by Firebase Storage rules. Publish deploy/firebase/storage.rules (Storage → Rules → Publish).";
           console.error(
             "[S4 ProfilePhoto] Storage rules may block users/{uid}/profile — publish deploy/firebase/storage.rules"
           );
@@ -4561,7 +4970,9 @@ function App() {
     try {
       const status = await apiGet("/auth/email-status");
       setEmailStatus(status);
-      if (!status?.can_send) {
+      if (status?.source === "cloud_local") {
+        // Firebase Auth emails — ignore backend SMTP warnings
+      } else if (!status?.can_send) {
         console.info(
           "[S4 Security] Email delivery unavailable — set SMTP_HOST + SMTP_FROM_EMAIL in backend .env (see deploy docs). Server note:",
           status?.note || "(none)"
@@ -4670,8 +5081,14 @@ function App() {
     }));
   }
 
+  function resolvePermissionMemberId(member) {
+    return String(
+      member?.uid || member?.user_id || member?.member_id || member?.id || "",
+    ).trim();
+  }
+
   async function saveMemberPermission(member) {
-    const memberId = member?.member_id || member?.id || member?.uid || member?.user_id;
+    const memberId = resolvePermissionMemberId(member);
     const form = permissionForms[memberId] || {};
     const permissionKey = String(form.permission_key || "").trim();
 
@@ -4687,12 +5104,11 @@ function App() {
         permission_key: permissionKey,
         allow: form.allow !== false,
         scope: form.scope || "family",
-        full_name: member.full_name || member.display_name || "",
-        email: member.email || "",
-        role: member.role || member.normalized_role || "MEMBER",
-        relationship: member.relationship || member.relationship_type || "",
+        full_name: member?.full_name || member?.display_name || "",
+        email: member?.email || "",
+        role: member?.role || member?.normalized_role || "MEMBER",
       });
-
+      updatePermissionForm(memberId, { permission_key: "", allow: true });
       setMessage(t("memberPermissionUpdated"), "success");
       await loadSettingsData();
     } catch (err) {
@@ -4703,15 +5119,19 @@ function App() {
   }
 
   async function toggleMemberPermission(member, permissionKey, allow) {
-    const memberId =
-      member?.uid ||
-      member?.user_id ||
-      member?.member_id ||
-      member?.id ||
-      "";
+    const memberId = resolvePermissionMemberId(member);
     if (!memberId || !permissionKey) return;
-    if (String(member.normalized_role || member.role || "").toUpperCase() === "OWNER") {
+    const memberRole = String(member.normalized_role || member.role || "").toUpperCase();
+    if (memberRole === "OWNER") {
       setMessage(t("ownerPermissionsLocked"), "warning");
+      return;
+    }
+    if (memberRole === "ADMIN") {
+      setMessage(
+        t("adminPermissionsLocked") ||
+          "ADMIN has full access — switch role to MEMBER to set individual toggles",
+        "warning",
+      );
       return;
     }
 
@@ -4725,13 +5145,14 @@ function App() {
 
     setPermissionSavingMemberId(memberId);
 
-    // Optimistic UI so the switch feels instant
+    // Optimistic UI so the switch feels instant — always recompute from role baseline + overrides
     setMemberPermissions((current) => {
       const rows = Array.isArray(current) ? current : [];
       let found = false;
       const next = rows.map((row) => {
         if (!matchesRow(row)) return row;
         found = true;
+        const role = String(row.normalized_role || row.role || memberRole || "MEMBER").toUpperCase();
         const overrides = Array.isArray(row.overrides) ? [...row.overrides] : [];
         const idx = overrides.findIndex((o) => o.permission_key === permissionKey);
         const patch = {
@@ -4743,38 +5164,30 @@ function App() {
         };
         if (idx >= 0) overrides[idx] = patch;
         else overrides.push(patch);
-        const effective = new Set(
-          Array.isArray(row.effective_permissions) ? row.effective_permissions : [],
-        );
-        if (effective.has("*")) {
-          /* owner-like — keep */
-        } else if (allow) effective.add(permissionKey);
-        else effective.delete(permissionKey);
         return {
           ...row,
           member_id: row.member_id || memberId,
           uid: row.uid || member.uid || memberId,
           user_id: row.user_id || member.user_id || memberId,
+          role,
+          normalized_role: role,
           overrides,
-          effective_permissions: [...effective],
+          permission_overrides: overrides,
+          updated_at: new Date().toISOString(),
+          effective_permissions: applyPermissionOverrides(defaultPermissionsForRole(role), overrides),
         };
       });
       if (found) return next;
-      const base = [
-        "dashboard.read",
-        "accounts.read",
-        "transactions.read",
-        "transactions.create",
-        "income.create",
-        "expense.create",
-        "reports.read",
-        "backup.read",
-        "sync.view",
-        "sync.pull",
+      const role = String(memberRole || member.normalized_role || member.role || "MEMBER").toUpperCase();
+      const overrides = [
+        {
+          id: `pov_${Date.now()}`,
+          permission_key: permissionKey,
+          allow: Boolean(allow),
+          scope: "family",
+          updated_at: new Date().toISOString(),
+        },
       ];
-      const effective = new Set(base);
-      if (allow) effective.add(permissionKey);
-      else effective.delete(permissionKey);
       return [
         ...next,
         {
@@ -4784,25 +5197,19 @@ function App() {
           user_id: member.user_id || memberId,
           email: member.email || "",
           full_name: member.full_name || member.display_name || "",
-          role: member.role || member.normalized_role || "MEMBER",
-          normalized_role: String(member.normalized_role || member.role || "MEMBER").toUpperCase(),
+          role,
+          normalized_role: role,
           relationship: member.relationship || member.relationship_type || "",
-          overrides: [
-            {
-              id: `pov_${Date.now()}`,
-              permission_key: permissionKey,
-              allow: Boolean(allow),
-              scope: "family",
-              updated_at: new Date().toISOString(),
-            },
-          ],
-          effective_permissions: [...effective],
+          overrides,
+          permission_overrides: overrides,
+          updated_at: new Date().toISOString(),
+          effective_permissions: applyPermissionOverrides(defaultPermissionsForRole(role), overrides),
         },
       ];
     });
 
     try {
-      await apiPatch(`/permissions/members/${memberId}`, {
+      const mapped = await apiPatch(`/permissions/members/${memberId}`, {
         permission_key: permissionKey,
         allow: Boolean(allow),
         scope: "family",
@@ -4812,8 +5219,36 @@ function App() {
         relationship: member.relationship || member.relationship_type || "",
       });
       updatePermissionForm(memberId, { permission_key: permissionKey, allow: Boolean(allow) });
+      // Prefer PATCH payload — immediate loadSettingsData can race Firestore and snap toggles back ON.
+      if (mapped && typeof mapped === "object" && (mapped.effective_permissions || mapped.overrides)) {
+        setMemberPermissions((current) => {
+          const rows = Array.isArray(current) ? current : [];
+          let found = false;
+          const next = rows.map((row) => {
+            if (!matchesRow(row)) return row;
+            found = true;
+            return {
+              ...row,
+              ...mapped,
+              member_id: row.member_id || memberId,
+              overrides: mapped.overrides || row.overrides || [],
+              effective_permissions: mapped.effective_permissions || row.effective_permissions || [],
+            };
+          });
+          if (found) return next;
+          return [
+            ...next,
+            {
+              ...mapped,
+              member_id: mapped.member_id || memberId,
+            },
+          ];
+        });
+      }
       setMessage(t("memberPermissionUpdated"), "success");
-      await loadSettingsData();
+      window.setTimeout(() => {
+        void loadSettingsData();
+      }, 1200);
     } catch (err) {
       setMessage(err.message || "Member permission update failed", "error");
       await loadSettingsData();
@@ -4823,6 +5258,31 @@ function App() {
   }
 
   async function refreshSession() {
+    if (cloudOnlyMode && firebaseUser) {
+      setSecurityAction("refresh");
+      try {
+        const refreshed = await firebaseReloadUser();
+        if (refreshed) {
+          setFirebaseUser(refreshed);
+          setCurrentUser((prev) => ({
+            ...(prev || {}),
+            email: refreshed.email || prev?.email,
+            full_name: refreshed.displayName || prev?.full_name,
+            is_email_verified: isFirebaseEmailVerified(refreshed),
+            uid: refreshed.uid,
+            firebase_uid: refreshed.uid,
+          }));
+        }
+        setMessage(t("sessionRefreshed") || "Session refreshed", "success");
+        await loadSettingsData();
+      } catch (err) {
+        setMessage(err.message || "Session refresh failed", "error");
+      } finally {
+        setSecurityAction("");
+      }
+      return;
+    }
+
     if (!refreshToken) {
       setMessage(t("refreshTokenUnavailable"), "error");
       return;
@@ -4856,7 +5316,7 @@ function App() {
   }
 
   async function requestPasswordReset() {
-    const targetEmail = currentUser?.email || email;
+    const targetEmail = currentUser?.email || email || firebaseUser?.email;
 
     if (!targetEmail) {
       setMessage(t("emailRequiredPasswordReset"), "error");
@@ -4866,6 +5326,12 @@ function App() {
     setSecurityAction("password-reset");
 
     try {
+      if (cloudOnlyMode || (!token && FIREBASE_CONFIGURED)) {
+        await firebaseSendPasswordReset(targetEmail);
+        setMessage(t("emailSent") || "Password reset email sent", "success");
+        return;
+      }
+
       const res = await fetch(`${apiBase}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -5019,7 +5485,8 @@ function App() {
   }
 
   async function sendTestNotificationEmail() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     try {
       const result = await apiPost(`/notifications/test-email/${activeFamilyId}`, {});
       if (result.sent) {
@@ -5052,92 +5519,32 @@ function App() {
   async function loadWallets() {
     if (isCloudLocalMode()) {
       const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
-      const data = Array.isArray(cached?.data) ? cached.data : [];
+      const data = activeWalletRows(Array.isArray(cached?.data) ? cached.data : []);
       setWallets(data);
-      if (data.length && !txForm.account_id) {
-        setTxForm((prev) => ({
-          ...prev,
-          account_id: data[0].id,
-          to_account_id: data[1]?.id || data[0].id,
-        }));
-      }
-      if (data.length && !savingsForm.wallet_account_id) {
-        setSavingsForm((prev) => ({ ...prev, wallet_account_id: data[0].id }));
-      }
-      if (data.length && !savingsAction.wallet_account_id) {
-        setSavingsAction((prev) => ({ ...prev, wallet_account_id: data[0].id }));
-      }
-      if (data.length && !loanForm.wallet_account_id) {
-        setLoanForm((prev) => ({ ...prev, wallet_account_id: data[0].id }));
-      }
-      if (data.length && !loanPaymentForm.wallet_account_id) {
-        setLoanPaymentForm((prev) => ({ ...prev, wallet_account_id: data[0].id }));
-      }
-      if (data.length && !recurringForm.account_id) {
-        setRecurringForm((prev) => ({ ...prev, account_id: data[0].id }));
-      }
-      return;
+      bindActiveWalletForms(data);
+      return data;
     }
-    if (!token) return;
+    if (!token) return [];
 
     try {
-      const data = await apiGet(`/accounts/family/${activeFamilyId}`);
+      const data = activeWalletRows(await apiGet(`/accounts/family/${activeFamilyId}`));
       setWallets(data);
       await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", data).catch(() => {});
-
-      if (data.length && !txForm.account_id) {
-        setTxForm((prev) => ({
-          ...prev,
-          account_id: data[0].id,
-          to_account_id: data[1]?.id || data[0].id,
-        }));
-      }
-
-      if (data.length && !savingsForm.wallet_account_id) {
-        setSavingsForm((prev) => ({
-          ...prev,
-          wallet_account_id: data[0].id,
-        }));
-      }
-
-      if (data.length && !savingsAction.wallet_account_id) {
-        setSavingsAction((prev) => ({
-          ...prev,
-          wallet_account_id: data[0].id,
-        }));
-      }
-
-      if (data.length && !loanForm.wallet_account_id) {
-        setLoanForm((prev) => ({
-          ...prev,
-          wallet_account_id: data[0].id,
-        }));
-      }
-
-      if (data.length && !loanPaymentForm.wallet_account_id) {
-        setLoanPaymentForm((prev) => ({
-          ...prev,
-          wallet_account_id: data[0].id,
-        }));
-      }
-
-      if (data.length && !recurringForm.account_id) {
-        setRecurringForm((prev) => ({
-          ...prev,
-          account_id: data[0].id,
-        }));
-      }
+      bindActiveWalletForms(data);
+      return data;
     } catch (err) {
       const msg = String(err?.message || "");
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
         if (cached?.data) {
-          setWallets(cached.data);
-          setMessage(t("syncQueuedOffline") || "Showing offline wallet cache", "success");
-          return;
+          const data = activeWalletRows(cached.data);
+          setWallets(data);
+          bindActiveWalletForms(data);
+          return data;
         }
       }
       setMessage(t("walletLoadFailed"), "error");
+      return [];
     }
   }
 
@@ -5149,19 +5556,22 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "categories", data).catch(() => {});
       }
       setCategories(data);
-      if (data.length && !txForm.category_id) {
-        setTxForm((prev) => ({ ...prev, category_id: data[0].id }));
+      const want = String(txForm.type || "income").toUpperCase();
+      const match =
+        data.find((c) => String(c.category_type || "").toUpperCase().includes(want)) || data[0];
+      if (match && !txForm.category_id) {
+        setTxForm((prev) => ({ ...prev, category_id: match.id }));
       }
-      const expense = data.find((c) => c.category_type === "EXPENSE");
+      const expense = data.find((c) => String(c.category_type || "").toUpperCase().includes("EXPENSE"));
       if (expense && !budgetForm.category_id) {
         setBudgetForm((prev) => ({ ...prev, category_id: expense.id }));
       }
       if (expense && !recurringForm.category_id) {
         setRecurringForm((prev) => ({ ...prev, category_id: expense.id }));
       }
-      return;
+      return data;
     }
-    if (!token) return;
+    if (!token) return [];
 
     try {
       const data = await apiGet(`/categories/family/${activeFamilyId}`);
@@ -5189,30 +5599,33 @@ function App() {
           category_id: expense.id,
         }));
       }
+      return data;
     } catch {
       setCategories([]);
+      return [];
     }
   }
 
   async function loadTransactions() {
     if (isCloudLocalMode()) {
       const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
-      const data = cached?.data;
-      if (Array.isArray(data)) setTransactions(data);
+      const data = Array.isArray(cached?.data) ? cached.data : [];
+      setTransactions(sortTransactionsNewestFirst(data));
       return;
     }
     if (!token) return;
 
     try {
       const data = await apiGet(`/transactions/${activeFamilyId}`);
-      setTransactions(data);
-      await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", data).catch(() => {});
+      const rows = Array.isArray(data) ? data : data?.transactions || [];
+      setTransactions(sortTransactionsNewestFirst(rows));
+      await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", rows).catch(() => {});
     } catch (err) {
       const msg = String(err?.message || "");
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
         if (cached?.data) {
-          setTransactions(cached.data);
+          setTransactions(sortTransactionsNewestFirst(cached.data));
           return;
         }
       }
@@ -5222,21 +5635,37 @@ function App() {
 
   async function loadSavings() {
     if (isCloudLocalMode()) {
-      const data = await loadOfflineFinanceCache("finance", "savings");
-      if (Array.isArray(data)) setSavings(data);
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+      const list = normalizeSavingsList(cached?.data);
+      const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+      const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+      const enriched = recomputeSavingsFromLedger(list, txs);
+      // Always persist ledger-derived progress so sync/hydrate stay consistent
+      await saveOfflineSnapshot(activeFamilyId, "finance", "savings", enriched).catch(() => {});
+      setSavings(enriched);
+      const active = enriched.filter((g) => String(g.status || "").toUpperCase() === "ACTIVE");
+      if (active[0]?.id) {
+        setSavingsAction((prev) => ({
+          ...prev,
+          savings_goal_id: active.some((g) => String(g.id) === String(prev.savings_goal_id))
+            ? prev.savings_goal_id
+            : active[0].id,
+        }));
+      }
       return;
     }
     if (!token) return;
 
     try {
-      const data = await apiGet(`/savings/${activeFamilyId}`);
-      setSavings(data);
-      await saveOfflineSnapshot(activeFamilyId, "finance", "savings", data).catch(() => {});
+      const data = normalizeSavingsList(await apiGet(`/savings/${activeFamilyId}`));
+      const enriched = enrichSavingsGoals(data);
+      setSavings(enriched);
+      await saveOfflineSnapshot(activeFamilyId, "finance", "savings", enriched).catch(() => {});
 
-      if (data.length && !savingsAction.savings_goal_id) {
+      if (enriched.length && !savingsAction.savings_goal_id) {
         setSavingsAction((prev) => ({
           ...prev,
-          savings_goal_id: data[0].id,
+          savings_goal_id: enriched[0].id,
         }));
       }
     } catch (err) {
@@ -5244,7 +5673,10 @@ function App() {
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
         if (cached?.data) {
-          setSavings(cached.data);
+          const list = normalizeSavingsList(cached.data);
+          const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+          const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+          setSavings(recomputeSavingsFromLedger(list, txs));
           return;
         }
       }
@@ -5286,11 +5718,29 @@ function App() {
 
   async function loadBudgets() {
     if (isCloudLocalMode()) {
-      const cached = await loadOfflineFinanceCache("finance", "budgets");
-      if (cached) {
-        setBudgets(Array.isArray(cached) ? cached : cached.data || []);
-        setBudgetStatus(cached.statusData || null);
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "budgets").catch(() => null);
+      const raw = cached?.data;
+      const list = normalizeBudgetsList(raw);
+      const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+      const catCached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+      const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+      let cats = Array.isArray(catCached?.data) ? catCached.data : categories;
+      if (!cats?.length) {
+        cats = DEFAULT_CLOUD_CATEGORIES;
+        await saveOfflineSnapshot(activeFamilyId, "finance", "categories", cats).catch(() => {});
+        setCategories(cats);
       }
+      const enriched = enrichBudgetsFromLedger(list, txs, cats);
+      // Always persist as array of source fields so cloud merge-by-id works
+      const stripped = persistableBudgets(list);
+      const needsStrip =
+        !Array.isArray(raw) ||
+        list.some((b) => b && ("spent_amount" in b || "used_percent" in b || "is_over_budget" in b || "remaining_amount" in b));
+      if (needsStrip || !cached) {
+        await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", stripped).catch(() => {});
+      }
+      setBudgets(enriched);
+      setBudgetStatus(null);
       return;
     }
     if (!token) return;
@@ -5300,16 +5750,21 @@ function App() {
         apiGet(`/budgets/${activeFamilyId}`),
         apiGet(`/budgets/status/${activeFamilyId}`),
       ]);
-      setBudgets(data);
+      const rows = normalizeBudgetsList(data);
+      setBudgets(rows);
       setBudgetStatus(statusData);
-      await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", { data, statusData }).catch(() => {});
+      await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", persistableBudgets(rows)).catch(() => {});
     } catch (err) {
       const msg = String(err?.message || "");
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "budgets").catch(() => null);
         if (cached?.data) {
-          setBudgets(cached.data.data || cached.data);
-          setBudgetStatus(cached.data.statusData || null);
+          const list = normalizeBudgetsList(cached.data);
+          const catCached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+          const cats = Array.isArray(catCached?.data) ? catCached.data : categories;
+          const enriched = enrichBudgetsFromLedger(list, transactions, cats);
+          setBudgets(enriched);
+          setBudgetStatus(null);
           return;
         }
       }
@@ -5321,7 +5776,21 @@ function App() {
   async function loadRecurring() {
     if (isCloudLocalMode()) {
       const data = await loadOfflineFinanceCache("finance", "recurring");
-      if (Array.isArray(data)) setRecurringItems(data);
+      if (Array.isArray(data)) {
+        const normalized = data.map((item) => {
+          const start = item.start_date || String(item.created_at || "").slice(0, 10) || null;
+          return {
+            ...item,
+            start_date: start,
+            next_due_date: item.next_due_date || start,
+          };
+        });
+        setRecurringItems(normalized);
+        const needsFix = data.some((item) => !item.next_due_date || !item.start_date);
+        if (needsFix) {
+          await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", normalized).catch(() => {});
+        }
+      }
       return;
     }
     if (!token) return;
@@ -5345,10 +5814,21 @@ function App() {
 
   async function loadGoals() {
     if (isCloudLocalMode()) {
-      const data = await loadOfflineFinanceCache("finance", "goals");
-      if (Array.isArray(data)) setGoals(data);
-      const summary = await loadOfflineFinanceCache("finance", "goalSummary");
-      if (summary) setGoalSummary(summary);
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+      const raw = Array.isArray(cached?.data) ? cached.data : [];
+      const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+      const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+      const enriched = recomputeGoalsFromLedger(raw, txs);
+      setGoals(enriched);
+      const summary = buildGoalSummary(enriched);
+      setGoalSummary(summary);
+      await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary).catch(() => {});
+      if (enriched.length && !goalContributionForm.goal_id) {
+        const firstActive = enriched.find((g) => String(g.status || "").toUpperCase() !== "CLOSED");
+        if (firstActive) {
+          setGoalContributionForm((prev) => ({ ...prev, goal_id: firstActive.id }));
+        }
+      }
       return;
     }
     if (!token) return;
@@ -5369,7 +5849,7 @@ function App() {
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
         if (cached?.data) {
-          setGoals(cached.data);
+          setGoals(enrichGoals(cached.data));
           return;
         }
       }
@@ -5406,10 +5886,21 @@ function App() {
       ]);
 
       setAuditSummary(summary);
-      setAuditRows(activity.rows || activity || []);
+      setAuditRows(Array.isArray(activity?.rows) ? activity.rows : Array.isArray(activity) ? activity : []);
     } catch (err) {
-      setAuditSummary(null);
-      setAuditRows([]);
+      try {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "system", "audit").catch(() => null);
+        const rows = Array.isArray(cached?.data) ? cached.data : [];
+        if (rows.length) {
+          setAuditRows((prev) => (prev?.length ? prev : rows));
+          setAuditSummary((prev) => prev || { total_audit_rows: rows.length, total_events: rows.length });
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      setAuditSummary((prev) => prev || null);
+      setAuditRows((prev) => (prev?.length ? prev : []));
       // Dashboard refresh may hit audit without permission — don't spam scary JSON toasts
       if (!err?.isPermission) {
         setMessage(err.message || "Audit trail load failed", "error");
@@ -5484,10 +5975,10 @@ function App() {
       }
     } catch (err) {
       console.error("[S4 Notify] loadNotifications failed", err);
-      setNotifications([]);
-      setNotificationSummary(null);
-      setNotificationDelivery(null);
-      setPushDevices([]);
+      setNotifications((prev) => (prev?.length ? prev : []));
+      setNotificationSummary((prev) => prev || null);
+      setNotificationDelivery((prev) => prev || null);
+      setPushDevices((prev) => (prev?.length ? prev : []));
       setMessage(err.message || "Notification load failed", "error");
     } finally {
       setNotificationsLoading(false);
@@ -5671,31 +6162,69 @@ function App() {
     if (!token && !isCloudLocalMode()) return;
 
     try {
-      const [records, summary] = await Promise.all([
+      const cached = await loadOfflineSnapshot(activeFamilyId, "zakat", "main").catch(() => null);
+      const cachedRecords = Array.isArray(cached?.data)
+        ? cached.data
+        : cached?.data?.records || cached?.data?.items || [];
+      const memRecords = Array.isArray(zakatRecords) ? zakatRecords : [];
+      const prevRecords = cachedRecords.length >= memRecords.length ? cachedRecords : memRecords;
+
+      const [recordsRaw, summaryRaw] = await Promise.all([
         apiGet(`/zakat/${activeFamilyId}`),
         apiGet(`/zakat/summary/${activeFamilyId}`),
       ]);
-
-      setZakatRecords(Array.isArray(records) ? records : records?.records || []);
+      const loaded = Array.isArray(recordsRaw)
+        ? recordsRaw
+        : recordsRaw?.records || recordsRaw?.items || [];
+      // Never replace a known non-empty list with an empty load (create/sync race).
+      const records = loaded.length || !prevRecords.length ? loaded : prevRecords;
+      const summary =
+        summaryRaw && (summaryRaw.record_count != null || summaryRaw.latest || summaryRaw.total_zakat_due != null)
+          ? summaryRaw
+          : {
+              record_count: records.length,
+              count: records.length,
+              total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
+              latest: records[0] || null,
+            };
+      setZakatRecords(records);
       setZakatSummary(summary);
-      await saveOfflineSnapshot(activeFamilyId, "zakat", "main", {
-        records: Array.isArray(records) ? records : records?.records || [],
-        summary,
-      });
+      // Persist array only when we did not keep prev solely to avoid empty wipe.
+      if (records.length || !prevRecords.length) {
+        await saveOfflineSnapshot(activeFamilyId, "zakat", "main", records);
+      }
+      if (summary) {
+        await saveOfflineSnapshot(activeFamilyId, "zakat", "summary", summary).catch(() => {});
+      }
     } catch (err) {
       try {
         const cached = await loadOfflineSnapshot(activeFamilyId, "zakat", "main");
         if (cached?.data) {
-          setZakatRecords(cached.data.records || (Array.isArray(cached.data) ? cached.data : []) || []);
-          setZakatSummary(cached.data.summary || null);
+          const records = Array.isArray(cached.data)
+            ? cached.data
+            : cached.data.records || cached.data.items || [];
+          setZakatRecords((prev) => (records.length || !prev?.length ? records : prev));
+          const sumCached = await loadOfflineSnapshot(activeFamilyId, "zakat", "summary").catch(() => null);
+          setZakatSummary(
+            sumCached?.data ||
+              cached.data.summary ||
+              (records.length
+                ? {
+                    record_count: records.length,
+                    count: records.length,
+                    total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
+                    latest: records[0] || null,
+                  }
+                : null),
+          );
           setMessage(t("syncQueuedOffline"), "success");
           return;
         }
       } catch {
         /* ignore cache miss */
       }
-      setZakatRecords([]);
-      setZakatSummary(null);
+      setZakatRecords((prev) => (prev?.length ? prev : []));
+      setZakatSummary((prev) => prev || null);
       setMessage(err.message || "Zakat load failed", "error");
     }
   }
@@ -5720,7 +6249,8 @@ function App() {
       client_request_id: `web-zakat-${Date.now()}`,
     };
 
-    if (!isBrowserOnline()) {
+    // Cloud-local writes IndexedDB even while offline — do not enqueue-only.
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
         entity_type: "zakat_records",
@@ -5734,11 +6264,16 @@ function App() {
 
     try {
       const result = await apiPost("/zakat/calculate", payload);
-      setMessage(t("zakatDueAmount").replace("{amount}", money(result.zakat_due, result.currency)), "success");
+      setMessage(
+        result.is_zakat_due
+          ? t("zakatDueAmount").replace("{amount}", money(result.zakat_due, result.currency))
+          : t("zakatNotDue") || "Below nisab — zakat not due",
+        "success"
+      );
       await loadZakat();
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
           entity_type: "zakat_records",
@@ -5756,23 +6291,28 @@ function App() {
   async function loadMetalRates() {
     try {
       const data = await apiGet("/zakat/metal-rates");
-      setMetalRates(data);
-      const gold = (data.rates || []).find((r) => String(r.metal).toUpperCase() === "GOLD");
-      const silver = (data.rates || []).find((r) => String(r.metal).toUpperCase() === "SILVER");
+      const rates = Array.isArray(data?.rates)
+        ? data.rates
+        : ["GOLD", "SILVER"]
+            .filter((m) => data?.[m] != null)
+            .map((m) => ({ metal: m, rate_bdt: Number(data[m]) }));
+      setMetalRates({ ...data, rates });
+      const gold = rates.find((r) => String(r.metal).toUpperCase() === "GOLD");
+      const silver = rates.find((r) => String(r.metal).toUpperCase() === "SILVER");
       setZakatForm((prev) => ({
         ...prev,
-        gold_rate: gold?.rate_bdt || prev.gold_rate,
-        silver_rate: silver?.rate_bdt || prev.silver_rate,
+        gold_rate: gold?.rate_bdt != null ? String(gold.rate_bdt) : prev.gold_rate || "",
+        silver_rate: silver?.rate_bdt != null ? String(silver.rate_bdt) : prev.silver_rate || "",
       }));
     } catch (err) {
-      setMessage(err.message || "Metal rates load failed", "error");
+      setMessage(err.message || t("metalRatesLoadFailed"), "error");
     }
   }
 
   async function saveMetalRate(metal) {
     const rate = metal === "GOLD" ? zakatForm.gold_rate : zakatForm.silver_rate;
     if (!rate || Number(rate) <= 0) {
-      setMessage("Valid rate required", "error");
+      setMessage(t("validRateRequired"), "error");
       return;
     }
     try {
@@ -5780,20 +6320,25 @@ function App() {
         metal,
         rate_bdt: rate,
       });
-      setMessage(`${metal} rate saved`, "success");
+      setMessage(t("metalRateSaved"), "success");
       await loadMetalRates();
     } catch (err) {
-      setMessage(err.message || "Rate save failed", "error");
+      setMessage(err.message || t("metalRateSaveFailed"), "error");
     }
   }
 
   async function fillNisabFromRates() {
     try {
       const data = await apiGet(`/zakat/nisab-from-rates?metal=${encodeURIComponent(zakatForm.nisab_metal || "SILVER")}`);
-      setZakatForm((prev) => ({ ...prev, nisab_amount: data.nisab_amount }));
-      setMessage(`Nisab from ${data.metal}: ${data.nisab_amount}`, "success");
+      if (!data || data.ok === false || data.nisab_amount == null || data.nisab_amount === "") {
+        setMessage(data?.detail || t("metalRatesLoadFailed"), "error");
+        return;
+      }
+      const amount = String(data.nisab_amount);
+      setZakatForm((prev) => ({ ...prev, nisab_amount: amount }));
+      setMessage(`${t("nisabLabel")} ${amount}`, "success");
     } catch (err) {
-      setMessage(err.message || "Nisab auto-fill failed — set metal rates first", "error");
+      setMessage(err.message || t("metalRatesLoadFailed"), "error");
     }
   }
 
@@ -5802,13 +6347,26 @@ function App() {
     if (!token && !isCloudLocalMode()) return;
 
     try {
-      const [items, summary] = await Promise.all([
-        loadLifeGroup(apiGet, activeFamilyId, LIFE15),
-        apiGet(lifeSummaryPath(activeFamilyId)).catch(() => null),
-      ]);
+      const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase15").catch(() => null);
+      const cachedItems = Array.isArray(cached?.data?.items) ? cached.data.items : [];
+      const memItems = Array.isArray(phase15Items) ? phase15Items : [];
+      const prevItems = cachedItems.length >= memItems.length ? cachedItems : memItems;
+      const prevSummary = cached?.data?.summary || null;
+      const loaded = await loadLifeGroup(apiGet, activeFamilyId, LIFE15, { previousItems: prevItems });
+      // Never replace a known non-empty list with an empty load (create/sync race).
+      const items = loaded.length || !prevItems.length ? loaded : prevItems;
+      let summary = await apiGet(lifeSummaryPath(activeFamilyId)).catch(() => null);
+      if (!summary?.modules) {
+        summary = summarizeLifeItems(items, LIFE15);
+      }
       setPhase15Items(items);
       setPhase15Summary(summary);
-      await saveOfflineSnapshot(activeFamilyId, "life", "phase15", { items, summary });
+      if (items.length || !cachedItems.length) {
+        await saveOfflineSnapshot(activeFamilyId, "life", "phase15", {
+          items,
+          summary: summary || prevSummary || summarizeLifeItems(items, LIFE15),
+        });
+      }
     } catch (err) {
       try {
         const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase15");
@@ -5821,17 +6379,10 @@ function App() {
       } catch {
         /* ignore */
       }
-      setPhase15Items([]);
-      setPhase15Summary(null);
+      setPhase15Items((prev) => (prev?.length ? prev : []));
+      setPhase15Summary((prev) => prev || null);
       setMessage(err.message || "Assets & Funds load failed", "error");
     }
-  }
-
-  function buildPhase15Payload(form) {
-    return buildLifeCreatePayload(form.module_type, activeFamilyId, currencyCode(), {
-      ...form,
-      name: form.name.trim(),
-    });
   }
 
   function resetPhase15Form(moduleType = phase15ActiveTab) {
@@ -5863,18 +6414,25 @@ function App() {
       return;
     }
 
-    const payload = buildPhase15Payload(phase15Form);
+    // Always trust the visible tab — form.module_type can drift from the tab UI.
+    const moduleType = String(phase15ActiveTab || phase15Form.module_type || "INVESTMENT").toUpperCase();
+    const formForSave = { ...phase15Form, module_type: moduleType };
+    const payload = buildLifeCreatePayload(moduleType, activeFamilyId, currencyCode(), {
+      ...formForSave,
+      name: formForSave.name.trim(),
+    });
     const op = editingPhase15Id ? "UPDATE" : "CREATE";
 
-    if (!isBrowserOnline()) {
+    // Cloud-local writes IndexedDB even while offline — do not enqueue-only.
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
-        entity_type: lifeOfflineEntityType(phase15Form.module_type),
+        entity_type: lifeOfflineEntityType(moduleType),
         entity_id: editingPhase15Id || null,
         operation: op,
         payload: { ...payload, client_request_id: `web-p15-${Date.now()}` },
       });
-      resetPhase15Form(phase15ActiveTab);
+      resetPhase15Form(moduleType);
       setMessage(t("syncQueuedOffline"), "success");
       await refreshLocalOutboxCount();
       return;
@@ -5882,20 +6440,45 @@ function App() {
 
     try {
       if (editingPhase15Id) {
-        await apiPatch(lifeUpdatePath(phase15Form.module_type, editingPhase15Id), payload);
+        await apiPatch(lifeUpdatePath(moduleType, editingPhase15Id), payload);
         setMessage(t("assetFundUpdated"), "success");
       } else {
-        await apiPost(lifeCreatePath(phase15Form.module_type), payload);
+        const created = await apiPost(lifeCreatePath(moduleType), payload);
+        // Optimistic UI so the row is visible even if a later hydrate races
+        if (created?.id) {
+          const normalized = {
+            id: created.id,
+            family_id: activeFamilyId,
+            module_type: moduleType,
+            name: created.name || created.vehicle_name || formForSave.name.trim(),
+            category: formForSave.category || "GENERAL",
+            sub_type: created.sub_type || created.type || formForSave.sub_type || "",
+            provider: created.provider || created.doctor || formForSave.provider || null,
+            member_id: created.member_id || formForSave.member_id || null,
+            amount: created.amount ?? created.principal ?? formForSave.amount ?? "0",
+            secondary_amount: created.secondary_amount ?? formForSave.secondary_amount ?? null,
+            currency: created.currency || currencyCode(),
+            target_date: created.target_date || formForSave.target_date || null,
+            secondary_date: created.secondary_date || formForSave.secondary_date || null,
+            status: "ACTIVE",
+            note: created.note || formForSave.note || null,
+          };
+          setPhase15Items((prev) => {
+            const next = [normalized, ...(prev || []).filter((r) => String(r.id) !== String(normalized.id))];
+            setPhase15Summary(summarizeLifeItems(next, LIFE15));
+            return next;
+          });
+        }
         setMessage(t("assetFundCreated"), "success");
       }
-      resetPhase15Form(phase15ActiveTab);
+      resetPhase15Form(moduleType);
       await loadPhase15();
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
-          entity_type: lifeOfflineEntityType(phase15Form.module_type),
+          entity_type: lifeOfflineEntityType(moduleType),
           entity_id: editingPhase15Id || null,
           operation: op,
           payload: { ...payload, client_request_id: `web-p15-${Date.now()}` },
@@ -5909,7 +6492,7 @@ function App() {
   }
 
   async function closePhase15Item(item) {
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
         entity_type: lifeOfflineEntityType(item.module_type),
@@ -5925,6 +6508,19 @@ function App() {
       await apiPost(lifeClosePath(item.module_type, item.id), { family_id: activeFamilyId, reason: "Closed from dashboard" });
       await loadPhase15();
     } catch (err) {
+      const msg = String(err.message || "");
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
+        await enqueueOutboxChange({
+          familyId: activeFamilyId,
+          entity_type: lifeOfflineEntityType(item.module_type),
+          entity_id: item.id,
+          operation: "DELETE",
+          payload: { family_id: activeFamilyId, status: "CLOSED" },
+        });
+        setMessage(t("syncQueuedOffline"), "success");
+        await refreshLocalOutboxCount();
+        return;
+      }
       setMessage(err.message || "Asset/Fund close failed", "error");
     }
   }
@@ -5933,13 +6529,25 @@ function App() {
     if (!activeFamilyId) return;
     if (!token && !isCloudLocalMode()) return;
     try {
-      const [items, summary] = await Promise.all([
-        loadLifeGroup(apiGet, activeFamilyId, LIFE16),
-        apiGet(lifeSummaryPath(activeFamilyId)).catch(() => null),
-      ]);
+      const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase16").catch(() => null);
+      const cachedItems = Array.isArray(cached?.data?.items) ? cached.data.items : [];
+      const memItems = Array.isArray(phase16Items) ? phase16Items : [];
+      const prevItems = cachedItems.length >= memItems.length ? cachedItems : memItems;
+      const prevSummary = cached?.data?.summary || null;
+      const loaded = await loadLifeGroup(apiGet, activeFamilyId, LIFE16, { previousItems: prevItems });
+      const items = loaded.length || !prevItems.length ? loaded : prevItems;
+      let summary = await apiGet(lifeSummaryPath(activeFamilyId)).catch(() => null);
+      if (!summary?.modules) {
+        summary = summarizeLifeItems(items, LIFE16);
+      }
       setPhase16Items(items);
       setPhase16Summary(summary);
-      await saveOfflineSnapshot(activeFamilyId, "life", "phase16", { items, summary });
+      if (items.length || !cachedItems.length) {
+        await saveOfflineSnapshot(activeFamilyId, "life", "phase16", {
+          items,
+          summary: summary || prevSummary || summarizeLifeItems(items, LIFE16),
+        });
+      }
     } catch (err) {
       try {
         const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase16");
@@ -5952,17 +6560,10 @@ function App() {
       } catch {
         /* ignore */
       }
-      setPhase16Items([]);
-      setPhase16Summary(null);
+      setPhase16Items((prev) => (prev?.length ? prev : []));
+      setPhase16Summary((prev) => prev || null);
       setMessage(err.message || "Subscriptions, Documents & Property load failed", "error");
     }
-  }
-
-  function buildPhase16Payload(form) {
-    return buildLifeCreatePayload(form.module_type, activeFamilyId, currencyCode(), {
-      ...form,
-      name: form.name.trim(),
-    });
   }
 
   function resetPhase16Form(moduleType = phase16ActiveTab) {
@@ -5992,46 +6593,58 @@ function App() {
     });
   }
 
+  async function persistDocumentFileMeta(itemId, result) {
+    const patch = {
+      file_name: result.file_name || result.name || null,
+      file_url: result.download_url || result.file_url || null,
+      file_path: result.download_url || result.file_path || result.storage_path || null,
+      storage_path: result.storage_path || null,
+      mime: result.mime || result.content_type || null,
+      file_size: result.size || result.file_size || null,
+      uploaded_at: result.uploaded_at || new Date().toISOString(),
+      has_file: true,
+      file_encrypted: Boolean(result.encrypted || result.file_encrypted),
+    };
+    try {
+      await apiPatch(lifeUpdatePath("DOCUMENT", itemId), patch);
+    } catch {
+      // Fallback: write metadata directly into the phase16 bag
+      try {
+        const bag = await loadOfflineSnapshot(activeFamilyId, "life", "phase16").catch(() => null);
+        const items = Array.isArray(bag?.data?.items) ? bag.data.items : [];
+        const nextItems = items.map((row) =>
+          String(row.id) === String(itemId) ? { ...row, ...patch, module_type: "DOCUMENT" } : row,
+        );
+        await saveOfflineSnapshot(activeFamilyId, "life", "phase16", {
+          ...(bag?.data || {}),
+          items: nextItems,
+        });
+      } catch {
+        /* metadata optional */
+      }
+    }
+  }
+
   async function uploadPhase16Document(itemId, file) {
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await queueDocumentUpload({ familyId: activeFamilyId, itemId, file });
       setMessage(t("documentQueuedOffline"), "success");
       return { queued: true };
     }
 
     if (isCloudLocalMode()) {
+      if (!isBrowserOnline()) {
+        await queueDocumentUpload({ familyId: activeFamilyId, itemId, file });
+        setMessage(t("documentQueuedOffline"), "success");
+        return { queued: true };
+      }
       const result = await uploadFamilyDocument({
         familyId: activeFamilyId,
         itemId,
         file,
         uid: firebaseUser?.uid,
       });
-      // Persist download URL onto the document item metadata
-      try {
-        const bag = await loadOfflineSnapshot(activeFamilyId, "life", "phase16").catch(() => null);
-        const items = Array.isArray(bag?.data?.items) ? bag.data.items : [];
-        const nextItems = items.map((row) =>
-          row.id === itemId
-            ? {
-                ...row,
-                file_name: result.file_name,
-                file_url: result.download_url,
-                storage_path: result.storage_path,
-                mime: result.mime,
-                file_size: result.size,
-                uploaded_at: result.uploaded_at,
-              }
-            : row,
-        );
-        if (bag?.data) {
-          await saveOfflineSnapshot(activeFamilyId, "life", "phase16", {
-            ...bag.data,
-            items: nextItems,
-          });
-        }
-      } catch {
-        /* metadata optional */
-      }
+      await persistDocumentFileMeta(itemId, result);
       await syncCloudAfterWrite();
       return result;
     }
@@ -6057,15 +6670,22 @@ function App() {
       return;
     }
 
-    const payload = buildPhase16Payload(phase16Form);
+    // Always trust the visible tab — form.module_type can drift from the tab UI.
+    const moduleType = String(phase16ActiveTab || phase16Form.module_type || "SUBSCRIPTION").toUpperCase();
+    const formForSave = { ...phase16Form, module_type: moduleType };
+    const payload = buildLifeCreatePayload(moduleType, activeFamilyId, currencyCode(), {
+      ...formForSave,
+      name: formForSave.name.trim(),
+    });
     const op = editingPhase16Id ? "UPDATE" : "CREATE";
     const clientRequestId = `web-p16-${Date.now()}`;
 
-    if (!isBrowserOnline()) {
+    // Cloud-local writes IndexedDB even while offline — do not enqueue-only.
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       const localId = editingPhase16Id || clientRequestId;
       await enqueueOutboxChange({
         familyId: activeFamilyId,
-        entity_type: lifeOfflineEntityType(phase16Form.module_type),
+        entity_type: lifeOfflineEntityType(moduleType),
         entity_id: editingPhase16Id || null,
         operation: op,
         payload: {
@@ -6076,14 +6696,14 @@ function App() {
           file_size: documentFile?.size || null,
         },
       });
-      if (phase16Form.module_type === "DOCUMENT" && documentFile) {
+      if (moduleType === "DOCUMENT" && documentFile) {
         await queueDocumentUpload({
           familyId: activeFamilyId,
           itemId: localId,
           file: documentFile,
         });
       }
-      resetPhase16Form(phase16ActiveTab);
+      resetPhase16Form(moduleType);
       setMessage(t("syncQueuedOffline"), "success");
       await refreshLocalOutboxCount();
       return;
@@ -6092,27 +6712,59 @@ function App() {
     try {
       let itemId = editingPhase16Id;
       if (editingPhase16Id) {
-        await apiPatch(lifeUpdatePath(phase16Form.module_type, editingPhase16Id), payload);
+        await apiPatch(lifeUpdatePath(moduleType, editingPhase16Id), payload);
         setMessage(t("phase16Updated"), "success");
       } else {
-        const created = await apiPost(lifeCreatePath(phase16Form.module_type), payload);
+        const created = await apiPost(lifeCreatePath(moduleType), payload);
         itemId = created?.id || "";
+        if (created?.id) {
+          const normalized = {
+            id: created.id,
+            family_id: activeFamilyId,
+            module_type: moduleType,
+            name: created.name || formForSave.name.trim(),
+            category: formForSave.category || "GENERAL",
+            sub_type: created.sub_type || created.type || formForSave.sub_type || "",
+            provider: created.provider || created.location || formForSave.provider || null,
+            member_id: created.member_id || formForSave.member_id || null,
+            amount: created.amount ?? formForSave.amount ?? "0",
+            secondary_amount: created.secondary_amount ?? created.value ?? formForSave.secondary_amount ?? null,
+            currency: created.currency || currencyCode(),
+            renewal_or_expiry_date:
+              created.renewal_or_expiry_date ||
+              created.next_due ||
+              created.expiry_date ||
+              formForSave.renewal_or_expiry_date ||
+              null,
+            billing_cycle: created.billing_cycle || created.cycle || formForSave.billing_cycle || null,
+            payment_account_id: created.payment_account_id || formForSave.payment_account_id || null,
+            reference: created.reference || created.area || formForSave.reference || null,
+            status: "ACTIVE",
+            note: created.note || formForSave.note || null,
+            has_file: false,
+          };
+          setPhase16Items((prev) => {
+            const next = [normalized, ...(prev || []).filter((r) => String(r.id) !== String(normalized.id))];
+            setPhase16Summary(summarizeLifeItems(next, LIFE16));
+            return next;
+          });
+        }
         setMessage(t("phase16Created"), "success");
       }
 
-      if (phase16Form.module_type === "DOCUMENT" && documentFile && itemId) {
+      if (moduleType === "DOCUMENT" && documentFile && itemId) {
         await uploadPhase16Document(itemId, documentFile);
         setMessage(t("documentSavedUploaded"), "success");
       }
 
-      resetPhase16Form(phase16ActiveTab);
+      resetPhase16Form(moduleType);
       await loadPhase16();
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
-          entity_type: lifeOfflineEntityType(phase16Form.module_type),
+          entity_type: lifeOfflineEntityType(moduleType),
           entity_id: editingPhase16Id || null,
           operation: op,
           payload: { ...payload, client_request_id: clientRequestId },
@@ -6167,6 +6819,27 @@ function App() {
         setMessage(t("downloadFailed"), "error");
         return;
       }
+
+      // Cloud-local: download from Firebase Storage URL stored on the item
+      if (isCloudLocalMode()) {
+        const url = item.file_url || item.file_path;
+        if (!url) {
+          setMessage(t("noFileAttached") || "No file attached", "error");
+          return;
+        }
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Document download failed");
+        const blob = await res.blob();
+        try {
+          await cacheReportExport(activeFamilyId, cacheType, "bin", blob);
+        } catch {
+          /* optional */
+        }
+        trigger(blob, item.file_name || "document.bin");
+        setMessage(t("documentDownloadStarted"), "success");
+        return;
+      }
+
       const res = await fetch(
         `${apiBase}/documents/${item.id}/download?family_id=${encodeURIComponent(activeFamilyId)}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -6199,7 +6872,7 @@ function App() {
   }
 
   async function closePhase16Item(item) {
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
         entity_type: lifeOfflineEntityType(item.module_type),
@@ -6215,12 +6888,26 @@ function App() {
       await apiPost(lifeClosePath(item.module_type, item.id), { family_id: activeFamilyId, reason: "Closed from dashboard" });
       await loadPhase16();
     } catch (err) {
+      const msg = String(err.message || "");
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
+        await enqueueOutboxChange({
+          familyId: activeFamilyId,
+          entity_type: lifeOfflineEntityType(item.module_type),
+          entity_id: item.id,
+          operation: "DELETE",
+          payload: { family_id: activeFamilyId, status: "CLOSED" },
+        });
+        setMessage(t("syncQueuedOffline"), "success");
+        await refreshLocalOutboxCount();
+        return;
+      }
       setMessage(err.message || "Subscription/Document/Property close failed", "error");
     }
   }
 
   async function loadGrocery(options = {}) {
     const silent = Boolean(options.silent);
+    const preferListId = options.listId != null ? String(options.listId || "") : null;
     if (!activeFamilyId) return;
     if (!token && !isCloudLocalMode()) return;
 
@@ -6233,30 +6920,46 @@ function App() {
         apiGet(`/grocery/activity/${activeFamilyId}`),
         apiGet(`/grocery/collaboration/status/${activeFamilyId}`),
       ]);
-      setGroceryLists(lists);
-      setGroceryPriceHistory(priceHistory);
-      setGroceryVendorSummary(vendorSummary);
-      setGroceryVendors(vendors);
-      setGroceryActivity(activity);
-      setGroceryCollaboration(collaboration);
-      const nextListId = activeGroceryListId || lists[0]?.id || "";
+      const listRows = Array.isArray(lists) ? lists : lists?.lists || [];
+      setGroceryLists(listRows);
+      setGroceryPriceHistory(Array.isArray(priceHistory) ? priceHistory : []);
+      setGroceryVendorSummary(Array.isArray(vendorSummary) ? vendorSummary : []);
+      setGroceryVendors(Array.isArray(vendors) ? vendors : []);
+      setGroceryActivity(Array.isArray(activity) ? activity : []);
+      setGroceryCollaboration(collaboration || null);
+      const nextListId =
+        preferListId ||
+        (activeGroceryListId && listRows.some((l) => String(l.id) === String(activeGroceryListId))
+          ? activeGroceryListId
+          : listRows[0]?.id || "");
       setActiveGroceryListId(nextListId);
 
       if (nextListId) {
         const items = await apiGet(`/grocery/lists/${activeFamilyId}/${nextListId}/items`);
-        setGroceryItems(items);
+        setGroceryItems(Array.isArray(items) ? items : items?.items || []);
       } else {
         setGroceryItems([]);
       }
+
+      // Default wallet + Food expense category for post-expense
+      const walletRows = Array.isArray(options.walletRows) ? options.walletRows : wallets;
+      const categoryRows = Array.isArray(options.categoryRows) ? options.categoryRows : categories;
+      setGroceryExpenseForm((prev) => {
+        const next = { ...prev };
+        if (!next.account_id && walletRows?.length) {
+          const wallet = walletRows.find((w) => w.is_active !== false && !w.deleted_at) || walletRows[0];
+          if (wallet?.id) next.account_id = wallet.id;
+        }
+        if (!next.category_id && categoryRows?.length) {
+          const food =
+            categoryRows.find((c) => /food|grocery/i.test(String(c.name || c.name_en || ""))) ||
+            categoryRows.find((c) => String(c.category_type || c.type || "").toUpperCase() === "EXPENSE");
+          if (food?.id) next.category_id = food.id;
+        }
+        return next;
+      });
     } catch (err) {
-      setGroceryLists([]);
-      setGroceryItems([]);
-      setGroceryPriceHistory([]);
-      setGroceryVendorSummary([]);
-      setGroceryVendors([]);
-      setGroceryActivity([]);
-      setGroceryCollaboration(null);
-      setActiveGroceryListId("");
+      // Keep last known grocery data — avoid flashing empty zeros on transient errors
       if (!silent) {
         setMessage(err.message || "Grocery load failed", "error");
       }
@@ -6272,7 +6975,7 @@ function App() {
 
     try {
       const items = await apiGet(`/grocery/lists/${activeFamilyId}/${listId}/items`);
-      setGroceryItems(items);
+      setGroceryItems(Array.isArray(items) ? items : items?.items || []);
     } catch (err) {
       setGroceryItems([]);
       setMessage(err.message || "Grocery items load failed", "error");
@@ -6296,7 +6999,8 @@ function App() {
       mobile_sync_key: `web-glist-${Date.now()}`,
     };
 
-    if (!isBrowserOnline()) {
+    // Cloud-local writes IndexedDB even while offline — do not enqueue-only.
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueGroceryChange(activeFamilyId, {
         entity_type: "grocery_lists",
         operation: "CREATE",
@@ -6313,10 +7017,10 @@ function App() {
       setGroceryListForm({ title: "", budget_amount: "0", vendor_name: "", shopping_date: "", note: "" });
       setActiveGroceryListId(row.id);
       setMessage(t("groceryListCreated"), "success");
-      await loadGrocery();
+      await loadGrocery({ listId: row.id });
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueGroceryChange(activeFamilyId, {
           entity_type: "grocery_lists",
           operation: "CREATE",
@@ -6345,7 +7049,7 @@ function App() {
       note: groceryVendorForm.note,
     };
 
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueGroceryChange(activeFamilyId, {
         entity_type: "grocery_vendors",
         operation: "CREATE",
@@ -6364,7 +7068,7 @@ function App() {
       await loadGrocery();
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueGroceryChange(activeFamilyId, {
           entity_type: "grocery_vendors",
           operation: "CREATE",
@@ -6403,7 +7107,7 @@ function App() {
       mobile_sync_key: `web-${Date.now()}`,
     };
 
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueGroceryChange(activeFamilyId, {
         entity_type: "grocery_items",
         operation: "CREATE",
@@ -6420,9 +7124,10 @@ function App() {
       setGroceryItemForm((prev) => ({ ...prev, name: "", estimated_price: "0", actual_price: "0", barcode: "", note: "" }));
       setMessage(t("groceryItemAdded"), "success");
       await selectGroceryList(activeGroceryListId);
+      await loadGrocery({ listId: activeGroceryListId, silent: true });
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueGroceryChange(activeFamilyId, {
           entity_type: "grocery_items",
           operation: "CREATE",
@@ -6446,7 +7151,7 @@ function App() {
       sync_version: item.sync_version,
     };
 
-    if (!isBrowserOnline()) {
+    if (!isBrowserOnline() && !isCloudLocalMode()) {
       await enqueueGroceryChange(activeFamilyId, {
         entity_type: "grocery_items",
         entity_id: item.id,
@@ -6464,22 +7169,25 @@ function App() {
     try {
       await apiPut(`/grocery/items/${item.id}/buy`, {
         family_id: activeFamilyId,
+        is_bought: true,
         actual_price: item.actual_price || item.estimated_price || "0",
         vendor_name: item.vendor_name || null,
         expected_sync_version: item.sync_version,
       });
       await selectGroceryList(activeGroceryListId);
-      const [priceHistory, vendorSummary, vendors] = await Promise.all([
+      const [priceHistory, vendorSummary, vendors, activity] = await Promise.all([
         apiGet(`/grocery/price-history/${activeFamilyId}`),
         apiGet(`/grocery/vendor-summary/${activeFamilyId}`),
         apiGet(`/grocery/vendors/${activeFamilyId}`),
+        apiGet(`/grocery/activity/${activeFamilyId}`),
       ]);
-      setGroceryPriceHistory(priceHistory);
-      setGroceryVendorSummary(vendorSummary);
-      setGroceryVendors(vendors);
+      setGroceryPriceHistory(Array.isArray(priceHistory) ? priceHistory : []);
+      setGroceryVendorSummary(Array.isArray(vendorSummary) ? vendorSummary : []);
+      setGroceryVendors(Array.isArray(vendors) ? vendors : []);
+      setGroceryActivity(Array.isArray(activity) ? activity : []);
     } catch (err) {
       const msg = String(err.message || "");
-      if (/failed to fetch|network|offline/i.test(msg)) {
+      if (/failed to fetch|network|offline/i.test(msg) && !isCloudLocalMode()) {
         await enqueueGroceryChange(activeFamilyId, {
           entity_type: "grocery_items",
           entity_id: item.id,
@@ -6527,7 +7235,10 @@ function App() {
     try {
       const result = await apiGet(`/grocery/barcode/${activeFamilyId}/${encodeURIComponent(groceryScanForm.barcode.trim())}`);
       setGroceryBarcodeLookup(result);
-      setMessage(result.found ? "Barcode match found" : "No barcode match found", result.found ? "success" : "warning");
+      setMessage(
+        result.found ? t("barcodeMatchFound") : t("barcodeNoMatch"),
+        result.found ? "success" : "warning"
+      );
     } catch (err) {
       setGroceryBarcodeLookup(null);
       setMessage(err.message || "Barcode lookup failed", "error");
@@ -6554,7 +7265,22 @@ function App() {
   }
 
   async function parseGroceryOcrImage(file) {
-    if (!file || !activeFamilyId || !token) {
+    if (!file || !activeFamilyId) {
+      setMessage(t("ocrImageHint") || "Image required", "error");
+      return;
+    }
+    if (isCloudLocalMode()) {
+      setGroceryOcrPreview({
+        suggestions: [],
+        suggestion_count: 0,
+        engine: "cloud_local",
+        note: t("ocrPasteOnlyHint"),
+        source: "cloud_local",
+      });
+      setMessage(t("ocrPasteOnlyHint"), "warning");
+      return;
+    }
+    if (!token) {
       setMessage(t("ocrImageHint") || "Image required", "error");
       return;
     }
@@ -6671,7 +7397,11 @@ function App() {
   async function loadReportLedger(accountId) {
     const nextAccountId = accountId || reportAccountId;
 
-    if (!token || !activeFamilyId || !nextAccountId) {
+    if (!activeFamilyId || !nextAccountId) {
+      setLedgerReport(null);
+      return;
+    }
+    if (!token && !isCloudLocalMode()) {
       setLedgerReport(null);
       return;
     }
@@ -6682,13 +7412,14 @@ function App() {
       );
       setLedgerReport(data);
     } catch (err) {
-      setLedgerReport(null);
+      setLedgerReport((prev) => prev || null);
       setMessage(err.message || "Account ledger load failed", "error");
     }
   }
 
   async function loadExtraReport(tab) {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     setReportsLoading(true);
     try {
       if (tab === "networth") {
@@ -6718,7 +7449,8 @@ function App() {
   }
 
   async function loadReports() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setReportsLoading(true);
 
@@ -6752,9 +7484,9 @@ function App() {
       } catch {
         /* ignore */
       }
-      setFinancialReport(null);
-      setWalletReport(null);
-      setLedgerReport(null);
+      setFinancialReport((prev) => prev || null);
+      setWalletReport((prev) => prev || null);
+      setLedgerReport((prev) => prev || null);
       setMessage(err.message || "Reports load failed", "error");
     } finally {
       setReportsLoading(false);
@@ -6799,30 +7531,41 @@ function App() {
           return;
         }
       }
-      setCurrencies([]);
-      setExchangeRates([]);
-      setCurrencySummary(null);
+      setCurrencies((prev) => (prev?.length ? prev : []));
+      setExchangeRates((prev) => (prev?.length ? prev : []));
+      setCurrencySummary((prev) => prev || null);
       setMessage(err.message || "Currency data load failed", "error");
     } finally {
       setCurrencyLoading(false);
     }
   }
 
-  async function loadFamilyGovernance() {
-    if (!activeFamilyId) return;
-    if (!token && !isCloudLocalMode()) return;
+  async function loadFamilyGovernance(overrideFamilyId) {
+    const fid = String(overrideFamilyId || activeFamilyId || "").trim();
+    if (!fid) return;
+    if (!token && !(cloudOnlyMode && firebaseUser?.uid)) return;
 
     setGovernanceLoading(true);
 
     try {
-      let data = await apiGet(`/families/${activeFamilyId}/members`);
+      let data;
+      if (cloudOnlyMode && !token) {
+        const hit = await cloudApiGet({
+          familyId: fid,
+          path: `/families/${fid}/members`,
+          currentUser: cloudApiUser(),
+        });
+        data = hit.handled ? hit.data : [];
+      } else {
+        data = await apiGet(`/families/${fid}/members`);
+      }
       let members = Array.isArray(data) ? data : data.members || [];
 
       // Merge live Firestore member registry (multi-account)
-      if (isCloudLocalMode() && firebaseUser?.uid) {
+      if (cloudOnlyMode && firebaseUser?.uid) {
         try {
           const { listFamilyCloudMembers } = await import("./firebase/familyCloud");
-          const cloudMembers = await listFamilyCloudMembers(activeFamilyId);
+          const cloudMembers = await listFamilyCloudMembers(fid);
           if (cloudMembers.length) {
             const byEmail = new Map();
             for (const m of members) {
@@ -6852,11 +7595,10 @@ function App() {
                 });
               } else {
                 const existing = byEmail.get(key);
-                const rank = { OWNER: 5, ADMIN: 4, MEMBER: 3, VIEWER: 2, CHILD: 1 };
+                // Firestore role is source of truth — never keep a higher local role after demotion
                 const cloudRole = String(cm.role || "").toUpperCase();
-                const localRole = String(existing.role || "").toUpperCase();
-                existing.role =
-                  (rank[cloudRole] || 0) >= (rank[localRole] || 0) ? cloudRole || localRole : localRole || cloudRole;
+                if (cloudRole) existing.role = cloudRole;
+                existing.normalized_role = cloudRole || existing.normalized_role || existing.role;
                 existing.full_name = cm.display_name || existing.full_name;
                 existing.uid = cm.uid || cm.id || existing.uid;
                 existing.user_id = cm.uid || cm.id || existing.user_id;
@@ -6882,7 +7624,17 @@ function App() {
 
       setGovernanceMembers(members);
       try {
-        const pending = await apiGet(`/join-requests/family/${activeFamilyId}`);
+        let pending;
+        if (cloudOnlyMode && !token) {
+          const hit = await cloudApiGet({
+            familyId: fid,
+            path: `/join-requests/family/${fid}`,
+            currentUser: cloudApiUser(),
+          });
+          pending = hit.handled ? hit.data : [];
+        } else {
+          pending = await apiGet(`/join-requests/family/${fid}`);
+        }
         setJoinRequests(Array.isArray(pending) ? pending : pending?.requests || []);
       } catch {
         setJoinRequests([]);
@@ -6903,17 +7655,18 @@ function App() {
       await refreshAll();
     } catch (err) {
       setMessage(err.message || "Join decision failed", "error");
+      throw err;
     }
   }
 
   async function submitLoggedInJoin(joinForm) {
     if (!joinForm?.invite_code?.trim()) {
       setMessage(t("inviteCodeRequired") || "Invite code required", "error");
-      return;
+      throw new Error(t("inviteCodeRequired") || "Invite code required");
     }
     try {
       const code = joinForm.invite_code.trim().toUpperCase();
-      if (isCloudLocalMode() && firebaseUser?.uid) {
+      if ((cloudOnlyMode || isCloudLocalMode()) && !token && firebaseUser?.uid) {
         const result = await joinFamilyByInviteCode({
           code,
           uid: firebaseUser.uid,
@@ -6923,11 +7676,13 @@ function App() {
         });
         const nextFamilyId = result.familyId;
         selectActiveFamily(nextFamilyId);
-        setMessage(t("joinRequestedOk") || "Joined family successfully", "success");
-        await loadFamilyGovernance();
-        await refreshAll();
+        setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
+        await loadFamilyGovernance(nextFamilyId);
         await pushCloudSnapshotIfReady(firebaseUser, nextFamilyId);
-        return;
+        window.setTimeout(() => {
+          void refreshAll();
+        }, 0);
+        return { ok: true, familyId: nextFamilyId };
       }
 
       const body = {
@@ -6944,12 +7699,14 @@ function App() {
       if (data?.family_id || data?.familyId) {
         const nextFamilyId = data.family_id || data.familyId;
         selectActiveFamily(nextFamilyId);
+        await loadFamilyGovernance(nextFamilyId);
       }
       setMessage(t("joinRequestedOk") || "Join request sent", "success");
-      await loadFamilyGovernance();
       await refreshAll();
+      return { ok: true };
     } catch (err) {
       setMessage(err.message || "Join failed", "error");
+      throw err;
     }
   }
 
@@ -6978,7 +7735,15 @@ function App() {
       });
 
       setGeneratedInvite(data);
-      setMessage(t("inviteGenerated"), "success");
+      if (data?.cloud_published === false) {
+        setMessage(
+          t("inviteLocalOnlyWarn") ||
+            `Invite saved locally but not published to cloud (${data.cloud_publish_error || "offline"}). Other accounts may not join.`,
+          "warning",
+        );
+      } else {
+        setMessage(t("inviteGenerated"), "success");
+      }
     } catch (err) {
       setGeneratedInvite(null);
       setMessage(err.message || "Invite generation failed", "error");
@@ -7028,7 +7793,8 @@ function App() {
   }
 
   async function revokeFamilyInvite(inviteId) {
-    if (!token || !inviteId) return;
+    if (!inviteId) return;
+    if (!token && !isCloudLocalMode()) return;
     setInviteRevoking(true);
     try {
       await apiPost(`/invites/${inviteId}/revoke`, {});
@@ -7042,7 +7808,8 @@ function App() {
   }
 
   async function loadBackups() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setBackupLoading(true);
 
@@ -7060,21 +7827,22 @@ function App() {
       await saveOfflineSnapshot(activeFamilyId, "system", "backup", {
         integrity,
         list: { count: list.count || 0, backups: list.backups || [] },
+        files: (await loadOfflineSnapshot(activeFamilyId, "system", "backup").catch(() => null))?.data?.files || {},
       }).catch(() => {});
     } catch (err) {
       const msg = String(err?.message || "");
-      if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
+      if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline() || isCloudLocalMode()) {
         const cached = await loadOfflineSnapshot(activeFamilyId, "system", "backup").catch(() => null);
         if (cached?.data) {
-          setBackupIntegrity(cached.data.integrity || null);
+          setBackupIntegrity(cached.data.integrity || { ok: true, integrity_check: "IndexedDB OK" });
           setBackupList(cached.data.list || { count: 0, backups: [] });
           setMessage(t("syncQueuedOffline") || "Showing offline backup cache", "success");
           setBackupLoading(false);
           return;
         }
       }
-      setBackupIntegrity(null);
-      setBackupList({ count: 0, backups: [] });
+      setBackupIntegrity((prev) => prev || null);
+      setBackupList((prev) => prev?.backups?.length ? prev : { count: 0, backups: [] });
       if (!err?.isPermission) {
         setMessage(err.message || "Backup status load failed", "error");
       }
@@ -7092,6 +7860,34 @@ function App() {
     setBackupCreating(true);
 
     try {
+      if (isCloudLocalMode()) {
+        const { blob, fileName, payload } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+        const prev = await loadOfflineSnapshot(activeFamilyId, "system", "backup").catch(() => null);
+        const bag = prev?.data && typeof prev.data === "object" ? prev.data : { list: { backups: [] }, files: {} };
+        const entry = {
+          file_name: fileName,
+          size_bytes: blob.size,
+          created_at: new Date().toISOString(),
+          row_count: Array.isArray(payload?.rows) ? payload.rows.length : 0,
+          source: "cloud_local",
+        };
+        const backups = [entry, ...(bag.list?.backups || []).filter((b) => b.file_name !== fileName)].slice(0, 20);
+        const files = { ...(bag.files || {}), [fileName]: payload };
+        // Cap stored payloads to last 5 to avoid IndexedDB bloat
+        const keep = new Set(backups.slice(0, 5).map((b) => b.file_name));
+        for (const key of Object.keys(files)) {
+          if (!keep.has(key)) delete files[key];
+        }
+        const integrity = { ok: true, integrity_check: "IndexedDB snapshot export OK", source: "cloud_local" };
+        const list = { count: backups.length, backups };
+        await saveOfflineSnapshot(activeFamilyId, "system", "backup", { integrity, list, files });
+        setBackupIntegrity(integrity);
+        setBackupList(list);
+        await downloadBackupFile(blob, fileName);
+        setMessage(t("backupCreatedFile").replace("{file}", fileName), "success");
+        return;
+      }
+
       const data = await apiPost(`/backup/create/${activeFamilyId}`, {});
       setMessage(t("backupCreatedFile").replace("{file}", data.backup_file), "success");
       await loadBackups();
@@ -7104,6 +7900,22 @@ function App() {
 
   async function downloadBackup(fileName) {
     try {
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "system", "backup").catch(() => null);
+        const payload = cached?.data?.files?.[fileName];
+        if (payload) {
+          const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+          await downloadBackupFile(blob, fileName);
+          setMessage(t("backupDownloadStarted"), "success");
+          return;
+        }
+        // Fallback: fresh export under the requested name
+        const { blob } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
+        await downloadBackupFile(blob, fileName);
+        setMessage(t("backupDownloadStarted"), "success");
+        return;
+      }
+
       const res = await fetch(
         `${apiBase}/backup/download/${activeFamilyId}/${encodeURIComponent(fileName)}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -7135,6 +7947,14 @@ function App() {
     setBackupPreviewingFile(fileName);
 
     try {
+      if (isCloudLocalMode()) {
+        const data = await apiGet(
+          `/backup/restore/preview-file/${activeFamilyId}?file_name=${encodeURIComponent(fileName)}`
+        );
+        setBackupPreview(data);
+        setMessage(t("restorePreviewLoaded"), "success");
+        return;
+      }
       const data = await apiGet(
         `/backup/restore/preview-file/${activeFamilyId}?file_name=${encodeURIComponent(fileName)}`
       );
@@ -7167,11 +7987,38 @@ function App() {
   }
 
   async function loadSyncStatus() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setSyncLoading(true);
 
     try {
+      if (isCloudLocalMode()) {
+        const pending = await listPendingOutbox(activeFamilyId).catch(() => []);
+        const cache = await hydrateFamilyFromOfflineCache(activeFamilyId);
+        const statusData = await apiGet(
+          `/families/${activeFamilyId}/sync/status?device_id=${encodeURIComponent(SYNC_DEVICE_ID)}&device_name=Web%20Dashboard&platform=web`
+        );
+        setSyncStatus({
+          ...(statusData || {}),
+          pending_outbox: pending.length,
+          open_conflicts: 0,
+          offline_first: true,
+          sync_state: browserOnline ? "CLOUD_LOCAL_READY" : "OFFLINE",
+          last_sync_at: firebaseMeta?.updated_at || firebaseMeta?.pushed_at || lastAutoSyncAt || null,
+          table_counts: {
+            ...(statusData?.table_counts || {}),
+            wallets: Array.isArray(cache["finance/wallets"]) ? cache["finance/wallets"].length : 0,
+            transactions: Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"].length : 0,
+          },
+          source: "cloud_local",
+        });
+        setSyncConflicts([]);
+        setSyncResolvedConflicts([]);
+        await refreshLocalOutboxCount();
+        return;
+      }
+
       const [statusData, conflictsData, resolvedData] = await Promise.all([
         apiGet(
           `/families/${activeFamilyId}/sync/status?device_id=${encodeURIComponent(SYNC_DEVICE_ID)}&device_name=Web%20Dashboard&platform=web`
@@ -7185,9 +8032,9 @@ function App() {
       setSyncResolvedConflicts(resolvedData.conflicts || []);
       await refreshLocalOutboxCount();
     } catch (err) {
-      setSyncStatus(null);
-      setSyncConflicts([]);
-      setSyncResolvedConflicts([]);
+      setSyncStatus((prev) => prev || null);
+      setSyncConflicts((prev) => (prev?.length ? prev : []));
+      setSyncResolvedConflicts((prev) => (prev?.length ? prev : []));
       setMessage(err.message || "Sync status load failed", "error");
     } finally {
       setSyncLoading(false);
@@ -7195,14 +8042,15 @@ function App() {
   }
 
   async function loadSyncLogs() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
     setSyncLogsLoading(true);
     try {
       setSyncLogs(
         await apiGet(`/sync-logs?family_id=${encodeURIComponent(activeFamilyId)}&limit=80`),
       );
     } catch (err) {
-      setSyncLogs(null);
+      setSyncLogs((prev) => prev || null);
       setMessage(err.message || "Sync logs load failed", "error");
     } finally {
       setSyncLogsLoading(false);
@@ -7252,6 +8100,29 @@ function App() {
       if (!firebaseUser?.uid || !isCloudEmailReady(firebaseUser)) return;
       if (!silent) setSyncPushLoading(true);
       try {
+        // Recover grocery rows that were enqueue-only (never written to IndexedDB).
+        const pending = await listPendingOutbox(activeFamilyId);
+        for (const row of pending) {
+          const et = String(row.entity_type || "").toLowerCase();
+          const op = String(row.operation || "").toUpperCase();
+          const payload = row.payload || {};
+          try {
+            if (et.includes("grocery_list") && op === "CREATE") {
+              await apiPost("/grocery/lists", payload);
+            } else if (et.includes("grocery_vendor") && op === "CREATE") {
+              await apiPost("/grocery/vendors", payload);
+            } else if (et.includes("grocery_item") && op === "CREATE") {
+              await apiPost("/grocery/items", payload);
+            } else if (et.includes("grocery_item") && (op === "UPDATE" || op === "BUY")) {
+              const id = row.entity_id || payload.id;
+              if (id) {
+                await apiPut(`/grocery/items/${id}/buy`, { ...payload, is_bought: true });
+              }
+            }
+          } catch {
+            // Keep outbox row; snapshot push still proceeds with current IDB.
+          }
+        }
         const result = await flushCloudSnapshotOutbox({
           familyId: activeFamilyId,
           uid: firebaseUser.uid,
@@ -7261,6 +8132,7 @@ function App() {
         if (isAutomatic) setLastAutoSyncAt(new Date().toISOString());
         await refreshLocalOutboxCount();
         await refreshFirebaseMeta(firebaseUser.uid);
+        await loadGrocery({ silent: true });
         if (!silent) {
           if (result.offline) setMessage(t("browserOffline"), "error");
           else if (result.empty || result.pushed === 0) setMessage(t("noSyncStatus"), "success");
@@ -7312,11 +8184,26 @@ function App() {
   }
 
   async function pullSyncPreview() {
-    if (!token || !activeFamilyId) return;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
 
     setSyncPullLoading(true);
 
     try {
+      if (isCloudLocalMode()) {
+        const result = await pullAndHydrateCloudLocal();
+        setSyncPullPreview({
+          changes: [],
+          restored: result?.restored || 0,
+          sync_token: new Date().toISOString(),
+          note: "Cloud snapshot pulled into IndexedDB",
+          source: "cloud_local",
+        });
+        setMessage(t("syncPullPreviewLoaded"), "success");
+        await loadSyncStatus();
+        return;
+      }
+
       const tokenQuery = syncLastToken ? `&since_token=${encodeURIComponent(syncLastToken)}` : "";
       const data = await apiGet(
         `/families/${activeFamilyId}/sync/pull?device_id=${encodeURIComponent(SYNC_DEVICE_ID)}&limit=100${tokenQuery}`
@@ -7373,7 +8260,7 @@ function App() {
   }
 
   async function createWallet() {
-    if (!walletForm.name.trim()) {
+    if (!walletForm.name.trim() || walletForm.name.trim().length < 2) {
       setMessage(t("walletNameRequired"), "error");
       return;
     }
@@ -7384,15 +8271,18 @@ function App() {
       account_type: walletForm.account_type,
       currency: currencyCode(),
       opening_balance: walletForm.opening_balance,
-      is_shared_family: walletForm.is_shared_family,
-      is_owner_wallet: walletForm.is_owner_wallet,
+      is_shared_family: Boolean(walletForm.is_shared_family),
+      is_owner_wallet: Boolean(walletForm.is_owner_wallet),
       client_request_id: `web-wallet-${Date.now()}`,
     };
 
     try {
       setStatus("Creating wallet...");
+      setWalletBusyId("create");
 
       if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : wallets;
         const newWallet = {
           id: `wal_${Date.now()}`,
           family_id: activeFamilyId,
@@ -7404,26 +8294,24 @@ function App() {
           opening_balance: Number(payload.opening_balance) || 0,
           is_shared_family: payload.is_shared_family,
           is_owner_wallet: payload.is_owner_wallet,
+          is_active: true,
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           source: "cloud_local",
         };
-        const next = [...wallets, newWallet];
-        setWallets(next);
+        const next = [...existing.filter((w) => String(w.id) !== String(newWallet.id)), newWallet];
+        setWallets(activeWalletRows(next));
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
+        bindActiveWalletForms(activeWalletRows(next));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
         if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
+          await syncCloudAfterWrite();
+          setMessage(t("walletCreated"), "success");
+        } else {
+          setMessage(t("walletCreatedOffline"), "success");
         }
-        setWalletForm({
-          name: "",
-          account_type: "CASH",
-          currency: currencyCode(),
-          opening_balance: "0",
-          is_shared_family: true,
-          is_owner_wallet: false,
-        });
-        setMessage(t("walletCreated"), "success");
-        setStatus("");
+        setWalletForm(emptyWalletForm());
+        setEditingWalletId("");
         return;
       }
 
@@ -7434,31 +8322,15 @@ function App() {
           operation: "CREATE",
           payload,
         });
-        setWalletForm({
-          name: "",
-          account_type: "CASH",
-          currency: currencyCode(),
-          opening_balance: "0",
-          is_shared_family: true,
-          is_owner_wallet: false,
-        });
+        setWalletForm(emptyWalletForm());
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        setStatus("");
         return;
       }
 
       await apiPost(`/accounts`, payload);
-
-      setWalletForm({
-        name: "",
-        account_type: "CASH",
-        currency: currencyCode(),
-        opening_balance: "0",
-        is_shared_family: true,
-        is_owner_wallet: false,
-      });
-
+      setWalletForm(emptyWalletForm());
+      setEditingWalletId("");
       setMessage(t("walletCreated"), "success");
       refreshAll();
     } catch (err) {
@@ -7470,17 +8342,140 @@ function App() {
           operation: "CREATE",
           payload,
         });
+        setWalletForm(emptyWalletForm());
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
+      } else {
+        setMessage(err.message || t("walletLoadFailed"), "error");
+      }
+    } finally {
+      setWalletBusyId("");
+      setStatus("");
+    }
+  }
+
+  function startEditWallet(wallet) {
+    if (!wallet?.id) return;
+    setEditingWalletId(wallet.id);
+    setWalletForm({
+      name: wallet.name || "",
+      account_type: wallet.account_type || "CASH",
+      currency: wallet.currency || currencyCode(),
+      opening_balance: String(wallet.opening_balance ?? wallet.balance ?? 0),
+      is_shared_family: wallet.is_shared_family !== false,
+      is_owner_wallet: Boolean(wallet.is_owner_wallet),
+    });
+  }
+
+  function cancelEditWallet() {
+    setEditingWalletId("");
+    setWalletForm(emptyWalletForm());
+  }
+
+  async function saveEditWallet() {
+    if (!editingWalletId) return;
+    if (!walletForm.name.trim() || walletForm.name.trim().length < 2) {
+      setMessage(t("walletNameRequired"), "error");
+      return;
+    }
+    const patch = {
+      name: walletForm.name.trim(),
+      account_type: walletForm.account_type,
+      is_shared_family: Boolean(walletForm.is_shared_family),
+      is_owner_wallet: Boolean(walletForm.is_owner_wallet),
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      setWalletBusyId(editingWalletId);
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : wallets;
+        const next = existing.map((w) =>
+          String(w.id) === String(editingWalletId) ? { ...w, ...patch } : w,
+        );
+        setWallets(activeWalletRows(next));
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("walletUpdated"), "success");
+        cancelEditWallet();
         return;
       }
-      setMessage(err.message || "Wallet create failed", "error");
+      if (!token) throw new Error(t("walletLoadFailed"));
+      try {
+        await apiPatch(`/families/${activeFamilyId}/accounts/${editingWalletId}`, patch);
+      } catch {
+        const next = wallets.map((w) =>
+          String(w.id) === String(editingWalletId) ? { ...w, ...patch } : w,
+        );
+        setWallets(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next).catch(() => {});
+      }
+      setMessage(t("walletUpdated"), "success");
+      cancelEditWallet();
+      await loadWallets();
+      await loadDashboard();
+    } catch (err) {
+      setMessage(err.message || t("walletLoadFailed"), "error");
+    } finally {
+      setWalletBusyId("");
+    }
+  }
+
+  async function deleteWallet(wallet) {
+    if (!wallet?.id) return;
+    const label = wallet.name || wallet.id;
+    if (!window.confirm(t("confirmDeleteWallet") || `Delete wallet "${label}"?`)) return;
+    try {
+      setWalletBusyId(wallet.id);
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : wallets;
+        const now = new Date().toISOString();
+        const next = existing.map((w) =>
+          String(w.id) === String(wallet.id)
+            ? { ...w, is_active: false, deleted_at: now, updated_at: now }
+            : w,
+        );
+        setWallets(activeWalletRows(next));
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
+        bindActiveWalletForms(activeWalletRows(next));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (editingWalletId && String(editingWalletId) === String(wallet.id)) {
+          cancelEditWallet();
+        }
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("walletDeleted"), "success");
+        return;
+      }
+      if (!token) throw new Error(t("walletLoadFailed"));
+      await apiDelete(`/accounts/${wallet.id}`);
+      setMessage(t("walletDeleted"), "success");
+      if (editingWalletId && String(editingWalletId) === String(wallet.id)) {
+        cancelEditWallet();
+      }
+      await loadWallets();
+      await loadDashboard();
+    } catch (err) {
+      setMessage(err.message || t("walletLoadFailed"), "error");
+    } finally {
+      setWalletBusyId("");
     }
   }
 
   async function createTransaction(attachFile = null) {
     if (!txForm.account_id) {
       setMessage(t("fromWalletRequired"), "error");
+      return;
+    }
+
+    if (!isActiveWalletId(txForm.account_id)) {
+      setMessage(t("fromWalletRequired") || "Select an active wallet", "error");
+      bindActiveWalletForms(wallets);
       return;
     }
 
@@ -7495,6 +8490,12 @@ function App() {
         return;
       }
 
+      if (!isActiveWalletId(txForm.to_account_id)) {
+        setMessage(t("toWalletRequired") || "Select an active destination wallet", "error");
+        bindActiveWalletForms(wallets);
+        return;
+      }
+
       if (txForm.account_id === txForm.to_account_id) {
         setMessage(t("cannotTransferSameWallet"), "error");
         return;
@@ -7503,11 +8504,11 @@ function App() {
 
     if (txForm.type === "expense" && txForm.split_enabled) {
       if (!txForm.split_member_a || !txForm.split_member_b) {
-        setMessage("Select both members for split expense", "error");
+        setMessage(t("splitMembersRequired") || "Select both members for split expense", "error");
         return;
       }
       if (txForm.split_member_a === txForm.split_member_b) {
-        setMessage("Split members must be different", "error");
+        setMessage(t("splitMembersDifferent") || "Split members must be different", "error");
         return;
       }
     }
@@ -7516,25 +8517,96 @@ function App() {
       setStatus("Posting transaction...");
 
       if (isCloudLocalMode()) {
-        const newTx = buildLocalTransaction({
-          familyId: activeFamilyId,
-          txForm,
-          currency: currencyCode(),
-        });
-        const nextTx = [...transactions, newTx];
-        const nextWallets = applyWalletBalances(wallets, txForm);
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const walCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const existingWallets = Array.isArray(walCached?.data) ? walCached.data : wallets;
+        const isSplit = txForm.type === "expense" && Boolean(txForm.split_enabled);
+        let createdRows = [];
+        if (isSplit) {
+          const total = Number(txForm.amount) || 0;
+          const shareA = Math.round((total / 2) * 100) / 100;
+          const shareB = Math.round((total - shareA) * 100) / 100;
+          const base = buildLocalTransaction({
+            familyId: activeFamilyId,
+            txForm: { ...txForm, split_enabled: true, amount: shareA },
+            currency: currencyCode(),
+          });
+          const groupId = base.id;
+          const rowA = {
+            ...base,
+            id: `${groupId}_a`,
+            amount: shareA,
+            split_group_id: groupId,
+            member_id: txForm.split_member_a,
+            description: `${base.description || "Split"} (${txForm.split_member_a})`,
+          };
+          const rowB = {
+            ...buildLocalTransaction({
+              familyId: activeFamilyId,
+              txForm: { ...txForm, split_enabled: true, amount: shareB },
+              currency: currencyCode(),
+            }),
+            id: `${groupId}_b`,
+            amount: shareB,
+            split_group_id: groupId,
+            member_id: txForm.split_member_b,
+            description: `${base.description || "Split"} (${txForm.split_member_b})`,
+          };
+          createdRows = [rowA, rowB];
+        } else {
+          createdRows = [
+            buildLocalTransaction({
+              familyId: activeFamilyId,
+              txForm,
+              currency: currencyCode(),
+            }),
+          ];
+        }
+        const newTx = createdRows[0];
+        const nextTx = sortTransactionsNewestFirst([...createdRows, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
         setTransactions(nextTx);
-        setWallets(nextWallets);
+        setWallets(activeWalletRows(nextWallets));
         await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
+        if (attachFile) {
+          try {
+            const fd = new FormData();
+            fd.append("family_id", activeFamilyId);
+            fd.append("file", attachFile);
+            const uploaded = await apiUpload(`/transactions/${newTx.id}/attachment`, fd);
+            if (uploaded) {
+              const withAtt = nextTx.map((row) =>
+                String(row.id) === String(newTx.id)
+                  ? {
+                      ...row,
+                      attachment_name: uploaded.file_name || attachFile.name,
+                      attachment_url: uploaded.url || uploaded.download_url || null,
+                    }
+                  : row,
+              );
+              setTransactions(withAtt);
+              await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", withAtt);
+            }
+          } catch (attErr) {
+            console.warn("[S4 Tx] attachment skipped", attErr);
+          }
         }
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline()) {
+          await syncCloudAfterWrite();
+          setMessage(t("transactionPosted"), "success");
+        } else {
+          setMessage(t("transactionPostedOffline") || t("transactionPosted"), "success");
+        }
         setTxForm((prev) => ({ ...prev, amount: "", description: "", split_enabled: false }));
-        setMessage(t("transactionPosted"), "success");
-        setStatus("");
+        // Refresh budget spent totals from ledger
+        try {
+          await loadBudgets();
+        } catch {
+          /* ignore */
+        }
         return;
       }
 
@@ -7565,7 +8637,6 @@ function App() {
         setTxForm((prev) => ({ ...prev, amount: "", description: "", split_enabled: false }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        setStatus("");
         return;
       }
 
@@ -7644,7 +8715,7 @@ function App() {
       setMessage(t("transactionPosted"), "success");
       refreshAll();
     } catch (err) {
-      setMessage(err.message || "Transaction failed", "error");
+      setMessage(err.message || t("transactionFailed") || "Transaction failed", "error");
     } finally {
       setStatus("");
     }
@@ -7657,18 +8728,56 @@ function App() {
       const fd = new FormData();
       fd.append("family_id", activeFamilyId);
       fd.append("file", file);
-      await apiUpload(`/transactions/${transactionId}/attachment`, fd);
-      setMessage("Attachment uploaded", "success");
-      await loadTransactions?.();
-      refreshAll();
+      const uploaded = await apiUpload(`/transactions/${transactionId}/attachment`, fd);
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const rows = Array.isArray(cached?.data) ? cached.data : transactions;
+        const next = rows.map((row) =>
+          String(row.id) === String(transactionId)
+            ? {
+                ...row,
+                attachment_name: uploaded?.file_name || file.name,
+                attachment_url: uploaded?.url || uploaded?.download_url || null,
+                updated_at: new Date().toISOString(),
+              }
+            : row,
+        );
+        setTransactions(sortTransactionsNewestFirst(next));
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+      } else {
+        await loadTransactions?.();
+        refreshAll();
+      }
+      setMessage(t("attachmentUploaded") || "Attachment uploaded", "success");
     } catch (err) {
-      setMessage(err.message || "Attachment failed", "error");
+      setMessage(err.message || t("attachmentFailed") || "Attachment failed", "error");
     } finally {
       setAttachBusyId("");
     }
   }
 
   async function parseExpenseOcr(rawText) {
+    if (isCloudLocalMode()) {
+      const text = String(rawText || "");
+      const nums = [...text.matchAll(/(\d+(?:\.\d{1,2})?)/g)].map((m) => Number(m[1])).filter((n) => n > 0);
+      const total = nums.length ? nums.reduce((a, b) => a + b, 0) : 0;
+      return {
+        suggested_total: total || null,
+        line_count: text.split(/\n/).filter(Boolean).length,
+        engine: "cloud_local_regex",
+        raw_text: text,
+        lines: text
+          .split(/\n/)
+          .filter(Boolean)
+          .slice(0, 8)
+          .map((line) => ({ description: line.trim() })),
+        note: "Cloud mode: simple total from numbers in text",
+        source: "cloud_local",
+      };
+    }
     return apiPost(`/expenses/ocr/parse?family_id=${encodeURIComponent(activeFamilyId)}`, {
       raw_text: rawText || "",
     });
@@ -7676,6 +8785,15 @@ function App() {
 
   async function parseExpenseOcrImage(file) {
     if (!file) return null;
+    if (isCloudLocalMode()) {
+      return {
+        suggested_total: null,
+        line_count: 0,
+        engine: "cloud_local",
+        note: "Image OCR needs backend; paste bill text instead",
+        source: "cloud_local",
+      };
+    }
     const fd = new FormData();
     fd.append("family_id", activeFamilyId);
     fd.append("file", file);
@@ -7684,6 +8802,12 @@ function App() {
 
   async function loadSavingsAnnualPlan() {
     try {
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+        const list = enrichSavingsGoals(normalizeSavingsList(cached?.data ?? savings));
+        setSavingsAnnualPlan(buildSavingsAnnualPlan(list));
+        return;
+      }
       const data = await apiGet(`/savings/annual-plan/${activeFamilyId}`);
       setSavingsAnnualPlan(data);
     } catch (err) {
@@ -7703,6 +8827,53 @@ function App() {
     };
     try {
       setVoidBusyId(transactionId);
+      if (isCloudLocalMode()) {
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const walCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const existingWallets = Array.isArray(walCached?.data) ? walCached.data : wallets;
+        const target = existingTx.find((t) => String(t.id) === String(transactionId));
+        if (!target) throw new Error(t("transactionLoadFailed") || "Transaction not found");
+        if (String(target.status || "").toUpperCase() === "VOID") {
+          setMessage(t("transactionAlreadyVoided") || "Already voided", "warning");
+          return;
+        }
+        const now = new Date().toISOString();
+        const nextTx = existingTx.map((t) =>
+          String(t.id) === String(transactionId)
+            ? {
+                ...t,
+                status: "VOID",
+                void_reason: reason.trim() || "VOID",
+                voided_at: now,
+                updated_at: now,
+              }
+            : t,
+        );
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        setTransactions(sortTransactionsNewestFirst(nextTx));
+        setWallets(activeWalletRows(nextWallets));
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        if (target.savings_goal_id) {
+          const savCached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+          const existingSav = normalizeSavingsList(savCached?.data ?? savings);
+          const nextSav = recomputeSavingsFromLedger(existingSav, nextTx);
+          setSavings(nextSav);
+          await saveOfflineSnapshot(activeFamilyId, "finance", "savings", nextSav);
+        }
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline()) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("transactionVoided") || "Transaction voided", "success");
+        try {
+          await loadBudgets();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -7735,26 +8906,27 @@ function App() {
         await refreshLocalOutboxCount();
         return;
       }
-      setMessage(err.message || "Void failed", "error");
+      setMessage(err.message || t("voidFailed") || "Void failed", "error");
     } finally {
       setVoidBusyId("");
     }
   }
 
   async function createSavingsGoal() {
-    if (!savingsForm.wallet_account_id) {
+    if (savingsBusyId) return false;
+    if (!savingsForm.wallet_account_id || !isActiveWalletId(savingsForm.wallet_account_id)) {
       setMessage(t("walletRequired"), "error");
-      return;
+      return false;
     }
 
-    if (!savingsForm.name.trim()) {
+    if (!savingsForm.name.trim() || savingsForm.name.trim().length < 2) {
       setMessage(t("savingsNameRequired"), "error");
-      return;
+      return false;
     }
 
     if (!savingsForm.target_amount || Number(savingsForm.target_amount) <= 0) {
       setMessage(t("validTargetAmountRequired"), "error");
-      return;
+      return false;
     }
 
     const payload = {
@@ -7769,23 +8941,30 @@ function App() {
     };
 
     try {
+      setSavingsBusyId("create");
       if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+        const existing = normalizeSavingsList(cached?.data ?? savings);
         const row = buildLocalSavingsGoal({
           familyId: activeFamilyId,
           form: savingsForm,
           currency: currencyCode(),
         });
-        const next = [...savings, row];
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const next = recomputeSavingsFromLedger([...existing, row], txs);
         setSavings(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "savings", next);
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
+        setSavingsAction((prev) => ({ ...prev, savings_goal_id: row.id }));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+          setMessage(t("savingsGoalCreated"), "success");
+        } else {
+          setMessage(t("savingsGoalCreatedOffline") || t("savingsGoalCreated"), "success");
         }
         setSavingsForm((prev) => ({ ...prev, name: "", target_amount: "", note: "" }));
-        setMessage(t("savingsGoalCreated"), "success");
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        return;
+        return true;
       }
 
       if (!isBrowserOnline()) {
@@ -7798,20 +8977,14 @@ function App() {
         setSavingsForm((prev) => ({ ...prev, name: "", target_amount: "", note: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
 
       await apiPost(`/savings`, payload);
-
-      setSavingsForm((prev) => ({
-        ...prev,
-        name: "",
-        target_amount: "",
-        note: "",
-      }));
-
+      setSavingsForm((prev) => ({ ...prev, name: "", target_amount: "", note: "" }));
       setMessage(t("savingsGoalCreated"), "success");
       refreshAll();
+      return true;
     } catch (err) {
       const msg = String(err.message || "");
       if (/failed to fetch|network|offline/i.test(msg)) {
@@ -7823,19 +8996,23 @@ function App() {
         });
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
       setMessage(err.message || "Savings create failed", "error");
+      return false;
+    } finally {
+      setSavingsBusyId("");
     }
   }
 
   async function postSavingsAction() {
+    if (savingsBusyId) return;
     if (!savingsAction.savings_goal_id) {
       setMessage(t("savingsGoalRequired"), "error");
       return;
     }
 
-    if (!savingsAction.wallet_account_id) {
+    if (!savingsAction.wallet_account_id || !isActiveWalletId(savingsAction.wallet_account_id)) {
       setMessage(t("walletRequired"), "error");
       return;
     }
@@ -7859,27 +9036,70 @@ function App() {
       client_request_id: `web-savings-${actionOp.toLowerCase()}-${Date.now()}`,
     };
 
-    const applyOptimistic = () => {
-      setWallets((prev) =>
-        (prev || []).map((acc) => {
-          if (acc.id !== savingsAction.wallet_account_id) return acc;
-          const bal = Number(acc.current_balance || 0);
-          const next = actionOp === "DEPOSIT" ? bal - amountNum : bal + amountNum;
-          return { ...acc, current_balance: String(next) };
-        })
-      );
-      setSavings((prev) =>
-        (prev || []).map((goal) => {
-          if (goal.id !== savingsAction.savings_goal_id) return goal;
-          const cur = Number(goal.current_amount || 0);
-          const next = actionOp === "DEPOSIT" ? cur + amountNum : cur - amountNum;
-          return { ...goal, current_amount: String(next) };
-        })
-      );
-      setSavingsAction((prev) => ({ ...prev, amount: "", description: "" }));
-    };
-
     try {
+      setSavingsBusyId("action");
+      if (isCloudLocalMode()) {
+        const savCached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const walCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingSav = normalizeSavingsList(savCached?.data ?? savings);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const existingWallets = Array.isArray(walCached?.data) ? walCached.data : wallets;
+        const goal = existingSav.find((g) => String(g.id) === String(savingsAction.savings_goal_id));
+        if (!goal) throw new Error(t("savingsGoalRequired") || "Savings goal required");
+        if (String(goal.status || "").toUpperCase() !== "ACTIVE") {
+          setMessage(t("onlyActiveSavingsAction") || "Only active savings goals can be used", "error");
+          return;
+        }
+        const balNow = Number(goal.current_amount ?? goal.saved_amount ?? 0);
+        if (actionOp === "WITHDRAW" && amountNum > balNow + 0.0001) {
+          setMessage(t("insufficientSavingsBalance") || "Insufficient savings balance", "error");
+          return;
+        }
+        const wallet = existingWallets.find((w) => String(w.id) === String(savingsAction.wallet_account_id));
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return;
+        }
+        if (actionOp === "DEPOSIT") {
+          const wBal = Number(wallet.balance ?? wallet.current_balance ?? 0);
+          if (amountNum > wBal + 0.0001) {
+            setMessage(t("insufficientWalletBalance") || "Insufficient wallet balance", "error");
+            return;
+          }
+        }
+        const movement = buildSavingsMovementTx({
+          familyId: activeFamilyId,
+          goal,
+          walletId: savingsAction.wallet_account_id,
+          amount: amountNum,
+          currency: currencyCode(),
+          action: actionOp,
+          description: savingsAction.description,
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextSav = recomputeSavingsFromLedger(existingSav, nextTx);
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setSavings(nextSav);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "savings", nextSav);
+        setSavingsAction((prev) => ({ ...prev, amount: "", description: "" }));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(
+          actionOp === "DEPOSIT"
+            ? t("savingsDepositPosted") || "Savings deposit posted"
+            : t("savingsWithdrawPosted") || "Savings withdraw posted",
+          "success",
+        );
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -7888,7 +9108,7 @@ function App() {
           entity_id: savingsAction.savings_goal_id,
           payload,
         });
-        applyOptimistic();
+        setSavingsAction((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -7916,19 +9136,13 @@ function App() {
         });
       }
 
-      setSavingsAction((prev) => ({
-        ...prev,
-        amount: "",
-        description: "",
-      }));
-
+      setSavingsAction((prev) => ({ ...prev, amount: "", description: "" }));
       setMessage(
         savingsAction.action === "deposit"
-          ? "Savings deposit posted"
-          : "Savings withdraw posted",
-        "success"
+          ? t("savingsDepositPosted") || "Savings deposit posted"
+          : t("savingsWithdrawPosted") || "Savings withdraw posted",
+        "success",
       );
-
       refreshAll();
     } catch (err) {
       const msg = String(err.message || "");
@@ -7940,29 +9154,30 @@ function App() {
           entity_id: savingsAction.savings_goal_id,
           payload,
         });
-        applyOptimistic();
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
       }
       setMessage(err.message || "Savings action failed", "error");
+    } finally {
+      setSavingsBusyId("");
     }
   }
 
   async function createLoan() {
     if (!loanForm.wallet_account_id) {
       setMessage(t("walletRequired"), "error");
-      return;
+      return false;
     }
 
     if (!loanForm.person_name.trim()) {
       setMessage(t("personNameRequired"), "error");
-      return;
+      return false;
     }
 
     if (!loanForm.principal_amount || Number(loanForm.principal_amount) <= 0) {
       setMessage(t("validLoanAmountRequired"), "error");
-      return;
+      return false;
     }
 
     const payload = {
@@ -7987,17 +9202,60 @@ function App() {
           form: loanForm,
           currency: currencyCode(),
         });
-        const next = [...loans, row];
-        setLoans(next);
-        await saveOfflineSnapshot(activeFamilyId, "finance", "loans", next);
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
+        const principal = Number(row.principal_amount) || 0;
+        const walletCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingWallets = Array.isArray(walletCached?.data) ? walletCached.data : wallets;
+        const wallet = (existingWallets || []).find((w) => String(w.id) === String(row.wallet_account_id));
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return false;
         }
-        setLoanForm((prev) => ({ ...prev, person_name: "", principal_amount: "", note: "" }));
-        setMessage(t("loanCreated"), "success");
+        if (String(row.loan_type).toUpperCase() === "GIVEN" && walletBalance(wallet) < principal) {
+          setMessage(t("insufficientWalletBalance") || "Insufficient wallet balance", "error");
+          return false;
+        }
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const loanCached = await loadOfflineSnapshot(activeFamilyId, "finance", "loans").catch(() => null);
+        const existingLoans = Array.isArray(loanCached?.data) ? loanCached.data : loans;
+        const movement = buildLoanMovementTx({
+          familyId: activeFamilyId,
+          loan: row,
+          walletId: row.wallet_account_id,
+          amount: principal,
+          currency: currencyCode(),
+          kind: "DISBURSE",
+          description: row.note,
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextLoans = [row, ...existingLoans];
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setLoans(nextLoans);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "loans", nextLoans);
+        setLoanForm((prev) => ({
+          ...prev,
+          person_name: "",
+          principal_amount: "",
+          note: "",
+          interest_rate: "0",
+          interest_type: "NONE",
+          installment_count: "",
+          start_date: "",
+        }));
+        setLoanPaymentForm((prev) => ({
+          ...prev,
+          loan_id: prev.loan_id || row.id,
+        }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        return;
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("loanCreated"), "success");
+        return true;
       }
 
       if (!isBrowserOnline()) {
@@ -8010,7 +9268,7 @@ function App() {
         setLoanForm((prev) => ({ ...prev, person_name: "", principal_amount: "", note: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
 
       await apiPost(`/loans`, payload);
@@ -8024,6 +9282,7 @@ function App() {
 
       setMessage(t("loanCreated"), "success");
       refreshAll();
+      return true;
     } catch (err) {
       const msg = String(err.message || "");
       if (/failed to fetch|network|offline/i.test(msg)) {
@@ -8035,9 +9294,10 @@ function App() {
         });
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
       setMessage(err.message || "Loan create failed", "error");
+      return false;
     }
   }
 
@@ -8069,33 +9329,65 @@ function App() {
       client_request_id: `web-loan-pay-${Date.now()}`,
     };
 
-    const applyOptimistic = () => {
-      const loanType = String(loanRow?.loan_type || "").toUpperCase();
-      setWallets((prev) =>
-        (prev || []).map((acc) => {
-          if (acc.id !== loanPaymentForm.wallet_account_id) return acc;
-          const bal = Number(acc.current_balance || 0);
-          const next = loanType === "GIVEN" ? bal + amountNum : bal - amountNum;
-          return { ...acc, current_balance: String(next) };
-        })
-      );
-      setLoans((prev) =>
-        (prev || []).map((loan) => {
-          if (loan.id !== loanPaymentForm.loan_id) return loan;
-          const remaining = Math.max(0, Number(loan.remaining_amount || 0) - amountNum);
-          const paid = Number(loan.paid_amount || 0) + amountNum;
-          return {
-            ...loan,
-            remaining_amount: String(remaining),
-            paid_amount: String(paid),
-            status: remaining <= 0 ? "CLOSED" : loan.status,
-          };
-        })
-      );
-      setLoanPaymentForm((prev) => ({ ...prev, amount: "", description: "" }));
-    };
-
     try {
+      if (isCloudLocalMode()) {
+        if (!loanRow || String(loanRow.status || "").toUpperCase() !== "ACTIVE") {
+          setMessage(t("loanRequired"), "error");
+          return;
+        }
+        const remaining = Number(loanRow.remaining_amount || 0);
+        if (amountNum > remaining + 0.0001) {
+          setMessage(t("validPaymentAmountRequired"), "error");
+          return;
+        }
+        const walletCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingWallets = Array.isArray(walletCached?.data) ? walletCached.data : wallets;
+        const wallet = (existingWallets || []).find(
+          (w) => String(w.id) === String(loanPaymentForm.wallet_account_id),
+        );
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return;
+        }
+        const loanType = String(loanRow.loan_type || "").toUpperCase();
+        if (loanType === "TAKEN" && walletBalance(wallet) < amountNum) {
+          setMessage(t("insufficientWalletBalance") || "Insufficient wallet balance", "error");
+          return;
+        }
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const loanCached = await loadOfflineSnapshot(activeFamilyId, "finance", "loans").catch(() => null);
+        const existingLoans = Array.isArray(loanCached?.data) ? loanCached.data : loans;
+        const updatedLoan = applyLoanPayment(loanRow, amountNum);
+        const movement = buildLoanMovementTx({
+          familyId: activeFamilyId,
+          loan: loanRow,
+          walletId: loanPaymentForm.wallet_account_id,
+          amount: amountNum,
+          currency: currencyCode(),
+          kind: "REPAYMENT",
+          description: loanPaymentForm.description,
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextLoans = existingLoans.map((loan) =>
+          String(loan.id) === String(loanRow.id) ? updatedLoan : loan,
+        );
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setLoans(nextLoans);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "loans", nextLoans);
+        setLoanPaymentForm((prev) => ({ ...prev, amount: "", description: "" }));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("loanPaymentPosted"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8104,7 +9396,21 @@ function App() {
           entity_id: loanPaymentForm.loan_id,
           payload,
         });
-        applyOptimistic();
+        const loanType = String(loanRow?.loan_type || "").toUpperCase();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== loanPaymentForm.wallet_account_id) return acc;
+            const bal = Number(acc.current_balance || 0);
+            const next = loanType === "GIVEN" ? bal + amountNum : bal - amountNum;
+            return { ...acc, current_balance: String(next) };
+          }),
+        );
+        setLoans((prev) =>
+          (prev || []).map((loan) =>
+            loan.id === loanPaymentForm.loan_id ? applyLoanPayment(loan, amountNum) : loan,
+          ),
+        );
+        setLoanPaymentForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8137,7 +9443,21 @@ function App() {
           entity_id: loanPaymentForm.loan_id,
           payload,
         });
-        applyOptimistic();
+        const loanType = String(loanRow?.loan_type || "").toUpperCase();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== loanPaymentForm.wallet_account_id) return acc;
+            const bal = Number(acc.current_balance || 0);
+            const next = loanType === "GIVEN" ? bal + amountNum : bal - amountNum;
+            return { ...acc, current_balance: String(next) };
+          }),
+        );
+        setLoans((prev) =>
+          (prev || []).map((loan) =>
+            loan.id === loanPaymentForm.loan_id ? applyLoanPayment(loan, amountNum) : loan,
+          ),
+        );
+        setLoanPaymentForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8147,19 +9467,20 @@ function App() {
   }
 
   async function createBudget() {
+    if (budgetBusyId) return false;
     if (!budgetForm.category_id) {
       setMessage(t("expenseCategoryRequired"), "error");
-      return;
+      return false;
     }
 
-    if (!budgetForm.name.trim()) {
+    if (!budgetForm.name.trim() || budgetForm.name.trim().length < 2) {
       setMessage(t("budgetNameRequired"), "error");
-      return;
+      return false;
     }
 
     if (!budgetForm.budget_amount || Number(budgetForm.budget_amount) <= 0) {
       setMessage(t("validBudgetAmountRequired"), "error");
-      return;
+      return false;
     }
 
     const payload = {
@@ -8174,26 +9495,46 @@ function App() {
     };
 
     try {
+      setBudgetBusyId("create");
       if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "budgets").catch(() => null);
+        const existing = normalizeBudgetsList(cached?.data ?? budgets);
+        const dupKey = budgetDuplicateKey({
+          category_id: budgetForm.category_id,
+          period_type: budgetForm.period_type,
+        });
+        const dup = existing.find(
+          (b) =>
+            String(b.status || "").toUpperCase() === "ACTIVE" && budgetDuplicateKey(b) === dupKey,
+        );
+        if (dup) {
+          setMessage(t("budgetDuplicateActive") || "An active budget already exists for this category and period", "error");
+          return false;
+        }
+        const catCached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+        const cats = Array.isArray(catCached?.data) ? catCached.data : categories;
+        const cat = cats.find((c) => String(c.id) === String(budgetForm.category_id));
         const row = buildLocalBudget({
           familyId: activeFamilyId,
           form: budgetForm,
           currency: currencyCode(),
+          categoryName: cat?.name_en || cat?.name || "",
         });
-        const next = [...budgets, row];
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const nextRaw = persistableBudgets([...existing, row]);
+        const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
         setBudgets(next);
-        await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", {
-          data: next,
-          statusData: budgetStatus || {},
-        });
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
+        await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+          setMessage(t("budgetCreated"), "success");
+        } else {
+          setMessage(t("budgetCreatedOffline") || t("budgetCreated"), "success");
         }
         setBudgetForm((prev) => ({ ...prev, name: "", budget_amount: "", note: "" }));
-        setMessage(t("budgetCreated"), "success");
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        return;
+        return true;
       }
 
       if (!isBrowserOnline()) {
@@ -8206,7 +9547,7 @@ function App() {
         setBudgetForm((prev) => ({ ...prev, name: "", budget_amount: "", note: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
 
       await apiPost(`/budgets`, payload);
@@ -8220,6 +9561,7 @@ function App() {
 
       setMessage(t("budgetCreated"), "success");
       refreshAll();
+      return true;
     } catch (err) {
       const msg = String(err.message || "");
       if (/failed to fetch|network|offline/i.test(msg)) {
@@ -8231,9 +9573,12 @@ function App() {
         });
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
-        return;
+        return true;
       }
-      setMessage(err.message || "Budget create failed", "error");
+      setMessage(err.message || t("budgetLoadFailed") || "Budget create failed", "error");
+      return false;
+    } finally {
+      setBudgetBusyId("");
     }
   }
 
@@ -8263,18 +9608,22 @@ function App() {
 
     try {
       if (isCloudLocalMode()) {
-        const row = buildLocalGoal({
-          familyId: activeFamilyId,
-          form: goalForm,
-          currency: currencyCode(),
-        });
-        const next = [...goals, row];
+        const row = enrichGoals([
+          buildLocalGoal({
+            familyId: activeFamilyId,
+            form: goalForm,
+            currency: currencyCode(),
+          }),
+        ])[0];
+        const goalCached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+        const existing = Array.isArray(goalCached?.data) ? goalCached.data : goals;
+        const next = enrichGoals([row, ...existing]);
+        const summary = buildGoalSummary(next);
         setGoals(next);
+        setGoalSummary(summary);
         await saveOfflineSnapshot(activeFamilyId, "finance", "goals", next);
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
-        }
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
+        setGoalContributionForm((prev) => ({ ...prev, goal_id: prev.goal_id || row.id }));
         setGoalForm({
           goal_name: "",
           goal_type: "GENERAL",
@@ -8283,8 +9632,11 @@ function App() {
           target_date: "",
           note: "",
         });
-        setMessage(t("goalCreated"), "success");
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("goalCreated"), "success");
         return;
       }
 
@@ -8355,6 +9707,7 @@ function App() {
     }
 
     const amountNum = Number(goalContributionForm.amount);
+    const goalRow = (goals || []).find((row) => row.id === goalContributionForm.goal_id);
     const payload = {
       family_id: activeFamilyId,
       goal_id: goalContributionForm.goal_id,
@@ -8365,29 +9718,59 @@ function App() {
       client_request_id: `web-goal-contribute-${Date.now()}`,
     };
 
-    const applyOptimistic = () => {
-      setWallets((prev) =>
-        (prev || []).map((acc) => {
-          if (acc.id !== goalContributionForm.wallet_account_id) return acc;
-          return { ...acc, current_balance: String(Number(acc.current_balance || 0) - amountNum) };
-        })
-      );
-      setGoals((prev) =>
-        (prev || []).map((goal) => {
-          if (goal.id !== goalContributionForm.goal_id) return goal;
-          const next = Number(goal.current_amount || 0) + amountNum;
-          const target = Number(goal.target_amount || 0);
-          return {
-            ...goal,
-            current_amount: String(next),
-            status: target > 0 && next >= target ? "COMPLETED" : goal.status,
-          };
-        })
-      );
-      setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
-    };
-
     try {
+      if (isCloudLocalMode()) {
+        if (!goalRow || String(goalRow.status || "").toUpperCase() === "CLOSED") {
+          setMessage(t("goalRequired"), "error");
+          return;
+        }
+        const walletCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingWallets = Array.isArray(walletCached?.data) ? walletCached.data : wallets;
+        const wallet = (existingWallets || []).find(
+          (w) => String(w.id) === String(goalContributionForm.wallet_account_id),
+        );
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return;
+        }
+        if (walletBalance(wallet) < amountNum) {
+          setMessage(t("insufficientWalletBalance") || "Insufficient wallet balance", "error");
+          return;
+        }
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const goalCached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+        const existingGoals = Array.isArray(goalCached?.data) ? goalCached.data : goals;
+        const movement = buildGoalMovementTx({
+          familyId: activeFamilyId,
+          goal: goalRow,
+          walletId: goalContributionForm.wallet_account_id,
+          amount: amountNum,
+          currency: currencyCode(),
+          kind: "CONTRIBUTE",
+          description: goalContributionForm.description,
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextGoals = recomputeGoalsFromLedger(existingGoals, nextTx);
+        const summary = buildGoalSummary(nextGoals);
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setGoals(nextGoals);
+        setGoalSummary(summary);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goals", nextGoals);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("goalContributionPosted"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8396,7 +9779,27 @@ function App() {
           entity_id: goalContributionForm.goal_id,
           payload,
         });
-        applyOptimistic();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== goalContributionForm.wallet_account_id) return acc;
+            return { ...acc, current_balance: String(Number(acc.current_balance || 0) - amountNum) };
+          }),
+        );
+        setGoals((prev) =>
+          enrichGoals(
+            (prev || []).map((goal) => {
+              if (goal.id !== goalContributionForm.goal_id) return goal;
+              const next = Number(goal.current_amount || 0) + amountNum;
+              const target = Number(goal.target_amount || 0);
+              return {
+                ...goal,
+                current_amount: next,
+                status: target > 0 && next >= target ? "COMPLETED" : goal.status,
+              };
+            }),
+          ),
+        );
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8429,7 +9832,27 @@ function App() {
           entity_id: goalContributionForm.goal_id,
           payload,
         });
-        applyOptimistic();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== goalContributionForm.wallet_account_id) return acc;
+            return { ...acc, current_balance: String(Number(acc.current_balance || 0) - amountNum) };
+          }),
+        );
+        setGoals((prev) =>
+          enrichGoals(
+            (prev || []).map((goal) => {
+              if (goal.id !== goalContributionForm.goal_id) return goal;
+              const next = Number(goal.current_amount || 0) + amountNum;
+              const target = Number(goal.target_amount || 0);
+              return {
+                ...goal,
+                current_amount: next,
+                status: target > 0 && next >= target ? "COMPLETED" : goal.status,
+              };
+            }),
+          ),
+        );
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8455,6 +9878,7 @@ function App() {
     }
 
     const amountNum = Number(goalContributionForm.amount);
+    const goalRow = (goals || []).find((row) => row.id === goalContributionForm.goal_id);
     const payload = {
       family_id: activeFamilyId,
       goal_id: goalContributionForm.goal_id,
@@ -8465,29 +9889,59 @@ function App() {
       client_request_id: `web-goal-withdraw-${Date.now()}`,
     };
 
-    const applyOptimistic = () => {
-      setWallets((prev) =>
-        (prev || []).map((acc) => {
-          if (acc.id !== goalContributionForm.wallet_account_id) return acc;
-          return { ...acc, current_balance: String(Number(acc.current_balance || 0) + amountNum) };
-        })
-      );
-      setGoals((prev) =>
-        (prev || []).map((goal) => {
-          if (goal.id !== goalContributionForm.goal_id) return goal;
-          const next = Math.max(0, Number(goal.current_amount || 0) - amountNum);
-          const target = Number(goal.target_amount || 0);
-          return {
-            ...goal,
-            current_amount: String(next),
-            status: goal.status === "COMPLETED" && next < target ? "ACTIVE" : goal.status,
-          };
-        })
-      );
-      setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
-    };
-
     try {
+      if (isCloudLocalMode()) {
+        if (!goalRow || String(goalRow.status || "").toUpperCase() === "CLOSED") {
+          setMessage(t("goalRequired"), "error");
+          return;
+        }
+        if (amountNum > Number(goalRow.current_amount || 0) + 0.0001) {
+          setMessage(t("validAmountRequired"), "error");
+          return;
+        }
+        const walletCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingWallets = Array.isArray(walletCached?.data) ? walletCached.data : wallets;
+        const wallet = (existingWallets || []).find(
+          (w) => String(w.id) === String(goalContributionForm.wallet_account_id),
+        );
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return;
+        }
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const goalCached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+        const existingGoals = Array.isArray(goalCached?.data) ? goalCached.data : goals;
+        const movement = buildGoalMovementTx({
+          familyId: activeFamilyId,
+          goal: goalRow,
+          walletId: goalContributionForm.wallet_account_id,
+          amount: amountNum,
+          currency: currencyCode(),
+          kind: "WITHDRAW",
+          description: goalContributionForm.description,
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextGoals = recomputeGoalsFromLedger(existingGoals, nextTx);
+        const summary = buildGoalSummary(nextGoals);
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setGoals(nextGoals);
+        setGoalSummary(summary);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goals", nextGoals);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("goalWithdrawPosted"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8496,7 +9950,27 @@ function App() {
           entity_id: goalContributionForm.goal_id,
           payload,
         });
-        applyOptimistic();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== goalContributionForm.wallet_account_id) return acc;
+            return { ...acc, current_balance: String(Number(acc.current_balance || 0) + amountNum) };
+          }),
+        );
+        setGoals((prev) =>
+          enrichGoals(
+            (prev || []).map((goal) => {
+              if (goal.id !== goalContributionForm.goal_id) return goal;
+              const next = Math.max(0, Number(goal.current_amount || 0) - amountNum);
+              const target = Number(goal.target_amount || 0);
+              return {
+                ...goal,
+                current_amount: next,
+                status: goal.status === "COMPLETED" && next < target ? "ACTIVE" : goal.status,
+              };
+            }),
+          ),
+        );
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8529,7 +10003,27 @@ function App() {
           entity_id: goalContributionForm.goal_id,
           payload,
         });
-        applyOptimistic();
+        setWallets((prev) =>
+          (prev || []).map((acc) => {
+            if (acc.id !== goalContributionForm.wallet_account_id) return acc;
+            return { ...acc, current_balance: String(Number(acc.current_balance || 0) + amountNum) };
+          }),
+        );
+        setGoals((prev) =>
+          enrichGoals(
+            (prev || []).map((goal) => {
+              if (goal.id !== goalContributionForm.goal_id) return goal;
+              const next = Math.max(0, Number(goal.current_amount || 0) - amountNum);
+              const target = Number(goal.target_amount || 0);
+              return {
+                ...goal,
+                current_amount: next,
+                status: goal.status === "COMPLETED" && next < target ? "ACTIVE" : goal.status,
+              };
+            }),
+          ),
+        );
+        setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
         return;
@@ -8581,15 +10075,50 @@ function App() {
       return;
     }
 
+    const payload = {
+      family_id: activeFamilyId,
+      goal_name: goalEditModal.goal_name.trim(),
+      goal_type: goalEditModal.goal_type,
+      target_amount: goalEditModal.target_amount,
+      target_date: goalEditModal.target_date || null,
+      note: goalEditModal.note,
+    };
+
     try {
-      await apiPatch(`/goals/${goalEditModal.goal.id}`, {
-        family_id: activeFamilyId,
-        goal_name: goalEditModal.goal_name.trim(),
-        goal_type: goalEditModal.goal_type,
-        target_amount: goalEditModal.target_amount,
-        target_date: goalEditModal.target_date || null,
-        note: goalEditModal.note,
-      });
+      if (isCloudLocalMode()) {
+        const goalCached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+        const existing = Array.isArray(goalCached?.data) ? goalCached.data : goals;
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const nextRaw = existing.map((goal) =>
+          String(goal.id) === String(goalEditModal.goal.id)
+            ? {
+                ...goal,
+                goal_name: payload.goal_name,
+                name: payload.goal_name,
+                goal_type: payload.goal_type || goal.goal_type,
+                target_amount: Number(payload.target_amount),
+                target_date: payload.target_date,
+                note: payload.note || "",
+                updated_at: new Date().toISOString(),
+              }
+            : goal,
+        );
+        const next = recomputeGoalsFromLedger(nextRaw, txs);
+        const summary = buildGoalSummary(next);
+        setGoals(next);
+        setGoalSummary(summary);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goals", next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
+        closeGoalEdit();
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("goalUpdated"), "success");
+        return;
+      }
+
+      await apiPatch(`/goals/${goalEditModal.goal.id}`, payload);
 
       closeGoalEdit();
       setMessage(t("goalUpdated"), "success");
@@ -8608,6 +10137,20 @@ function App() {
     });
 
     try {
+      if (isCloudLocalMode()) {
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const history = goalHistoryFromLedger(item.id, txs);
+        setGoalHistoryModal({
+          open: true,
+          loading: false,
+          goal: item,
+          history,
+        });
+        setMessage(t("goalHistoryLoaded"), "success");
+        return;
+      }
+
       const data = await apiGet(`/goals/${item.id}/history/${activeFamilyId}`);
 
       setGoalHistoryModal({
@@ -8640,10 +10183,32 @@ function App() {
   }
 
   async function closeGoal(item) {
-    const ok = window.confirm(`Close goal "${item.goal_name}"?`);
+    const ok = window.confirm(t("confirmCloseGoal") || `Close goal "${item.goal_name}"?`);
     if (!ok) return;
 
     try {
+      if (isCloudLocalMode()) {
+        const goalCached = await loadOfflineSnapshot(activeFamilyId, "finance", "goals").catch(() => null);
+        const existing = Array.isArray(goalCached?.data) ? goalCached.data : goals;
+        const next = enrichGoals(
+          existing.map((goal) =>
+            String(goal.id) === String(item.id)
+              ? { ...goal, status: "CLOSED", updated_at: new Date().toISOString() }
+              : goal,
+          ),
+        );
+        const summary = buildGoalSummary(next);
+        setGoals(next);
+        setGoalSummary(summary);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goals", next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("goalClosed"), "success");
+        return;
+      }
+
       await apiPost(`/goals/${item.id}/close`, {
         family_id: activeFamilyId,
         reason: "Closed from frontend",
@@ -8699,13 +10264,11 @@ function App() {
           form: recurringForm,
           currency: currencyCode(),
         });
-        const next = [...recurringItems, row];
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : recurringItems;
+        const next = [row, ...existing];
         setRecurringItems(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
-        if (isBrowserOnline()) {
-          await pushCloudSnapshotIfReady();
-          runCloudAutoBackup({ force: true });
-        }
         setRecurringForm((prev) => ({
           ...prev,
           title: "",
@@ -8713,7 +10276,10 @@ function App() {
           description: "",
           end_date: "",
         }));
-        setMessage(t("recurringCreated") || t("saved") || "Recurring created", "success");
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringCreated"), "success");
         return;
       }
 
@@ -8764,10 +10330,56 @@ function App() {
   }
 
   async function postRecurring(item) {
-    const ok = window.confirm(`Post recurring "${item.title}" now?`);
+    const ok = window.confirm(t("confirmPostRecurring") || `Post recurring "${item.title}" now?`);
     if (!ok) return;
 
     try {
+      if (isCloudLocalMode()) {
+        if (String(item.status || "").toUpperCase() !== "ACTIVE") {
+          setMessage(t("recurringPosted") || "Recurring post failed", "error");
+          return;
+        }
+        const amountNum = Number(item.amount) || 0;
+        const walletCached = await loadOfflineSnapshot(activeFamilyId, "finance", "wallets").catch(() => null);
+        const existingWallets = Array.isArray(walletCached?.data) ? walletCached.data : wallets;
+        const wallet = (existingWallets || []).find((w) => String(w.id) === String(item.account_id));
+        if (!wallet || wallet.deleted_at || wallet.is_active === false) {
+          setMessage(t("walletRequired"), "error");
+          return;
+        }
+        const isExpense = !String(item.transaction_type || "").toUpperCase().includes("INCOME");
+        if (isExpense && walletBalance(wallet) < amountNum) {
+          setMessage(t("insufficientWalletBalance") || "Insufficient wallet balance", "error");
+          return;
+        }
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const existingTx = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const recCached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existingRec = Array.isArray(recCached?.data) ? recCached.data : recurringItems;
+        const movement = buildRecurringPostTx({
+          familyId: activeFamilyId,
+          item,
+          currency: currencyCode(),
+        });
+        const nextTx = sortTransactionsNewestFirst([movement, ...existingTx]);
+        const nextWallets = recomputeWalletBalancesFromLedger(existingWallets, nextTx);
+        const nextRec = existingRec.map((row) =>
+          String(row.id) === String(item.id) ? advanceRecurringAfterPost(row) : row,
+        );
+        setTransactions(nextTx);
+        setWallets(activeWalletRows(nextWallets));
+        setRecurringItems(nextRec);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", nextTx);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", nextRec);
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringPosted"), "success");
+        return;
+      }
+
       await apiPost(`/recurring/${item.id}/post`, {});
       setMessage(t("recurringPosted"), "success");
       refreshAll();
@@ -8818,15 +10430,43 @@ function App() {
       return;
     }
 
+    const payload = {
+      family_id: activeFamilyId,
+      title: recurringEditModal.title.trim(),
+      amount: recurringEditModal.amount,
+      frequency: recurringEditModal.frequency,
+      end_date: recurringEditModal.end_date || null,
+      description: recurringEditModal.description,
+    };
+
     try {
-      await apiPatch(`/recurring/${recurringEditModal.item.id}`, {
-        family_id: activeFamilyId,
-        title: recurringEditModal.title.trim(),
-        amount: recurringEditModal.amount,
-        frequency: recurringEditModal.frequency,
-        end_date: recurringEditModal.end_date || null,
-        description: recurringEditModal.description,
-      });
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : recurringItems;
+        const next = existing.map((row) =>
+          String(row.id) === String(recurringEditModal.item.id)
+            ? {
+                ...row,
+                title: payload.title,
+                amount: Number(payload.amount),
+                frequency: payload.frequency || row.frequency,
+                end_date: payload.end_date,
+                description: payload.description || "",
+                updated_at: new Date().toISOString(),
+              }
+            : row,
+        );
+        setRecurringItems(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
+        closeRecurringEdit();
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringUpdated"), "success");
+        return;
+      }
+
+      await apiPatch(`/recurring/${recurringEditModal.item.id}`, payload);
 
       closeRecurringEdit();
       setMessage(t("recurringUpdated"), "success");
@@ -8837,11 +10477,28 @@ function App() {
   }
 
   async function pauseRecurring(item) {
-    const ok = window.confirm(`Pause recurring "${item.title}"?`);
+    const ok = window.confirm(t("confirmPauseRecurring") || `Pause recurring "${item.title}"?`);
     if (!ok) return;
 
     const payload = { family_id: activeFamilyId, entity_id: item.id, id: item.id };
     try {
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : recurringItems;
+        const next = existing.map((row) =>
+          String(row.id) === String(item.id)
+            ? { ...row, status: "PAUSED", updated_at: new Date().toISOString() }
+            : row,
+        );
+        setRecurringItems(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringPaused"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8851,7 +10508,7 @@ function App() {
           payload,
         });
         setRecurringItems((prev) =>
-          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "PAUSED" } : row))
+          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "PAUSED" } : row)),
         );
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
@@ -8879,11 +10536,28 @@ function App() {
   }
 
   async function resumeRecurring(item) {
-    const ok = window.confirm(`Resume recurring "${item.title}"?`);
+    const ok = window.confirm(t("confirmResumeRecurring") || `Resume recurring "${item.title}"?`);
     if (!ok) return;
 
     const payload = { family_id: activeFamilyId, entity_id: item.id, id: item.id };
     try {
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : recurringItems;
+        const next = existing.map((row) =>
+          String(row.id) === String(item.id)
+            ? { ...row, status: "ACTIVE", updated_at: new Date().toISOString() }
+            : row,
+        );
+        setRecurringItems(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringResumed"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8893,7 +10567,7 @@ function App() {
           payload,
         });
         setRecurringItems((prev) =>
-          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "ACTIVE" } : row))
+          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "ACTIVE" } : row)),
         );
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
@@ -8921,11 +10595,28 @@ function App() {
   }
 
   async function closeRecurring(item) {
-    const ok = window.confirm(`Close recurring "${item.title}"?`);
+    const ok = window.confirm(t("confirmCloseRecurring") || `Close recurring "${item.title}"?`);
     if (!ok) return;
 
     const payload = { family_id: activeFamilyId, entity_id: item.id, id: item.id };
     try {
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "recurring").catch(() => null);
+        const existing = Array.isArray(cached?.data) ? cached.data : recurringItems;
+        const next = existing.map((row) =>
+          String(row.id) === String(item.id)
+            ? { ...row, status: "CLOSED", updated_at: new Date().toISOString() }
+            : row,
+        );
+        setRecurringItems(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("recurringClosed"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -8935,7 +10626,7 @@ function App() {
           payload,
         });
         setRecurringItems((prev) =>
-          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "CLOSED" } : row))
+          (prev || []).map((row) => (row.id === item.id ? { ...row, status: "CLOSED" } : row)),
         );
         setMessage(t("syncQueuedOffline"), "success");
         await refreshLocalOutboxCount();
@@ -8966,6 +10657,20 @@ function App() {
     setRecurringHistoryModal({ open: true, loading: true, item, history: [] });
 
     try {
+      if (isCloudLocalMode()) {
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const history = recurringHistoryFromLedger(item.id, txs);
+        setRecurringHistoryModal({
+          open: true,
+          loading: false,
+          item,
+          history,
+        });
+        setMessage(t("recurringHistoryLoaded"), "success");
+        return;
+      }
+
       const data = await apiGet(`/recurring/${item.id}/history/${activeFamilyId}`);
       setRecurringHistoryModal({
         open: true,
@@ -8985,7 +10690,7 @@ function App() {
   }
 
   function openBudgetEdit(item) {
-    if (item.status !== "ACTIVE") {
+    if (String(item.status || "").toUpperCase() !== "ACTIVE") {
       setMessage(t("onlyActiveBudgetEdit"), "error");
       return;
     }
@@ -8996,6 +10701,8 @@ function App() {
       name: item.name || "",
       budget_amount: item.budget_amount || "",
       note: item.note || "",
+      category_id: item.category_id || "",
+      period_type: item.period_type || "MONTHLY",
     });
   }
 
@@ -9006,13 +10713,15 @@ function App() {
       name: "",
       budget_amount: "",
       note: "",
+      category_id: "",
+      period_type: "MONTHLY",
     });
   }
 
   async function saveBudgetEdit() {
-    if (!budgetEditModal.budget) return;
+    if (!budgetEditModal.budget || budgetBusyId) return;
 
-    if (!budgetEditModal.name.trim()) {
+    if (!budgetEditModal.name.trim() || budgetEditModal.name.trim().length < 2) {
       setMessage(t("budgetNameRequired"), "error");
       return;
     }
@@ -9022,14 +10731,75 @@ function App() {
       return;
     }
 
+    if (!budgetEditModal.category_id) {
+      setMessage(t("expenseCategoryRequired"), "error");
+      return;
+    }
+
     const payload = {
       family_id: activeFamilyId,
       name: budgetEditModal.name.trim(),
       budget_amount: budgetEditModal.budget_amount,
       note: budgetEditModal.note,
+      category_id: budgetEditModal.category_id,
+      period_type: budgetEditModal.period_type || "MONTHLY",
     };
 
     try {
+      setBudgetBusyId(String(budgetEditModal.budget.id));
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "budgets").catch(() => null);
+        const existing = normalizeBudgetsList(cached?.data ?? budgets);
+        const dupKey = budgetDuplicateKey({
+          category_id: payload.category_id,
+          period_type: payload.period_type,
+        });
+        const dup = existing.find(
+          (b) =>
+            String(b.id) !== String(budgetEditModal.budget.id) &&
+            String(b.status || "").toUpperCase() === "ACTIVE" &&
+            budgetDuplicateKey(b) === dupKey,
+        );
+        if (dup) {
+          setMessage(
+            t("budgetDuplicateActive") || "An active budget already exists for this category and period",
+            "error",
+          );
+          return;
+        }
+        const catCached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+        const cats = Array.isArray(catCached?.data) ? catCached.data : categories;
+        const cat = cats.find((c) => String(c.id) === String(payload.category_id));
+        const nextRaw = persistableBudgets(
+          existing.map((b) =>
+            String(b.id) === String(budgetEditModal.budget.id)
+              ? {
+                  ...b,
+                  name: payload.name,
+                  budget_amount: Number(payload.budget_amount),
+                  note: payload.note || "",
+                  category_id: payload.category_id,
+                  category_name: cat?.name_en || cat?.name || b.category_name || "",
+                  period_type: payload.period_type,
+                  updated_at: new Date().toISOString(),
+                }
+              : b,
+          ),
+        );
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
+        setBudgets(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        closeBudgetEdit();
+        setMessage(t("budgetUpdated"), "success");
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9064,14 +10834,43 @@ function App() {
         return;
       }
       setMessage(err.message || "Budget update failed", "error");
+    } finally {
+      setBudgetBusyId("");
     }
   }
 
   async function closeBudget(item) {
-    const ok = window.confirm(`Close budget "${item.name}"?`);
+    if (budgetBusyId) return;
+    const ok = window.confirm(t("confirmCloseBudget") || `Close budget "${item.name}"?`);
     if (!ok) return;
 
     try {
+      setBudgetBusyId(String(item.id));
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "budgets").catch(() => null);
+        const existing = normalizeBudgetsList(cached?.data ?? budgets);
+        const nextRaw = persistableBudgets(
+          existing.map((b) =>
+            String(b.id) === String(item.id)
+              ? { ...b, status: "CLOSED", updated_at: new Date().toISOString() }
+              : b,
+          ),
+        );
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const catCached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const cats = Array.isArray(catCached?.data) ? catCached.data : categories;
+        const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
+        setBudgets(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("budgetClosed"), "success");
+        setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9093,7 +10892,22 @@ function App() {
       setMessage(t("budgetClosed"), "success");
       refreshAll();
     } catch (err) {
+      const msg = String(err.message || "");
+      if (/failed to fetch|network|offline/i.test(msg)) {
+        await enqueueOutboxChange({
+          familyId: activeFamilyId,
+          entity_type: "budgets",
+          entity_id: item.id,
+          operation: "DELETE",
+          payload: { family_id: activeFamilyId, status: "CLOSED" },
+        });
+        setMessage(t("syncQueuedOffline"), "success");
+        await refreshLocalOutboxCount();
+        return;
+      }
       setMessage(err.message || "Budget close failed", "error");
+    } finally {
+      setBudgetBusyId("");
     }
   }
 
@@ -9135,6 +10949,29 @@ function App() {
     };
 
     try {
+      if (isCloudLocalMode()) {
+        const loanCached = await loadOfflineSnapshot(activeFamilyId, "finance", "loans").catch(() => null);
+        const existing = Array.isArray(loanCached?.data) ? loanCached.data : loans;
+        const next = existing.map((loan) =>
+          String(loan.id) === String(loanEditModal.loan.id)
+            ? {
+                ...loan,
+                person_name: payload.person_name,
+                note: payload.note || "",
+                updated_at: new Date().toISOString(),
+              }
+            : loan,
+        );
+        setLoans(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "loans", next);
+        closeLoanEdit();
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("loanUpdated"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9181,6 +11018,20 @@ function App() {
     });
 
     try {
+      if (isCloudLocalMode()) {
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const history = loanHistoryFromLedger(item.id, txs);
+        setLoanHistoryModal({
+          open: true,
+          loading: false,
+          loan: item,
+          history,
+        });
+        setMessage(t("loanHistoryLoaded"), "success");
+        return;
+      }
+
       const data = await apiGet(`/loans/${item.id}/history/${activeFamilyId}`);
 
       setLoanHistoryModal({
@@ -9213,13 +11064,36 @@ function App() {
   }
 
   async function closeLoan(item) {
+    const remaining = Number(item?.remaining_amount || 0);
+    if (remaining > 0.0001) {
+      setMessage(t("loanCloseNeedsZero") || "Pay remaining balance before closing this loan", "error");
+      return;
+    }
+
     const ok = window.confirm(
-      `Close loan with "${item.person_name}"?\n\nIf remaining balance exists, backend will block closing.`
+      t("confirmCloseLoan") || `Close loan with "${item.person_name}"?`,
     );
 
     if (!ok) return;
 
     try {
+      if (isCloudLocalMode()) {
+        const loanCached = await loadOfflineSnapshot(activeFamilyId, "finance", "loans").catch(() => null);
+        const existing = Array.isArray(loanCached?.data) ? loanCached.data : loans;
+        const next = existing.map((loan) =>
+          String(loan.id) === String(item.id)
+            ? { ...loan, status: "CLOSED", updated_at: new Date().toISOString() }
+            : loan,
+        );
+        setLoans(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "loans", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("loanClosed"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9246,16 +11120,21 @@ function App() {
   }
 
   async function editSavingsGoal(item) {
-    const newName = window.prompt("Savings name", item.name);
+    if (savingsBusyId) return;
+    if (String(item.status || "").toUpperCase() !== "ACTIVE") {
+      setMessage(t("onlyActiveSavingsEdit") || "Only active savings goals can be edited", "error");
+      return;
+    }
+    const newName = window.prompt(t("savingsName") || "Savings name", item.name);
     if (newName === null) return;
 
     const cleanedName = newName.trim();
-    if (!cleanedName) {
+    if (!cleanedName || cleanedName.length < 2) {
       setMessage(t("savingsNameRequired"), "error");
       return;
     }
 
-    const newTarget = window.prompt("Target amount", item.target_amount);
+    const newTarget = window.prompt(t("targetAmount") || "Target amount", item.target_amount);
     if (newTarget === null) return;
 
     if (!newTarget || Number(newTarget) <= 0) {
@@ -9263,7 +11142,7 @@ function App() {
       return;
     }
 
-    const newNote = window.prompt("Note", item.note || "");
+    const newNote = window.prompt(t("note") || "Note", item.note || "");
     if (newNote === null) return;
 
     const payload = {
@@ -9274,6 +11153,33 @@ function App() {
     };
 
     try {
+      setSavingsBusyId(String(item.id));
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+        const existing = normalizeSavingsList(cached?.data ?? savings);
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const nextRaw = existing.map((g) =>
+          String(g.id) === String(item.id)
+            ? {
+                ...g,
+                name: payload.name,
+                target_amount: Number(payload.target_amount),
+                note: payload.note || "",
+                updated_at: new Date().toISOString(),
+              }
+            : g,
+        );
+        const next = recomputeSavingsFromLedger(nextRaw, txs);
+        setSavings(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "savings", next);
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("savingsGoalUpdated"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9288,7 +11194,6 @@ function App() {
       }
 
       await apiPatch(`/savings/${item.id}`, payload);
-
       setMessage(t("savingsGoalUpdated"), "success");
       refreshAll();
     } catch (err) {
@@ -9306,17 +11211,55 @@ function App() {
         return;
       }
       setMessage(err.message || "Savings update failed", "error");
+    } finally {
+      setSavingsBusyId("");
     }
   }
 
   async function closeSavingsGoal(item) {
+    if (savingsBusyId) return;
+    const bal = Number(item.current_amount ?? item.saved_amount ?? 0);
+    if (bal > 0.0001) {
+      setMessage(
+        t("savingsCloseNeedsZero") || "Withdraw remaining balance before closing this savings goal",
+        "error",
+      );
+      return;
+    }
     const ok = window.confirm(
-      `Close savings goal "${item.name}"?\n\nIf balance exists, backend will block closing.`
+      t("confirmCloseSavings") || `Close savings goal "${item.name}"?`,
     );
-
     if (!ok) return;
 
     try {
+      setSavingsBusyId(String(item.id));
+      if (isCloudLocalMode()) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "savings").catch(() => null);
+        const existing = normalizeSavingsList(cached?.data ?? savings);
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const nextRaw = existing.map((g) =>
+          String(g.id) === String(item.id)
+            ? { ...g, status: "CLOSED", updated_at: new Date().toISOString() }
+            : g,
+        );
+        const next = recomputeSavingsFromLedger(nextRaw, txs);
+        setSavings(next);
+        await saveOfflineSnapshot(activeFamilyId, "finance", "savings", next);
+        const active = next.filter((g) => String(g.status || "").toUpperCase() === "ACTIVE");
+        setSavingsAction((prev) => ({
+          ...prev,
+          savings_goal_id: active.some((g) => String(g.id) === String(prev.savings_goal_id))
+            ? prev.savings_goal_id
+            : active[0]?.id || "",
+        }));
+        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
+          await syncCloudAfterWrite();
+        }
+        setMessage(t("savingsGoalClosed"), "success");
+        return;
+      }
+
       if (!isBrowserOnline()) {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
@@ -9334,11 +11277,12 @@ function App() {
         family_id: activeFamilyId,
         reason: "Closed from frontend",
       });
-
       setMessage(t("savingsGoalClosed"), "success");
       refreshAll();
     } catch (err) {
       setMessage(err.message || "Savings close failed", "error");
+    } finally {
+      setSavingsBusyId("");
     }
   }
 
@@ -9351,24 +11295,32 @@ function App() {
     });
 
     try {
-      const data = await apiGet(`/savings/${item.id}/history/${activeFamilyId}`);
+      if (isCloudLocalMode()) {
+        const txCached = await loadOfflineSnapshot(activeFamilyId, "finance", "transactions").catch(() => null);
+        const txs = Array.isArray(txCached?.data) ? txCached.data : transactions;
+        const history = txs
+          .filter((t) => String(t.savings_goal_id || "") === String(item.id))
+          .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+        setHistoryModal({
+          open: true,
+          loading: false,
+          goal: item,
+          history,
+        });
+        setMessage(t("savingsHistoryLoaded") || "Savings history loaded", "success");
+        return;
+      }
 
+      const data = await apiGet(`/savings/${item.id}/history/${activeFamilyId}`);
       setHistoryModal({
         open: true,
         loading: false,
         goal: data.goal || item,
         history: data.history || [],
       });
-
-      setMessage(t("savingsHistoryLoaded"), "success");
+      setMessage(t("savingsHistoryLoaded") || "Savings history loaded", "success");
     } catch (err) {
-      setHistoryModal({
-        open: true,
-        loading: false,
-        goal: item,
-        history: [],
-      });
-
+      setHistoryModal({ open: true, loading: false, goal: item, history: [] });
       setMessage(err.message || "Savings history load failed", "error");
     }
   }
@@ -9407,6 +11359,35 @@ function App() {
         }
         setMessage(t("downloadFailed"), "error");
         setStatus("");
+        return;
+      }
+
+      // Cloud-local: build real Excel/PDF from IndexedDB — no backend JWT export.
+      if (isCloudLocalMode()) {
+        const cache = await hydrateFamilyFromOfflineCache(activeFamilyId);
+        let payload;
+        if (type === "transactions") {
+          payload = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : [];
+        } else if (type === "cashflow") {
+          payload = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : [];
+        } else if (type === "goals") {
+          const goals = Array.isArray(cache["finance/goals"]) ? cache["finance/goals"] : [];
+          const savings = Array.isArray(cache["finance/savings"]) ? cache["finance/savings"] : [];
+          payload = [
+            ...goals.map((g) => ({ kind: "goal", ...g })),
+            ...savings.map((g) => ({ kind: "savings", ...g })),
+          ];
+        } else {
+          payload = [];
+        }
+        const { blob, fileName } = buildReportExportBlob({ type, format, payload });
+        try {
+          await cacheReportExport(activeFamilyId, type, format, blob);
+        } catch {
+          /* cache optional */
+        }
+        triggerDownload(blob, fileName);
+        setMessage(t("downloadComplete"), "success");
         return;
       }
 
@@ -9456,13 +11437,23 @@ function App() {
     }
 
     let cancelled = false;
-    // Never leave the user stuck if network/Firestore hangs during restore
-    const safetyTimer = window.setTimeout(() => {
-      if (cancelled) return;
-      console.warn("[S4 Family] session bootstrap timed out — releasing loading gate");
+    let bootDone = false;
+    let safetyTimer = 0;
+    const markBootDone = () => {
+      if (bootDone || cancelled) return;
+      bootDone = true;
+      window.clearTimeout(safetyTimer);
       setSessionBootstrapping(false);
       setIsFamilyLoading(false);
-    }, 5000);
+    };
+    // Never leave the user stuck if network/Firestore hangs during restore
+    safetyTimer = window.setTimeout(() => {
+      if (cancelled || bootDone) return;
+      console.warn("[S4 Family] session bootstrap timed out — releasing loading gate");
+      bootDone = true;
+      setSessionBootstrapping(false);
+      setIsFamilyLoading(false);
+    }, 12000);
 
     const unsub = subscribeFirebaseAuth(async (user) => {
       setFirebaseUser(user);
@@ -9470,8 +11461,7 @@ function App() {
       if (!user) {
         setFirebaseMeta(null);
         if (!cancelled) {
-          setSessionBootstrapping(false);
-          if (!token) setIsFamilyLoading(false);
+          markBootDone();
         }
         return;
       }
@@ -9488,8 +11478,7 @@ function App() {
 
       if (!expectCloudSession) {
         if (!cancelled) {
-          setSessionBootstrapping(false);
-          setIsFamilyLoading(false);
+          markBootDone();
         }
         return;
       }
@@ -9502,7 +11491,8 @@ function App() {
 
       try {
         let familyId = loadCloudFamilyId();
-        // Prefer stored id first so UI can unlock quickly; refresh profile in parallel later
+        // Always try cloud pull when online so wallets from other devices appear,
+        // even if family id is already cached locally.
         if (!familyId) {
           try {
             familyId = await Promise.race([
@@ -9514,6 +11504,18 @@ function App() {
           } catch {
             familyId = "";
           }
+        } else if (canSyncCloudFinance(user) && isBrowserOnline()) {
+          try {
+            const restored = await Promise.race([
+              pullCloudSnapshot(user.uid),
+              new Promise((resolve) => {
+                window.setTimeout(() => resolve(null), 5000);
+              }),
+            ]);
+            if (restored?.familyId) familyId = restored.familyId;
+          } catch (err) {
+            console.warn("[S4 Family] bootstrap pull failed", err);
+          }
         }
         if (!familyId) familyId = loadCloudFamilyId();
 
@@ -9521,11 +11523,9 @@ function App() {
           // Unlock UI ASAP (flags cleared inside activateCloudSession)
           void activateCloudSession(user, familyId).catch((err) => {
             console.warn("[S4 Family] activateCloudSession failed", err);
-            setIsFamilyLoading(false);
-            setSessionBootstrapping(false);
+            markBootDone();
           });
-          setIsFamilyLoading(false);
-          setSessionBootstrapping(false);
+          markBootDone();
         } else if (!cancelled) {
           setCurrentUser({
             full_name: user.displayName || user.email || "Cloud User",
@@ -9536,8 +11536,7 @@ function App() {
             firebase_uid: user.uid,
           });
           await applyCloudUserAvatar(user);
-          setIsFamilyLoading(false);
-          setSessionBootstrapping(false);
+          markBootDone();
         }
       } catch (err) {
         console.warn("[S4 Family] session restore failed", err);
@@ -9552,10 +11551,7 @@ function App() {
             /* ignore */
           }
         }
-        if (!cancelled) {
-          setIsFamilyLoading(false);
-          setSessionBootstrapping(false);
-        }
+        if (!cancelled) markBootDone();
       }
     });
 
@@ -9596,10 +11592,10 @@ function App() {
 
   useEffect(() => {
     if (!cloudOnlyMode || !firebaseUser?.uid || !activeFamilyId) return undefined;
-    if (!isCloudEmailReady(firebaseUser)) return undefined;
+    if (!canSyncCloudFinance(firebaseUser)) return undefined;
 
     const syncWhenOnline = () => {
-      pushCloudSnapshotIfReady();
+      void syncCloudLocalBidirectional();
       runCloudAutoBackup({ force: true });
     };
 
@@ -9610,12 +11606,14 @@ function App() {
 
   useEffect(() => {
     // Cloud-only: periodically push snapshot while online (mirrors backend outbox auto-sync).
-    if (!isCloudLocalMode() || !firebaseUser?.uid || !isCloudEmailReady(firebaseUser)) return undefined;
+    if (!isCloudLocalMode() || !firebaseUser?.uid || !canSyncCloudFinance(firebaseUser)) return undefined;
     if (!autoSyncEnabled) return undefined;
 
     const run = () => {
       if (!isBrowserOnline() || syncPushLoading) return;
-      pushLocalSyncOutbox({ silent: true, automatic: true });
+      void syncCloudLocalBidirectional().then(() => {
+        pushLocalSyncOutbox({ silent: true, automatic: true });
+      });
     };
 
     const intervalId = window.setInterval(run, AUTO_SYNC_INTERVAL_MS);
@@ -9772,12 +11770,14 @@ function App() {
     const tab15 = parsePhaseTab(activeMenu, "phase15");
     if (tab15) {
       setPhase15ActiveTab(tab15);
-      setPhase15Form((prev) => ({ ...prev, module_type: tab15 }));
+      setEditingPhase15Id("");
+      setPhase15Form({ ...EMPTY_PHASE15_FORM, module_type: tab15 });
     }
     const tab16 = parsePhaseTab(activeMenu, "phase16");
     if (tab16) {
       setPhase16ActiveTab(tab16);
-      setPhase16Form((prev) => ({ ...prev, module_type: tab16 }));
+      setEditingPhase16Id("");
+      setPhase16Form({ ...EMPTY_PHASE16_FORM, module_type: tab16 });
     }
   }, [activeMenu]);
 
@@ -9796,19 +11796,136 @@ function App() {
   }, [cloudAutoSync.enabled, cloudAutoSync.intervalMinutes, activeFamilyId, firebaseUser?.uid, driveConnected]);
 
   useEffect(() => {
-    if (!token || !activeFamilyId || activeMenu !== "sync") return;
+    if (!activeFamilyId || activeMenu !== "savings") return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await loadWallets();
+        await loadSavings();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token]);
+
+  useEffect(() => {
+    if (!activeFamilyId || activeMenu !== "budgets") return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await loadCategories();
+        await loadBudgets();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token]);
+
+  useEffect(() => {
+    if (!activeFamilyId || activeMenu !== "grocery") return;
+    if (!token && !isCloudLocalMode()) return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        const walletRows = (await loadWallets()) || [];
+        const categoryRows = (await loadCategories()) || [];
+        await loadGrocery({ silent: true, walletRows, categoryRows });
+        await refreshLocalOutboxCount();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!activeFamilyId || !isPhase15Menu(activeMenu)) return;
+    if (!token && !isCloudLocalMode()) return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await loadFamilyGovernance();
+        await loadPhase15();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!activeFamilyId || activeMenu !== "zakat") return;
+    if (!token && !isCloudLocalMode()) return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await loadMetalRates();
+        await loadZakat();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!activeFamilyId || !isPhase16Menu(activeMenu)) return;
+    if (!token && !isCloudLocalMode()) return;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        await loadWallets();
+        await loadFamilyGovernance();
+        await loadPhase16();
+      })();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!activeFamilyId || activeMenu !== "grocery") return undefined;
+    if (!isCloudLocalMode()) return undefined;
+    // Cloud-local: poll for multi-device freshness (no grocery WebSocket).
+    setGroceryWsState("off");
+    const intervalId = window.setInterval(() => {
+      loadGrocery({ silent: true });
+    }, 20000);
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode]);
+
+  useEffect(() => {
+    if (!activeFamilyId || activeMenu !== "sync") return;
+    if (!token && !isCloudLocalMode()) return;
     const timeoutId = window.setTimeout(() => {
       loadSyncStatus();
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeFamilyId, activeMenu]);
+  }, [token, activeFamilyId, activeMenu, cloudOnlyMode, firebaseUser?.uid]);
 
   useEffect(() => {
-    if (!token || !activeFamilyId || !autoSyncEnabled) return undefined;
+    if (!activeFamilyId) return;
+    if (!token && !isCloudLocalMode()) return;
+    const menuLoaders = {
+      reports: () => loadReports(),
+      currency: () => loadCurrencyData(),
+      audit: () => loadAuditTrail(),
+      backup: () => loadBackups(),
+      notifications: () => loadNotifications(),
+    };
+    const loader = menuLoaders[activeMenu];
+    if (!loader) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      void loader();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!activeFamilyId || !autoSyncEnabled) return undefined;
+    if (!token && !isCloudLocalMode()) return undefined;
 
     const runAutoSync = () => {
       if (!isBrowserOnline() || syncPushLoading) return;
+      if (isCloudLocalMode()) {
+        if (!firebaseUser?.uid || !isCloudEmailReady(firebaseUser)) return;
+        pushLocalSyncOutbox({ silent: true, automatic: true });
+        return;
+      }
       if (localOutboxPending <= 0) return;
       pushLocalSyncOutbox({ silent: true, automatic: true });
     };
@@ -9823,7 +11940,16 @@ function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeFamilyId, autoSyncEnabled, localOutboxPending, syncPushLoading, browserOnline]);
+  }, [
+    token,
+    activeFamilyId,
+    autoSyncEnabled,
+    localOutboxPending,
+    syncPushLoading,
+    browserOnline,
+    cloudOnlyMode,
+    firebaseUser?.uid,
+  ]);
 
   useEffect(() => {
     if (!token || !activeFamilyId || activeMenu !== "grocery") return undefined;
@@ -9838,29 +11964,24 @@ function App() {
     function onOnline() {
       setBrowserOnline(true);
       if (isCloudLocalMode() && firebaseUser?.uid && activeFamilyId && isCloudEmailReady(firebaseUser)) {
-        flushCloudSnapshotOutbox({
-          familyId: activeFamilyId,
-          uid: firebaseUser.uid,
-          pushSnapshot: pushCloudSnapshot,
-          deviceLabel: SYNC_DEVICE_ID || "mobile",
-        })
-          .then(() => {
-            refreshLocalOutboxCount();
-            refreshFirebaseMeta(firebaseUser.uid);
-          })
-          .catch(() => {});
+        pushLocalSyncOutbox({ silent: true, automatic: true }).catch(() => {});
         flushPendingUploads({
           familyId: activeFamilyId,
           uploadFn: async (itemId, file) => {
-            if (String(itemId).startsWith("web-p16-")) return;
-            await uploadFamilyDocument({
+            if (String(itemId).startsWith("web-p16-")) return { skipped: true };
+            const result = await uploadFamilyDocument({
               familyId: activeFamilyId,
               itemId,
               file,
               uid: firebaseUser.uid,
             });
+            await persistDocumentFileMeta(itemId, result);
           },
-        }).catch(() => {});
+        })
+          .then((stats) => {
+            if (stats?.synced) loadPhase16().catch(() => {});
+          })
+          .catch(() => {});
         return;
       }
       if (token && activeFamilyId) {
@@ -9869,24 +11990,28 @@ function App() {
             flushPendingUploads({
               familyId: activeFamilyId,
               uploadFn: async (itemId, file) => {
-                // Real server ids only — skip temp local ids
-                if (String(itemId).startsWith("web-p16-")) return;
+                // Real server ids only — keep temp ids queued (do not drop blob)
+                if (String(itemId).startsWith("web-p16-")) return { skipped: true };
                 const formData = new FormData();
                 formData.append("family_id", activeFamilyId);
                 formData.append("file", file);
-                const res = await fetch(`${apiBase}/phase16/${itemId}/upload`, {
+                const res = await fetch(`${apiBase}${documentUploadPath(itemId)}`, {
                   method: "POST",
                   headers: { Authorization: `Bearer ${token}` },
                   body: formData,
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.detail || "upload failed");
+                if (data && (data.file_url || data.download_url || data.file_name || data.storage_path)) {
+                  await persistDocumentFileMeta(itemId, data);
+                }
               },
             })
           )
           .then(() => {
             refreshLocalOutboxCount();
             loadSyncStatus();
+            loadPhase16().catch(() => {});
           })
           .catch(() => {});
       }
@@ -9979,7 +12104,7 @@ function App() {
         ["goals", "★", t("goals")],
         ["recurring", "↻", t("recurring")],
         ["tags", "#", t("tags") || "Tags"],
-        ["cutover", "✦", "Cutover"],
+        ["cutover", "✦", t("cutover")],
       ],
     },
     {
@@ -9995,6 +12120,7 @@ function App() {
         ["planner", "☰", t("planner")],
         ["grocery", "▤", t("groceryTitle")],
         ["phase15:HEALTH", "✚", t("navHealthExpense")],
+        ["phase15:VEHICLE", "▣", t("navVehicle")],
         ["phase16:SUBSCRIPTION", "↻", t("navSubscriptions")],
       ],
     },
@@ -10002,6 +12128,7 @@ function App() {
       label: t("navAssetsPlanning"),
       items: [
         ["phase15:INVESTMENT", "◈", t("navInvestments")],
+        ["phase15:EDUCATION", "▦", t("navEducationFund")],
         ["phase16:PROPERTY", "⌂", t("navProperty")],
         ["zakat", "✦", t("navZakat")],
         ["phase16:DOCUMENT", "▦", t("navDocumentVault")],
@@ -10350,13 +12477,28 @@ function App() {
 
             <input style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} placeholder={t("budgetName")} value={budgetEditModal.name} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, name: e.target.value })} />
 
-            <input style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} placeholder={t("budgetAmount")} value={budgetEditModal.budget_amount} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, budget_amount: e.target.value })} />
+            <select style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} value={budgetEditModal.category_id || ""} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, category_id: e.target.value })}>
+              <option value="">{t("selectCategory")}</option>
+              {expenseCategories().map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name_en || category.name_bn || category.name}
+                </option>
+              ))}
+            </select>
+
+            <input style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} placeholder={t("budgetAmount")} value={budgetEditModal.budget_amount} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, budget_amount: e.target.value })} inputMode="decimal" />
+
+            <select style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} value={budgetEditModal.period_type || "MONTHLY"} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, period_type: e.target.value })}>
+              <option value="MONTHLY">{t("monthly")}</option>
+              <option value="WEEKLY">{t("weekly")}</option>
+              <option value="YEARLY">{t("yearly")}</option>
+            </select>
 
             <input style={{ width: "100%", minHeight: 56, marginBottom: 14, borderRadius: 12, border: "1px solid #334155", background: "#020b1f", color: "white", padding: 14, fontSize: 16 }} placeholder={t("note")} value={budgetEditModal.note} onChange={(e) => setBudgetEditModal({ ...budgetEditModal, note: e.target.value })} />
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <button onClick={saveBudgetEdit} style={{ background: "#2563eb", color: "white", borderRadius: 12, padding: "12px 18px", fontWeight: 800 }}>{t("save")}</button>
-              <button onClick={closeBudgetEdit} style={{ background: "#dc2626", color: "white", borderRadius: 12, padding: "12px 18px", fontWeight: 800 }}>{t("cancel")}</button>
+              <button disabled={Boolean(budgetBusyId)} onClick={saveBudgetEdit} style={{ background: "#2563eb", color: "white", borderRadius: 12, padding: "12px 18px", fontWeight: 800 }}>{budgetBusyId ? t("loading") : t("save")}</button>
+              <button disabled={Boolean(budgetBusyId)} onClick={closeBudgetEdit} style={{ background: "#dc2626", color: "white", borderRadius: 12, padding: "12px 18px", fontWeight: 800 }}>{t("cancel")}</button>
             </div>
           </div>
         </div>
@@ -10472,6 +12614,10 @@ function App() {
           avatarUrl={avatarUrl(currentUser)}
           currentUser={currentUser}
           email={email}
+          navItems={navItems}
+          browserOnline={browserOnline}
+          syncStatus={syncStatus}
+          localOutboxPending={localOutboxPending}
         />
 
         {!activeFamilyId && (isFamilyLoading || familiesLoading || sessionBootstrapping) && (
@@ -10527,8 +12673,14 @@ function App() {
             wallets={wallets}
             walletForm={walletForm}
             setWalletForm={setWalletForm}
+            editingWalletId={editingWalletId}
             onCreate={createWallet}
+            onSaveEdit={saveEditWallet}
+            onStartEdit={startEditWallet}
+            onCancelEdit={cancelEditWallet}
+            onDelete={deleteWallet}
             onRefresh={loadWallets}
+            busyId={walletBusyId}
           />
         )}
 
@@ -10550,23 +12702,30 @@ function App() {
             onParseExpenseOcrImage={parseExpenseOcrImage}
             voidBusyId={voidBusyId}
             attachBusyId={attachBusyId}
+            onGoWallets={() => setActiveMenu("wallets")}
+            cloudLocalMode={isCloudLocalMode()}
           />
         )}
 
         {activeFamilyId && activeMenu === "tags" && (
           <TagsPanel
             t={t}
+            money={money}
+            amount={amount}
             apiGet={apiGet}
             apiPost={apiPost}
             apiDelete={apiDelete}
             activeFamilyId={activeFamilyId}
             transactions={transactions}
+            onMessage={setMessage}
           />
         )}
 
         {activeFamilyId && activeMenu === "cutover" && (
           <ArchitectureCutoverPanel
             t={t}
+            money={money}
+            amount={amount}
             apiGet={apiGet}
             apiPost={apiPost}
             apiUpload={apiUpload}
@@ -10574,6 +12733,13 @@ function App() {
             wallets={wallets}
             categories={categories}
             members={governanceMembers}
+            transactions={transactions}
+            currency={currencyCode()}
+            onMessage={setMessage}
+            onFinanceChanged={async () => {
+              await Promise.all([loadTransactions(), loadWallets()]);
+              setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+            }}
           />
         )}
 
@@ -10598,6 +12764,7 @@ function App() {
             onEdit={editSavingsGoal}
             onHistory={openSavingsHistory}
             onClose={closeSavingsGoal}
+            busy={Boolean(savingsBusyId)}
           />
         )}
 
@@ -10653,6 +12820,7 @@ function App() {
             onRefresh={loadBudgets}
             onEdit={openBudgetEdit}
             onClose={closeBudget}
+            busy={Boolean(budgetBusyId)}
             onClearFilters={() => {
               setBudgetSearch("");
               setBudgetStatusFilter("ALL");
@@ -10661,294 +12829,471 @@ function App() {
         )}
 
         {activeFamilyId && activeMenu === "recurring" && (
-          <section className="panel">
-            <h2>{t("recurring")}</h2>
-
-            <div className="grid">
-              <div className="card">
-                <span>{t("recurring")}</span>
-                <strong>{digits(recurringSummary().activeCount)}</strong>
+          <section className="panel settings-panel settings-smart finance-smart">
+            <div className="settings-head">
+              <div>
+                <p className="settings-kicker">{t("recurring")}</p>
+                <h2>{t("recurring")}</h2>
               </div>
-
-              <div className="card">
-                <span>{t("recurringDue")}</span>
-                <strong>{digits(recurringSummary().dueTodayCount)}</strong>
-              </div>
-
-              <div className="card">
-                <span>{t("monthlyRecurring")}</span>
-                <strong>{money(recurringSummary().monthlyAmount)}</strong>
-              </div>
-            </div>
-
-            <h3>{t("recurring")}</h3>
-            <div className="savings-form">
-              <select
-                value={recurringForm.transaction_type}
-                onChange={(e) =>
-                  setRecurringForm({
-                    ...recurringForm,
-                    transaction_type: e.target.value,
-                    category_id: "",
-                  })
-                }
-              >
-                <option value="INCOME">{t("income")}</option>
-                <option value="EXPENSE">{t("expense")}</option>
-              </select>
-
-              <select
-                value={recurringForm.account_id}
-                onChange={(e) => setRecurringForm({ ...recurringForm, account_id: e.target.value })}
-              >
-                <option value="">{t("selectWallet")}</option>
-                {wallets.map((wallet) => (
-                  <option key={wallet.id} value={wallet.id}>{wallet.name}</option>
-                ))}
-              </select>
-
-              <select
-                value={recurringForm.category_id}
-                onChange={(e) => setRecurringForm({ ...recurringForm, category_id: e.target.value })}
-              >
-                <option value="">{t("noCategory")}</option>
-                {recurringCategories().map((category) => (
-                  <option key={category.id} value={category.id}>{category.name_en}</option>
-                ))}
-              </select>
-
-              <input
-                placeholder={t("title")}
-                value={recurringForm.title}
-                onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
-              />
-
-              <input
-                placeholder={t("amount")}
-                value={recurringForm.amount}
-                onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value })}
-              />
-
-              <select
-                value={recurringForm.frequency}
-                onChange={(e) => setRecurringForm({ ...recurringForm, frequency: e.target.value })}
-              >
-                <option value="DAILY">{t("daily")}</option>
-                <option value="WEEKLY">{t("weekly")}</option>
-                <option value="MONTHLY">{t("monthly")}</option>
-                <option value="YEARLY">{t("yearly")}</option>
-              </select>
-
-              <input
-                type="date"
-                value={recurringForm.start_date}
-                onChange={(e) => setRecurringForm({ ...recurringForm, start_date: e.target.value })}
-              />
-
-              <input
-                type="date"
-                value={recurringForm.end_date}
-                onChange={(e) => setRecurringForm({ ...recurringForm, end_date: e.target.value })}
-              />
-
-              <input
-                placeholder={t("description")}
-                value={recurringForm.description}
-                onChange={(e) => setRecurringForm({ ...recurringForm, description: e.target.value })}
-              />
-
-              <button onClick={createRecurring}>{t("recurring")}</button>
-            </div>
-
-            <h3>{t("recurringSearchFilter")}</h3>
-            <div className="savings-form">
-              <input
-                placeholder={t("searchTitleDescription")}
-                value={recurringSearch}
-                onChange={(e) => setRecurringSearch(e.target.value)}
-              />
-
-              <select value={recurringStatusFilter} onChange={(e) => setRecurringStatusFilter(e.target.value)}>
-                <option value="ALL">{t("allStatus")}</option>
-                <option value="ACTIVE">Active</option>
-                <option value="PAUSED">Paused</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CLOSED">Closed</option>
-              </select>
-
-              <select value={recurringTypeFilter} onChange={(e) => setRecurringTypeFilter(e.target.value)}>
-                <option value="ALL">{t("allType")}</option>
-                <option value="INCOME">{t("income")}</option>
-                <option value="EXPENSE">{t("expense")}</option>
-              </select>
-
-              <button onClick={() => { setRecurringSearch(""); setRecurringStatusFilter("ALL"); setRecurringTypeFilter("ALL"); }}>
-                {t("clearFilter")}
+              <button type="button" className="btn" onClick={loadRecurring}>
+                {t("refreshRecurring")}
               </button>
-
-              <button onClick={loadRecurring}>{t("refreshRecurring")}</button>
             </div>
 
-            <div>
-              {filteredRecurringItems().map((item) => (
-                <div className="savings-card" key={item.id}>
-                  <div className="savings-header">
-                    <div>
-                      <div className="savings-title">{item.title}</div>
-                      <div className="savings-note">
-                        {item.transaction_type} · {item.frequency} · {t("nextDue")}: {digits(item.next_due_date)}
-                      </div>
-                    </div>
+            <div className="summary-metric-grid" role="group" aria-label={t("recurring")}>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("activeStatus")}</span>
+                <strong className="summary-metric-value">{digits(recurringSummary().activeCount)}</strong>
+              </div>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("recurringDue")}</span>
+                <strong className="summary-metric-value">{digits(recurringSummary().dueTodayCount)}</strong>
+              </div>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("monthlyRecurring")}</span>
+                <strong className="summary-metric-value">{money(recurringSummary().monthlyAmount)}</strong>
+              </div>
+            </div>
 
-                    <div className={`savings-status ${isRecurringDue(item) ? "savings-closed" : item.status === "ACTIVE" ? "savings-active" : "savings-closed"}`}>
-                      {isRecurringDue(item) ? "DUE" : item.status}
-                    </div>
-                  </div>
+            <div className="settings-stack">
+              <div className="settings-block">
+                <h4>{t("createRecurring")}</h4>
+                <div className="finance-form">
+                  <select
+                    value={recurringForm.transaction_type}
+                    onChange={(e) =>
+                      setRecurringForm({
+                        ...recurringForm,
+                        transaction_type: e.target.value,
+                        category_id: "",
+                      })
+                    }
+                  >
+                    <option value="INCOME">{t("income")}</option>
+                    <option value="EXPENSE">{t("expense")}</option>
+                  </select>
 
-                  <div className="savings-meta">
-                    <span>{t("amount")}: {money(item.amount, item.currency)}</span>
-                    <span>{t("start")}: {digits(item.start_date)}</span>
-                    <span>{t("end")}: {item.end_date ? digits(item.end_date) : t("noEnd")}</span>
-                    <strong>{t("lastPosted")}: {item.last_posted_at ? digits(item.last_posted_at) : t("never")}</strong>
-                  </div>
+                  <select
+                    value={recurringForm.account_id}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, account_id: e.target.value })}
+                  >
+                    <option value="">{t("selectWallet")}</option>
+                    {wallets
+                      .filter((w) => !w?.deleted_at && w?.is_active !== false)
+                      .map((wallet) => (
+                        <option key={wallet.id} value={wallet.id}>
+                          {wallet.name}
+                        </option>
+                      ))}
+                  </select>
 
-                  <div className="savings-actions">
-                    {["ACTIVE", "PAUSED"].includes(item.status) && (
-                      <button className="edit-btn" onClick={() => openRecurringEdit(item)}>{t("edit")}</button>
-                    )}
+                  <select
+                    value={recurringForm.category_id}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, category_id: e.target.value })}
+                  >
+                    <option value="">{t("noCategory")}</option>
+                    {recurringCategories().map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name_en || category.name_bn || category.name}
+                      </option>
+                    ))}
+                  </select>
 
-                    <button className="history-btn" onClick={() => openRecurringHistory(item)}>{t("history")}</button>
+                  <input
+                    placeholder={t("title")}
+                    value={recurringForm.title}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })}
+                  />
 
-                    {item.status === "ACTIVE" && (
-                      <button className="edit-btn" onClick={() => postRecurring(item)}>{t("postNow")}</button>
-                    )}
+                  <input
+                    placeholder={t("amount")}
+                    value={recurringForm.amount}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, amount: e.target.value })}
+                  />
 
-                    {item.status === "ACTIVE" && (
-                      <button className="history-btn" onClick={() => pauseRecurring(item)}>{t("pause")}</button>
-                    )}
+                  <select
+                    value={recurringForm.frequency}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, frequency: e.target.value })}
+                  >
+                    <option value="DAILY">{t("daily")}</option>
+                    <option value="WEEKLY">{t("weekly")}</option>
+                    <option value="MONTHLY">{t("monthly")}</option>
+                    <option value="YEARLY">{t("yearly")}</option>
+                  </select>
 
-                    {item.status === "PAUSED" && (
-                      <button className="history-btn" onClick={() => resumeRecurring(item)}>{t("resume")}</button>
-                    )}
+                  <input
+                    type="date"
+                    value={recurringForm.start_date}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, start_date: e.target.value })}
+                    aria-label={t("start")}
+                  />
 
-                    {!["CLOSED", "COMPLETED"].includes(item.status) && (
-                      <button className="close-btn" onClick={() => closeRecurring(item)}>{t("close")}</button>
-                    )}
-                  </div>
+                  <input
+                    type="date"
+                    value={recurringForm.end_date}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, end_date: e.target.value })}
+                    aria-label={t("end")}
+                  />
+
+                  <input
+                    placeholder={t("description")}
+                    value={recurringForm.description}
+                    onChange={(e) => setRecurringForm({ ...recurringForm, description: e.target.value })}
+                  />
+
+                  <button type="button" className="btn btn-primary" onClick={createRecurring}>
+                    {t("createRecurring")}
+                  </button>
                 </div>
-              ))}
+              </div>
+
+              <div className="settings-block">
+                <h4>{t("recurringSearchFilter")}</h4>
+                <div className="finance-form">
+                  <input
+                    placeholder={t("searchTitleDescription")}
+                    value={recurringSearch}
+                    onChange={(e) => setRecurringSearch(e.target.value)}
+                  />
+
+                  <select
+                    value={recurringStatusFilter}
+                    onChange={(e) => setRecurringStatusFilter(e.target.value)}
+                  >
+                    <option value="ALL">{t("allStatus")}</option>
+                    <option value="ACTIVE">{t("activeStatus")}</option>
+                    <option value="PAUSED">{t("pausedStatus")}</option>
+                    <option value="COMPLETED">{t("completedStatus")}</option>
+                    <option value="CLOSED">{t("closedStatus")}</option>
+                  </select>
+
+                  <select
+                    value={recurringTypeFilter}
+                    onChange={(e) => setRecurringTypeFilter(e.target.value)}
+                  >
+                    <option value="ALL">{t("allType")}</option>
+                    <option value="INCOME">{t("income")}</option>
+                    <option value="EXPENSE">{t("expense")}</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setRecurringSearch("");
+                      setRecurringStatusFilter("ALL");
+                      setRecurringTypeFilter("ALL");
+                    }}
+                  >
+                    {t("clearFilter")}
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-block">
+                <h4>{t("recurring")}</h4>
+                {filteredRecurringItems().length === 0 ? (
+                  <p className="settings-empty">{t("noRecurringYet")}</p>
+                ) : (
+                  <div className="finance-feed">
+                    {filteredRecurringItems().map((item) => (
+                      <div className="finance-card finance-card-stack budget-card" key={item.id}>
+                        <div className="tx-row budget-row-head">
+                          <div className="tx-row-copy">
+                            <strong title={item.title}>{item.title}</strong>
+                            <span className="tx-row-sub">
+                              {item.transaction_type} · {item.frequency} · {t("nextDue")}:{" "}
+                              {item.next_due_date ? digits(item.next_due_date) : t("noDate")}
+                            </span>
+                          </div>
+                          <div
+                            className={`savings-status ${
+                              isRecurringDue(item)
+                                ? "savings-closed"
+                                : item.status === "ACTIVE"
+                                  ? "savings-active"
+                                  : "savings-closed"
+                            }`}
+                          >
+                            {isRecurringDue(item) ? t("dueStatus") : item.status}
+                          </div>
+                        </div>
+
+                        <div className="budget-amount-row">
+                          <div className="budget-amount-cell">
+                            <span>{t("amount")}</span>
+                            <strong>{money(item.amount, item.currency)}</strong>
+                          </div>
+                          <div className="budget-amount-cell">
+                            <span>{t("start")}</span>
+                            <strong>{item.start_date ? digits(item.start_date) : t("noDate")}</strong>
+                          </div>
+                          <div className="budget-amount-cell">
+                            <span>{t("end")}</span>
+                            <strong>{item.end_date ? digits(item.end_date) : t("noEnd")}</strong>
+                          </div>
+                          <div className="budget-amount-cell">
+                            <span>{t("lastPosted")}</span>
+                            <strong>
+                              {item.last_posted_at ? digits(String(item.last_posted_at).slice(0, 10)) : t("never")}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="finance-actions">
+                          {["ACTIVE", "PAUSED"].includes(item.status) ? (
+                            <button type="button" className="btn" onClick={() => openRecurringEdit(item)}>
+                              {t("edit")}
+                            </button>
+                          ) : null}
+                          <button type="button" className="btn" onClick={() => openRecurringHistory(item)}>
+                            {t("history")}
+                          </button>
+                          {item.status === "ACTIVE" ? (
+                            <button type="button" className="btn btn-primary" onClick={() => postRecurring(item)}>
+                              {t("postNow")}
+                            </button>
+                          ) : null}
+                          {item.status === "ACTIVE" ? (
+                            <button type="button" className="btn" onClick={() => pauseRecurring(item)}>
+                              {t("pause")}
+                            </button>
+                          ) : null}
+                          {item.status === "PAUSED" ? (
+                            <button type="button" className="btn" onClick={() => resumeRecurring(item)}>
+                              {t("resume")}
+                            </button>
+                          ) : null}
+                          {!["CLOSED", "COMPLETED"].includes(item.status) ? (
+                            <button type="button" className="btn" onClick={() => closeRecurring(item)}>
+                              {t("close")}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         )}
 
 
         {activeFamilyId && activeMenu === "goals" && (
-          <section className="panel">
-            <h2>{t("goals")}</h2>
-
-            <div className="grid">
-              <div className="card">
-                <span>{t("goals")}</span>
-                <strong>{digits(goalSummary?.total_goals || 0)}</strong>
+          <section className="panel settings-panel settings-smart finance-smart">
+            <div className="settings-head">
+              <div>
+                <p className="settings-kicker">{t("goals")}</p>
+                <h2>{t("goals")}</h2>
               </div>
+              <button type="button" className="btn" onClick={loadGoals}>
+                {t("refreshGoals")}
+              </button>
+            </div>
 
-              <div className="card">
-                <span>{t("goals")}</span>
-                <strong>{digits(goalSummary?.active_count || 0)}</strong>
+            <div className="summary-metric-grid" role="group" aria-label={t("goals")}>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("goals")}</span>
+                <strong className="summary-metric-value">{digits(goalSummary?.total_goals ?? goals.length)}</strong>
               </div>
-
-              <div className="card">
-                <span>{t("amount")}</span>
-                <strong>{money(goalSummary?.active_target_amount)}</strong>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("activeStatus")}</span>
+                <strong className="summary-metric-value">
+                  {digits(
+                    goalSummary?.active_count ??
+                      goals.filter((g) => String(g.status || "").toUpperCase() === "ACTIVE").length,
+                  )}
+                </strong>
               </div>
-
-              <div className="card">
-                <span>{t("savings")}</span>
-                <strong>{money(goalSummary?.active_current_amount)}</strong>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("targetAmount")}</span>
+                <strong className="summary-metric-value">{money(goalSummary?.active_target_amount)}</strong>
+              </div>
+              <div className="summary-metric-card">
+                <span className="summary-metric-label">{t("saved")}</span>
+                <strong className="summary-metric-value">{money(goalSummary?.active_current_amount)}</strong>
               </div>
             </div>
 
-            <h3>{t("createGoal")}</h3>
-            <div className="savings-form">
-              <input placeholder={t("goalName")} value={goalForm.goal_name} onChange={(e) => setGoalForm({ ...goalForm, goal_name: e.target.value })} />
-              <input placeholder={t("goalType")} value={goalForm.goal_type} onChange={(e) => setGoalForm({ ...goalForm, goal_type: e.target.value })} />
-              <input placeholder={t("targetAmount")} value={goalForm.target_amount} onChange={(e) => setGoalForm({ ...goalForm, target_amount: e.target.value })} />
-              <input type="date" value={goalForm.target_date} onChange={(e) => setGoalForm({ ...goalForm, target_date: e.target.value })} />
-              <input placeholder={t("note")} value={goalForm.note} onChange={(e) => setGoalForm({ ...goalForm, note: e.target.value })} />
-              <button onClick={createGoal}>{t("createGoal")}</button>
-            </div>
+            <div className="settings-stack">
+              <div className="settings-block">
+                <h4>{t("createGoal")}</h4>
+                <div className="finance-form">
+                  <input
+                    placeholder={t("goalName")}
+                    value={goalForm.goal_name}
+                    onChange={(e) => setGoalForm({ ...goalForm, goal_name: e.target.value })}
+                  />
+                  <select
+                    value={goalForm.goal_type}
+                    onChange={(e) => setGoalForm({ ...goalForm, goal_type: e.target.value })}
+                    aria-label={t("goalType")}
+                  >
+                    <option value="GENERAL">{t("goalTypeGeneral")}</option>
+                    <option value="EMERGENCY">{t("goalTypeEmergency")}</option>
+                    <option value="EDUCATION">{t("goalTypeEducation")}</option>
+                    <option value="HOME">{t("goalTypeHome")}</option>
+                    <option value="VEHICLE">{t("goalTypeVehicle")}</option>
+                    <option value="OTHER">{t("goalTypeOther")}</option>
+                  </select>
+                  <input
+                    placeholder={t("targetAmount")}
+                    value={goalForm.target_amount}
+                    onChange={(e) => setGoalForm({ ...goalForm, target_amount: e.target.value })}
+                  />
+                  <input
+                    type="date"
+                    value={goalForm.target_date}
+                    onChange={(e) => setGoalForm({ ...goalForm, target_date: e.target.value })}
+                    aria-label={t("targetDate")}
+                  />
+                  <input
+                    placeholder={t("note")}
+                    value={goalForm.note}
+                    onChange={(e) => setGoalForm({ ...goalForm, note: e.target.value })}
+                  />
+                  <button type="button" className="btn btn-primary" onClick={createGoal}>
+                    {t("createGoal")}
+                  </button>
+                </div>
+              </div>
 
-            <h3>{t("contributeWithdraw")}</h3>
-            <div className="savings-form">
-              <select value={goalContributionForm.goal_id} onChange={(e) => setGoalContributionForm({ ...goalContributionForm, goal_id: e.target.value })}>
-                <option value="">{t("selectGoal")}</option>
-                {goals.filter((goal) => goal.status !== "CLOSED").map((goal) => (
-                  <option key={goal.id} value={goal.id}>
-                    {goal.goal_name} - {amount(goal.current_amount)}/{amount(goal.target_amount)}
-                  </option>
-                ))}
-              </select>
+              <div className="settings-block">
+                <h4>{t("contributeWithdraw")}</h4>
+                <div className="finance-form">
+                  <select
+                    value={goalContributionForm.goal_id}
+                    onChange={(e) =>
+                      setGoalContributionForm({ ...goalContributionForm, goal_id: e.target.value })
+                    }
+                  >
+                    <option value="">{t("selectGoal")}</option>
+                    {goals
+                      .filter((goal) => String(goal.status || "").toUpperCase() !== "CLOSED")
+                      .map((goal) => (
+                        <option key={goal.id} value={goal.id}>
+                          {goal.goal_name} - {amount(goal.current_amount)}/{amount(goal.target_amount)}
+                        </option>
+                      ))}
+                  </select>
 
-              <select value={goalContributionForm.wallet_account_id} onChange={(e) => setGoalContributionForm({ ...goalContributionForm, wallet_account_id: e.target.value })}>
-                <option value="">{t("selectWallet")}</option>
-                {wallets.map((wallet) => (
-                  <option key={wallet.id} value={wallet.id}>{wallet.name}</option>
-                ))}
-              </select>
+                  <select
+                    value={goalContributionForm.wallet_account_id}
+                    onChange={(e) =>
+                      setGoalContributionForm({
+                        ...goalContributionForm,
+                        wallet_account_id: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="">{t("selectWallet")}</option>
+                    {wallets
+                      .filter((w) => !w?.deleted_at && w?.is_active !== false)
+                      .map((wallet) => (
+                        <option key={wallet.id} value={wallet.id}>
+                          {wallet.name}
+                        </option>
+                      ))}
+                  </select>
 
-              <input placeholder={t("amount")} value={goalContributionForm.amount} onChange={(e) => setGoalContributionForm({ ...goalContributionForm, amount: e.target.value })} />
-              <input placeholder={t("description")} value={goalContributionForm.description} onChange={(e) => setGoalContributionForm({ ...goalContributionForm, description: e.target.value })} />
+                  <input
+                    placeholder={t("amount")}
+                    value={goalContributionForm.amount}
+                    onChange={(e) =>
+                      setGoalContributionForm({ ...goalContributionForm, amount: e.target.value })
+                    }
+                  />
+                  <input
+                    placeholder={t("description")}
+                    value={goalContributionForm.description}
+                    onChange={(e) =>
+                      setGoalContributionForm({
+                        ...goalContributionForm,
+                        description: e.target.value,
+                      })
+                    }
+                  />
 
-              <button onClick={contributeGoal}>{t("contribute")}</button>
-              <button onClick={withdrawGoal}>{t("withdraw")}</button>
-              <button onClick={loadGoals}>{t("refreshGoals")}</button>
-            </div>
+                  <button type="button" className="btn btn-primary" onClick={contributeGoal}>
+                    {t("contribute")}
+                  </button>
+                  <button type="button" className="btn" onClick={withdrawGoal}>
+                    {t("withdraw")}
+                  </button>
+                </div>
+              </div>
 
-            <div>
-              {goals.map((goal) => {
-                const progressValue = Math.min(Number(goal.progress_percent || 0), 100);
+              <div className="settings-block">
+                <h4>{t("goals")}</h4>
+                {goals.length === 0 ? (
+                  <p className="settings-empty">{t("noGoalsYet")}</p>
+                ) : (
+                  <div className="finance-feed">
+                    {goals.map((goal) => {
+                      const progressValue = Math.min(Number(goal.progress_percent || 0), 100);
+                      return (
+                        <div className="finance-card finance-card-stack budget-card" key={goal.id}>
+                          <div className="tx-row budget-row-head">
+                            <div className="tx-row-copy">
+                              <strong title={goal.goal_name}>{goal.goal_name}</strong>
+                              <span className="tx-row-sub">
+                                {goal.goal_type} · {t("targetDate")}:{" "}
+                                {goal.target_date ? digits(goal.target_date) : t("noDate")} ·{" "}
+                                {goal.note || t("noNote")}
+                              </span>
+                            </div>
+                            <div className={`savings-status ${goal.status === "ACTIVE" ? "savings-active" : "savings-closed"}`}>
+                              {goal.status}
+                            </div>
+                          </div>
 
-                return (
-                  <div className="savings-card" key={goal.id}>
-                    <div className="savings-header">
-                      <div>
-                        <div className="savings-title">{goal.goal_name}</div>
-                        <div className="savings-note">
-                          {goal.goal_type} · {t("targetDate")}: {goal.target_date ? digits(goal.target_date) : t("noDate")} · {goal.note || t("noNote")}
+                          <div className="progress-wrapper">
+                            <div className="progress-fill" style={{ width: `${progressValue}%` }} />
+                          </div>
+
+                          <div className="budget-amount-row">
+                            <div className="budget-amount-cell">
+                              <span>{t("saved")}</span>
+                              <strong>{money(goal.current_amount, goal.currency)}</strong>
+                            </div>
+                            <div className="budget-amount-cell">
+                              <span>{t("targetAmount")}</span>
+                              <strong>{money(goal.target_amount, goal.currency)}</strong>
+                            </div>
+                            <div className="budget-amount-cell">
+                              <span>{t("remaining")}</span>
+                              <strong>{money(goal.remaining_amount, goal.currency)}</strong>
+                            </div>
+                            <div className="budget-amount-cell">
+                              <span>{digits(goal.progress_percent)}%</span>
+                              <strong>
+                                {t("monthlyNeed")}: {money(goal.recommended_monthly_saving, goal.currency)}
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="finance-actions">
+                            {String(goal.status || "").toUpperCase() === "ACTIVE" ? (
+                              <button type="button" className="btn" onClick={() => openGoalEdit(goal)}>
+                                {t("edit")}
+                              </button>
+                            ) : null}
+                            <button type="button" className="btn" onClick={() => openGoalHistory(goal)}>
+                              {t("history")}
+                            </button>
+                            {String(goal.status || "").toUpperCase() !== "CLOSED" ? (
+                              <button type="button" className="btn" onClick={() => closeGoal(goal)}>
+                                {t("close")}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-
-                      <div className={`savings-status ${goal.status === "ACTIVE" ? "savings-active" : "savings-closed"}`}>
-                        {goal.status}
-                      </div>
-                    </div>
-
-                    <div className="progress-wrapper">
-                      <div className="progress-fill" style={{ width: `${progressValue}%` }} />
-                    </div>
-
-                    <div className="savings-meta">
-                      <span>{t("saved")}: {money(goal.current_amount, goal.currency)}</span>
-                      <span>{t("targetAmount")}: {money(goal.target_amount, goal.currency)}</span>
-                      <span>{t("remaining")}: {money(goal.remaining_amount, goal.currency)}</span>
-                      <strong>{digits(goal.progress_percent)}%</strong>
-                      <span>{t("monthlyNeed")}: {money(goal.recommended_monthly_saving, goal.currency)}</span>
-                    </div>
-
-                    <div className="savings-actions">
-                      {goal.status === "ACTIVE" && (
-                        <button className="edit-btn" onClick={() => openGoalEdit(goal)}>{t("edit")}</button>
-                      )}
-
-                      <button className="history-btn" onClick={() => openGoalHistory(goal)}>{t("history")}</button>
-
-                      {goal.status !== "CLOSED" && (
-                        <button className="close-btn" onClick={() => closeGoal(goal)}>{t("close")}</button>
-                      )}
-                    </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
+              </div>
             </div>
           </section>
         )}
@@ -10978,7 +13323,10 @@ function App() {
             inviteGenerating={inviteGenerating}
             inviteRevoking={inviteRevoking}
             generatedInvite={generatedInvite}
-            onRefresh={loadFamilyGovernance}
+            onRefresh={async () => {
+              await loadFamilyGovernance();
+              await loadSettingsData();
+            }}
             onGenerateInvite={generateFamilyInvite}
             onInviteEmail={inviteFamilyByEmail}
             onInviteLink={inviteFamilyByLink}
@@ -11070,8 +13418,8 @@ function App() {
               <p className="status">{t("noExchangeRatesFound")}</p>
             ) : (
               <div className="table">
-                {exchangeRates.slice(0, 25).map((rate) => (
-                  <div className="row" key={rate.id}>
+                {exchangeRates.slice(0, 25).map((rate, idx) => (
+                  <div className="row" key={rate.id || `${rate.from_currency}-${rate.to_currency}-${idx}`}>
                     <span>{currencyName(rate.from_currency)} → {currencyName(rate.to_currency)}</span>
                     <strong>{digits(rate.rate)}</strong>
                     <span>{rate.rate_date ? digits(rate.rate_date) : t("noDate")}</span>
@@ -11127,59 +13475,59 @@ function App() {
               </div>
               <div className="card">
                 <span>{t("latestStatus")}</span>
-                <strong>{zakatSummary?.latest?.is_zakat_due ? "DUE" : "NOT DUE"}</strong>
+                <strong>{zakatSummary?.latest?.is_zakat_due ? t("zakatStatusDue") : t("zakatStatusNotDue")}</strong>
                 <p>{zakatSummary?.latest?.calculation_year || zakatForm.calculation_year}</p>
               </div>
             </div>
 
             <h3>{t("calculateZakat")}</h3>
             <div className="savings-form">
-              <input placeholder={t("yearPlaceholder")} value={zakatForm.calculation_year} onChange={(e) => setZakatForm({ ...zakatForm, calculation_year: e.target.value })} />
-              <input placeholder={t("cashAmountPlaceholder")} value={zakatForm.cash_amount} onChange={(e) => setZakatForm({ ...zakatForm, cash_amount: e.target.value })} />
-              <input placeholder="Gold grams (optional)" value={zakatForm.gold_grams || ""} onChange={(e) => setZakatForm({ ...zakatForm, gold_grams: e.target.value })} />
-              <input placeholder="Silver grams (optional)" value={zakatForm.silver_grams || ""} onChange={(e) => setZakatForm({ ...zakatForm, silver_grams: e.target.value })} />
-              <input placeholder={t("goldValuePlaceholder")} value={zakatForm.gold_value} onChange={(e) => setZakatForm({ ...zakatForm, gold_value: e.target.value })} />
-              <input placeholder="Silver value" value={zakatForm.silver_value} onChange={(e) => setZakatForm({ ...zakatForm, silver_value: e.target.value })} />
-              <input placeholder="Investment value" value={zakatForm.investment_value} onChange={(e) => setZakatForm({ ...zakatForm, investment_value: e.target.value })} />
-              <input placeholder="Business assets" value={zakatForm.business_assets} onChange={(e) => setZakatForm({ ...zakatForm, business_assets: e.target.value })} />
-              <input placeholder="Receivables" value={zakatForm.receivables} onChange={(e) => setZakatForm({ ...zakatForm, receivables: e.target.value })} />
-              <input placeholder="Deductible debts" value={zakatForm.deductible_debts} onChange={(e) => setZakatForm({ ...zakatForm, deductible_debts: e.target.value })} />
+              <input placeholder={t("yearPlaceholder")} value={zakatForm.calculation_year || ""} onChange={(e) => setZakatForm({ ...zakatForm, calculation_year: e.target.value })} />
+              <input placeholder={t("cashAmountPlaceholder")} value={zakatForm.cash_amount || ""} onChange={(e) => setZakatForm({ ...zakatForm, cash_amount: e.target.value })} />
+              <input placeholder={t("goldGramsPlaceholder")} value={zakatForm.gold_grams || ""} onChange={(e) => setZakatForm({ ...zakatForm, gold_grams: e.target.value })} />
+              <input placeholder={t("silverGramsPlaceholder")} value={zakatForm.silver_grams || ""} onChange={(e) => setZakatForm({ ...zakatForm, silver_grams: e.target.value })} />
+              <input placeholder={t("goldValuePlaceholder")} value={zakatForm.gold_value || ""} onChange={(e) => setZakatForm({ ...zakatForm, gold_value: e.target.value })} />
+              <input placeholder={t("silverValuePlaceholder")} value={zakatForm.silver_value || ""} onChange={(e) => setZakatForm({ ...zakatForm, silver_value: e.target.value })} />
+              <input placeholder={t("investmentValuePlaceholder")} value={zakatForm.investment_value || ""} onChange={(e) => setZakatForm({ ...zakatForm, investment_value: e.target.value })} />
+              <input placeholder={t("businessAssetsPlaceholder")} value={zakatForm.business_assets || ""} onChange={(e) => setZakatForm({ ...zakatForm, business_assets: e.target.value })} />
+              <input placeholder={t("receivablesPlaceholder")} value={zakatForm.receivables || ""} onChange={(e) => setZakatForm({ ...zakatForm, receivables: e.target.value })} />
+              <input placeholder={t("deductibleDebtsPlaceholder")} value={zakatForm.deductible_debts || ""} onChange={(e) => setZakatForm({ ...zakatForm, deductible_debts: e.target.value })} />
               <select value={zakatForm.nisab_metal || "SILVER"} onChange={(e) => setZakatForm({ ...zakatForm, nisab_metal: e.target.value })}>
-                <option value="SILVER">Nisab metal: SILVER</option>
-                <option value="GOLD">Nisab metal: GOLD</option>
+                <option value="SILVER">{t("nisabMetalSilver")}</option>
+                <option value="GOLD">{t("nisabMetalGold")}</option>
               </select>
-              <input placeholder={t("nisabAmountPlaceholder") + " (auto ok)"} value={zakatForm.nisab_amount} onChange={(e) => setZakatForm({ ...zakatForm, nisab_amount: e.target.value })} />
-              <input placeholder={t("note")} value={zakatForm.note} onChange={(e) => setZakatForm({ ...zakatForm, note: e.target.value })} />
-              <button onClick={calculateZakat}>{t("calculateZakat")}</button>
-              <button onClick={loadZakat}>{t("refreshZakat")}</button>
-              <button type="button" onClick={fillNisabFromRates}>Auto nisab from rates</button>
+              <input placeholder={t("nisabAmountPlaceholder")} value={zakatForm.nisab_amount || ""} onChange={(e) => setZakatForm({ ...zakatForm, nisab_amount: e.target.value })} />
+              <input placeholder={t("note")} value={zakatForm.note || ""} onChange={(e) => setZakatForm({ ...zakatForm, note: e.target.value })} />
+              <button type="button" onClick={calculateZakat}>{t("calculateZakat")}</button>
+              <button type="button" onClick={loadZakat}>{t("refreshZakat")}</button>
+              <button type="button" onClick={fillNisabFromRates}>{t("autoNisabFromRates")}</button>
             </div>
-            <h3>Gold / Silver rates (BDT / gram)</h3>
+            <h3>{t("zakatMetalRates")}</h3>
             <div className="savings-form">
-              <input placeholder="Gold rate" value={zakatForm.gold_rate || ""} onChange={(e) => setZakatForm({ ...zakatForm, gold_rate: e.target.value })} />
-              <button type="button" onClick={() => saveMetalRate("GOLD")}>Save GOLD</button>
-              <input placeholder="Silver rate" value={zakatForm.silver_rate || ""} onChange={(e) => setZakatForm({ ...zakatForm, silver_rate: e.target.value })} />
-              <button type="button" onClick={() => saveMetalRate("SILVER")}>Save SILVER</button>
-              <button type="button" onClick={loadMetalRates}>Load rates</button>
+              <input placeholder={t("goldRatePlaceholder")} value={zakatForm.gold_rate || ""} onChange={(e) => setZakatForm({ ...zakatForm, gold_rate: e.target.value })} />
+              <button type="button" onClick={() => saveMetalRate("GOLD")}>{t("saveGoldRate")}</button>
+              <input placeholder={t("silverRatePlaceholder")} value={zakatForm.silver_rate || ""} onChange={(e) => setZakatForm({ ...zakatForm, silver_rate: e.target.value })} />
+              <button type="button" onClick={() => saveMetalRate("SILVER")}>{t("saveSilverRate")}</button>
+              <button type="button" onClick={loadMetalRates}>{t("loadRates")}</button>
             </div>
             {metalRates ? (
               <p className="status">
-                {(metalRates.rates || []).map((r) => `${r.metal}=${r.rate_bdt}`).join(" · ") || "No rates yet"}
+                {(metalRates.rates || []).map((r) => `${r.metal}=${r.rate_bdt}`).join(" · ") || t("noMetalRatesYet")}
               </p>
             ) : null}
 
             <h3>{t("zakatHistory")}</h3>
             {zakatRecords.length === 0 ? (
-              <p className="status">No zakat records found</p>
+              <p className="status">{t("noZakatRecords")}</p>
             ) : (
               <div className="table">
                 {zakatRecords.map((record) => (
                   <div className="row" key={record.id}>
                     <span>{record.calculation_year}</span>
                     <span>{t("zakatableLabel")} {money(record.zakatable_amount, record.currency)}</span>
-                    <span>Nisab: {money(record.nisab_amount, record.currency)}</span>
+                    <span>{t("nisabLabel")} {money(record.nisab_amount, record.currency)}</span>
                     <strong>{money(record.zakat_due, record.currency)}</strong>
-                    <span>{record.is_zakat_due ? "DUE" : "NOT DUE"}</span>
+                    <span>{record.is_zakat_due ? t("zakatStatusDue") : t("zakatStatusNotDue")}</span>
                     <span>{record.created_at ? digits(record.created_at) : t("noDate")}</span>
                   </div>
                 ))}
@@ -11203,7 +13551,7 @@ function App() {
             governanceMembers={governanceMembers}
             onSave={savePhase15Item}
             onEdit={startEditPhase15Item}
-            onCancelEdit={() => resetPhase15Form(phase15ActiveTab)}
+            onCancelEdit={(moduleType) => resetPhase15Form(moduleType || phase15ActiveTab)}
             onClose={closePhase15Item}
             onRefresh={loadPhase15}
           />
@@ -11227,7 +13575,7 @@ function App() {
             setDocumentFile={setDocumentFile}
             onSave={savePhase16Item}
             onEdit={startEditPhase16Item}
-            onCancelEdit={() => resetPhase16Form(phase16ActiveTab)}
+            onCancelEdit={(moduleType) => resetPhase16Form(moduleType || phase16ActiveTab)}
             onClose={closePhase16Item}
             onRefresh={loadPhase16}
             onUploadDocument={uploadDocumentForItem}
@@ -11282,6 +13630,7 @@ function App() {
             groceryPendingRows={groceryPendingRows}
             onReplayPendingSync={() => pushLocalSyncOutbox()}
             syncPushLoading={syncPushLoading}
+            cloudLocalMode={isCloudLocalMode()}
           />
         )}
 
@@ -11296,6 +13645,7 @@ function App() {
             activeFamilyId={activeFamilyId}
             onRefresh={loadAuditTrail}
             apiGet={apiGet}
+            onError={(msg) => setMessage(msg, "error")}
           />
         )}
 

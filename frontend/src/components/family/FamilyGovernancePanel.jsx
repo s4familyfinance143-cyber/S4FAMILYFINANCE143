@@ -9,6 +9,11 @@ import {
   needsSerial,
   serialLabelsFor,
 } from "../../lib/familyRelationships";
+import {
+  FAMILY_ASSIGNABLE_ROLES,
+  defaultPermissionsForRole,
+  applyPermissionOverrides,
+} from "../../lib/familyRoles";
 
 const TABS = ["members", "invite", "join", "requests"];
 
@@ -52,35 +57,22 @@ const MEMBER_CAPABILITY_TOGGLES = [
 
 const ROLE_HELP = {
   MEMBER: {
-    en: "Normal member — you set each permission below",
-    bn: "সাধারণ সদস্য — নিচের প্রতিটি অনুমতি আপনি সেট করবেন",
+    en: "Normal member — set each permission below",
+    bn: "সাধারণ সদস্য — নিচের প্রতিটি অনুমতি সেট করুন",
   },
   ADMIN: {
     en: "Almost like Owner — full access (individual toggles hidden)",
-    bn: "প্রায় Owner — সব অ্যাক্সেস (আলাদা টগল লাগে না)",
+    bn: "প্রায় Owner — সব অ্যাক্সেস (আলাদা টগল লুকানো)",
   },
   VIEWER: {
-    en: "Mostly view-only — good for read access",
-    bn: "মূলত শুধু দেখা — রিড অ্যাক্সেসের জন্য",
+    en: "View-only baseline — you can tighten or open toggles below",
+    bn: "শুধু দেখার বেসলাইন — নিচে টগল দিয়ে বাড়াতে/কমাতে পারবেন",
   },
   CHILD: {
-    en: "Limited child access — tighten permissions below",
-    bn: "সীমিত চাইল্ড অ্যাক্সেস — নিচে অনুমতি কমিয়ে দিন",
+    en: "Limited child baseline — view + expenses; adjust below",
+    bn: "সীমিত চাইল্ড বেসলাইন — দেখা + খরচ; নিচে অ্যাডজাস্ট করুন",
   },
 };
-
-const MEMBER_DEFAULT_CAPS = [
-  "dashboard.read",
-  "accounts.read",
-  "transactions.read",
-  "transactions.create",
-  "income.create",
-  "expense.create",
-  "reports.read",
-  "backup.read",
-  "sync.view",
-  "sync.pull",
-];
 
 function hasEffectivePermission(effective = [], key) {
   if (!key) return false;
@@ -101,23 +93,25 @@ function roleHelpText(role, lang) {
 }
 
 function resolveMemberCapabilities(member, permissionRow) {
-  const role = String(
-    permissionRow?.normalized_role ||
-      permissionRow?.role ||
-      member?.normalized_role ||
-      member?.role ||
-      "MEMBER",
-  ).toUpperCase();
+  const memberRole = String(member?.normalized_role || member?.role || "").toUpperCase();
+  const permRole = String(permissionRow?.normalized_role || permissionRow?.role || "").toUpperCase();
+  const role = memberRole || permRole || "MEMBER";
   if (role === "OWNER" || role === "ADMIN") {
     return ["*"];
   }
-  const fromPerm = Array.isArray(permissionRow?.effective_permissions)
-    ? permissionRow.effective_permissions
-    : null;
-  if (fromPerm?.length) return fromPerm;
-  const fromMember = Array.isArray(member?.effective_permissions) ? member.effective_permissions : null;
-  if (fromMember?.length) return fromMember;
-  return [...MEMBER_DEFAULT_CAPS];
+  // Always recompute from role baseline + overrides — never trust a stale fat effective_permissions list
+  // (optimistic create used to inject MEMBER defaults and leave every toggle OPEN).
+  const overrides =
+    permRole && memberRole && permRole !== memberRole
+      ? []
+      : Array.isArray(permissionRow?.overrides)
+        ? permissionRow.overrides
+        : Array.isArray(permissionRow?.permission_overrides)
+          ? permissionRow.permission_overrides
+          : Array.isArray(member?.overrides)
+            ? member.overrides
+            : [];
+  return applyPermissionOverrides(defaultPermissionsForRole(role), overrides);
 }
 
 function preferElevatedRole(...roles) {
@@ -146,9 +140,6 @@ function resolveMyGlobalRole({ myPermissions, governanceMembers, currentUser, em
     .trim()
     .toLowerCase();
 
-  const ownerUid = String(activeFamily?.owner_uid || activeFamily?.owner_id || "").trim();
-  if (uid && ownerUid && uid === ownerUid) return "OWNER";
-
   const matchedMembers = (governanceMembers || []).filter((m) => {
     const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
     const memberEmail = String(m.email || m.user_email || "")
@@ -167,6 +158,11 @@ function resolveMyGlobalRole({ myPermissions, governanceMembers, currentUser, em
 
   const resolved = preferElevatedRole(fromMembers, fromPerms);
   if (resolved) return resolved;
+
+  // Stale owner_uid only as last resort when member rows are missing
+  const ownerUid = String(activeFamily?.owner_uid || activeFamily?.owner_id || "").trim();
+  if (uid && ownerUid && uid === ownerUid) return "OWNER";
+
   if (myPermissions || matchedMembers.length) return "MEMBER";
   return loadingLabel || "—";
 }
@@ -271,6 +267,7 @@ export function FamilyGovernancePanel({
   const [joinForm, setJoinForm] = useState({ ...EMPTY_JOIN });
   const [joining, setJoining] = useState(false);
   const [roleBusyId, setRoleBusyId] = useState("");
+  const [roleDraftByMember, setRoleDraftByMember] = useState({});
   const [relationBusyId, setRelationBusyId] = useState("");
   const [memberBusyId, setMemberBusyId] = useState("");
   const [deactivateBusy, setDeactivateBusy] = useState(false);
@@ -279,6 +276,16 @@ export function FamilyGovernancePanel({
   const [transferNote, setTransferNote] = useState("");
   const [transfers, setTransfers] = useState([]);
   const [transferBusy, setTransferBusy] = useState("");
+  const [banner, setBanner] = useState(null);
+
+  function flash(message, type = "error") {
+    const text = String(message || "").trim();
+    if (!text) return;
+    setBanner({ text, type });
+    window.setTimeout(() => {
+      setBanner((prev) => (prev?.text === text ? null : prev));
+    }, 4200);
+  }
 
   // Auto-fetch members as soon as family context is ready — do not wait for Refresh.
   useEffect(() => {
@@ -313,7 +320,6 @@ export function FamilyGovernancePanel({
     [myPermissions, governanceMembers, currentUser, email, activeFamily, t],
   );
   const isOwner = String(role).toUpperCase().includes("OWNER");
-  const isAdmin = String(role).toUpperCase().includes("ADMIN");
   const familyId = activeFamilyId || activeFamily?.id;
   const showMemberSkeleton =
     Boolean(activeFamilyId) &&
@@ -332,14 +338,22 @@ export function FamilyGovernancePanel({
 
   const myMemberId =
     myPermissions?.member_id ||
+    myPermissions?.uid ||
+    myPermissions?.user_id ||
     memberIdOf(
-      governanceMembers.find(
-        (m) =>
-          String(m.user_id || m.member_user_id || "") === String(currentUser?.id || "") ||
+      governanceMembers.find((m) => {
+        const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
+        const myUid = String(
+          currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+        ).trim();
+        if (myUid && memberUid && memberUid === myUid) return true;
+        return (
           String(m.email || m.user_email || "").toLowerCase() ===
-            String(currentUser?.email || email || "").toLowerCase()
-      ) || {}
-    );
+          String(currentUser?.email || email || "").toLowerCase()
+        );
+      }) || {},
+    ) ||
+    String(currentUser?.uid || currentUser?.firebase_uid || "").trim();
 
   const loadTransfers = useCallback(async () => {
     if (!familyId || !apiGet) return;
@@ -349,7 +363,9 @@ export function FamilyGovernancePanel({
     } catch {
       setTransfers([]);
     }
-  }, [familyId, apiGet]);
+    // apiGet identity changes every render — depend only on familyId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familyId]);
 
   useEffect(() => {
     void loadTransfers();
@@ -370,10 +386,28 @@ export function FamilyGovernancePanel({
   async function setMemberRole(member, nextRole) {
     const mid = memberIdOf(member);
     if (!mid || !familyId || !apiPatch) return;
+    const current = String(member.role || member.member_role || "MEMBER").toUpperCase();
+    if (current === nextRole && !roleDraftByMember[mid]) return;
+
+    // Instant UI — do not wait for refresh (avoids "stuck open" / delayed chip state)
+    setRoleDraftByMember((prev) => ({ ...prev, [mid]: nextRole }));
     setRoleBusyId(mid);
     try {
       await apiPatch(`/families/${familyId}/members/${mid}/role`, { role: nextRole });
+      flash(t("roleUpdatedOk") || "Role updated", "success");
       await onRefresh?.();
+      setRoleDraftByMember((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+    } catch (err) {
+      setRoleDraftByMember((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+      flash(err?.message || t("roleUpdateFailed") || "Role update failed", "error");
     } finally {
       setRoleBusyId("");
     }
@@ -395,7 +429,10 @@ export function FamilyGovernancePanel({
         relationship_type: relation,
         relationship: relation,
       });
+      flash(t("relationshipUpdatedOk") || "Relationship updated", "success");
       await onRefresh?.();
+    } catch (err) {
+      flash(err?.message || t("relationshipUpdateFailed") || "Relationship update failed", "error");
     } finally {
       setRelationBusyId("");
     }
@@ -408,7 +445,10 @@ export function FamilyGovernancePanel({
     setMemberBusyId(mid);
     try {
       await apiDelete(`/families/${familyId}/members/${mid}`);
+      flash(t("memberRemovedOk") || "Member removed", "success");
       await onRefresh?.();
+    } catch (err) {
+      flash(err?.message || t("memberRemoveFailed") || "Remove member failed", "error");
     } finally {
       setMemberBusyId("");
     }
@@ -420,7 +460,10 @@ export function FamilyGovernancePanel({
     setDeactivateBusy(true);
     try {
       await apiPost(`/families/${familyId}/deactivate`, {});
+      flash(t("familyDeactivatedOk") || "Family archived", "success");
       await onRefresh?.();
+    } catch (err) {
+      flash(err?.message || t("familyDeactivateFailed") || "Deactivate failed", "error");
     } finally {
       setDeactivateBusy(false);
     }
@@ -435,7 +478,10 @@ export function FamilyGovernancePanel({
         note: transferNote.trim() || null,
       });
       setTransferNote("");
+      flash(t("ownershipTransferRequested") || "Ownership transfer requested", "success");
       await loadTransfers();
+    } catch (err) {
+      flash(err?.message || "Ownership transfer failed", "error");
     } finally {
       setTransferBusy("");
     }
@@ -446,8 +492,11 @@ export function FamilyGovernancePanel({
     setTransferBusy(requestId);
     try {
       await apiPost(`/families/${familyId}/ownership-transfer/${requestId}/accept`, {});
+      flash(t("ownershipTransferAccepted") || "Ownership transferred", "success");
       await loadTransfers();
       await onRefresh?.();
+    } catch (err) {
+      flash(err?.message || "Accept transfer failed", "error");
     } finally {
       setTransferBusy("");
     }
@@ -460,6 +509,8 @@ export function FamilyGovernancePanel({
       await apiPost(`/families/${familyId}/ownership-transfer/${requestId}/admin-approve`, {});
       await loadTransfers();
       await onRefresh?.();
+    } catch (err) {
+      flash(err?.message || "Approve transfer failed", "error");
     } finally {
       setTransferBusy("");
     }
@@ -471,6 +522,8 @@ export function FamilyGovernancePanel({
     try {
       await apiPost(`/families/${familyId}/ownership-transfer/${requestId}/cancel`, {});
       await loadTransfers();
+    } catch (err) {
+      flash(err?.message || "Cancel transfer failed", "error");
     } finally {
       setTransferBusy("");
     }
@@ -504,6 +557,12 @@ export function FamilyGovernancePanel({
           {governanceLoading ? t("loading") : t("refreshFamily")}
         </button>
       </div>
+
+      {banner ? (
+        <p className={banner.type === "success" ? "status ok" : "status error"} role="status">
+          {banner.text}
+        </p>
+      ) : null}
 
       <div className="settings-tabs" role="tablist">
         {TABS.map((key) => (
@@ -614,7 +673,10 @@ export function FamilyGovernancePanel({
             ) : (
               <div className="finance-feed">
                 {governanceMembers.map((member) => {
-                  const roleValue = String(member.role || member.member_role || "MEMBER").toUpperCase();
+                  const mid = memberIdOf(member);
+                  const roleValue = String(
+                    roleDraftByMember[mid] || member.role || member.member_role || "MEMBER",
+                  ).toUpperCase();
                   const statusValue = String(
                     member.status || (member.is_active ? "ACTIVE" : "UNKNOWN")
                   ).toUpperCase();
@@ -624,7 +686,6 @@ export function FamilyGovernancePanel({
                     member.relationship ||
                     "Family Member";
                   const idValue = member.user_id || member.member_user_id || member.id;
-                  const mid = memberIdOf(member);
                   const canToggleRole = isOwner && mid && !roleValue.includes("OWNER");
                   const canEditRelation = Boolean(isOwner && mid && apiPatch);
                   const canEditCapabilities = Boolean(
@@ -634,12 +695,19 @@ export function FamilyGovernancePanel({
                       !roleValue.includes("OWNER") &&
                       !roleValue.includes("ADMIN"),
                   );
-                  const canRemove = (isOwner || isAdmin) && mid && !roleValue.includes("OWNER");
+                  const canRemove = isOwner && mid && !roleValue.includes("OWNER");
                   const relationOptions = roleValue.includes("OWNER")
                     ? OWNER_RELATIONSHIPS
                     : JOIN_RELATIONSHIPS;
                   const permRow = findPermissionRow(memberPermissions, member);
-                  const effectiveCaps = resolveMemberCapabilities(member, permRow);
+                  const effectiveCaps = resolveMemberCapabilities(
+                    {
+                      ...member,
+                      role: roleValue,
+                      normalized_role: roleValue,
+                    },
+                    permRow,
+                  );
                   const savingCaps =
                     permissionSavingMemberId &&
                     (String(permissionSavingMemberId) === String(mid) ||
@@ -650,8 +718,16 @@ export function FamilyGovernancePanel({
                       : "What they can do";
                   const capsHint =
                     String(uiLang).startsWith("bn")
-                      ? "Owner (Husband) Wife / সদস্যের অ্যাক্সেস সেট করে — MEMBER রোলে টগল কাজ করে"
-                      : "Owner sets Wife / member access — use MEMBER role for these toggles";
+                      ? roleValue === "VIEWER"
+                        ? "VIEWER = মূলত শুধু দেখা — নিচে টগল দিয়ে বাড়াতে পারবেন"
+                        : roleValue === "CHILD"
+                          ? "CHILD = সীমিত অ্যাক্সেস — নিচে টগল দিয়ে অ্যাডজাস্ট করুন"
+                          : "Owner Wife / সদস্যের অ্যাক্সেস সেট করে — MEMBER/VIEWER/CHILD-এ টগল কাজ করে"
+                      : roleValue === "VIEWER"
+                        ? "VIEWER = view-only baseline — open more with toggles below"
+                        : roleValue === "CHILD"
+                          ? "CHILD = limited access — adjust with toggles below"
+                          : "Owner sets Wife / member access — toggles work on MEMBER / VIEWER / CHILD";
                   return (
                     <div className="finance-card tx-card is-savings family-member-card" key={idValue || mid}>
                       <div className="tx-row family-member-row">
@@ -703,16 +779,25 @@ export function FamilyGovernancePanel({
                           {canToggleRole ? (
                             <div className="family-member-role-block">
                               <span className="family-member-relation-label">
-                                {String(uiLang).startsWith("bn") ? "অ্যাক্সেস লেভেল (রোল)" : "Access level (role)"}
+                                {t("accessLevelRole") ||
+                                  (String(uiLang).startsWith("bn")
+                                    ? "অ্যাক্সেস লেভেল (রোল)"
+                                    : "Access level (role)")}
                               </span>
                               <div className="family-member-role-btns" role="group" aria-label={t("role") || "Role"}>
-                                {["MEMBER", "ADMIN", "VIEWER", "CHILD"].map((nextRole) => (
+                                {FAMILY_ASSIGNABLE_ROLES.map((nextRole) => (
                                   <button
                                     key={nextRole}
                                     type="button"
                                     className={`btn family-role-chip${roleValue === nextRole ? " is-active" : ""}`}
-                                    disabled={roleBusyId === mid || roleValue === nextRole}
-                                    onClick={() => void setMemberRole(member, nextRole)}
+                                    aria-pressed={roleValue === nextRole}
+                                    disabled={roleBusyId === mid}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (roleValue === nextRole) return;
+                                      void setMemberRole(member, nextRole);
+                                    }}
                                   >
                                     {nextRole}
                                   </button>
@@ -744,7 +829,8 @@ export function FamilyGovernancePanel({
                                           type="checkbox"
                                           checked={on}
                                           disabled={Boolean(savingCaps)}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            e.stopPropagation();
                                             toggleMemberPermission?.(
                                               {
                                                 ...member,
@@ -757,8 +843,8 @@ export function FamilyGovernancePanel({
                                               },
                                               item.key,
                                               e.target.checked,
-                                            )
-                                          }
+                                            );
+                                          }}
                                           aria-label={label}
                                         />
                                         <span className="perm-switch-ui" aria-hidden="true" />
@@ -770,9 +856,10 @@ export function FamilyGovernancePanel({
                             </div>
                           ) : isOwner && mid && roleValue.includes("ADMIN") ? (
                             <p className="family-member-caps-hint family-admin-note">
-                              {String(uiLang).startsWith("bn")
-                                ? "ADMIN = ফুল অ্যাক্সেস। আলাদা টগল দেখতে রোল MEMBER করুন।"
-                                : "ADMIN = full access. Switch role to MEMBER to set individual toggles."}
+                              {t("adminFullAccessHint") ||
+                                (String(uiLang).startsWith("bn")
+                                  ? "ADMIN = ফুল অ্যাক্সেস। আলাদা টগল দেখতে রোল MEMBER / VIEWER / CHILD করুন।"
+                                  : "ADMIN = full access. Switch role to MEMBER / VIEWER / CHILD to set individual toggles.")}
                             </p>
                           ) : null}
                           {canRemove && apiDelete ? (
@@ -841,7 +928,12 @@ export function FamilyGovernancePanel({
               <div className="finance-feed" style={{ marginTop: 12 }}>
                 {pendingTransfers.map((row) => {
                   const status = String(row.status || "PENDING").toUpperCase();
-                  const canAccept = status === "PENDING_ACCEPT" && String(row.to_member_id || "") === String(myMemberId || "");
+                  const canAccept =
+                    status === "PENDING_ACCEPT" &&
+                    Boolean(myMemberId) &&
+                    (String(row.to_member_id || "") === String(myMemberId) ||
+                      String(row.to_member_id || "") ===
+                        String(currentUser?.uid || currentUser?.firebase_uid || ""));
                   const canAdminApprove =
                     ["PENDING_ADMIN", "PENDING"].includes(status) &&
                     String(role || "").toUpperCase().includes("ADMIN") &&
@@ -1030,7 +1122,7 @@ export function FamilyGovernancePanel({
           <div className="settings-block">
             <h4>{t("joinFamily") || "Join with invite"}</h4>
             <p className="budget-hero-sub" style={{ marginTop: 4 }}>
-              {t("joinFamilyHint") || "Enter an invite code to request joining another family."}
+              {t("joinFamilyHintCloud") || t("joinFamilyHint") || "Enter an invite code to join another family."}
             </p>
             <div className="finance-form">
               <input
@@ -1120,12 +1212,14 @@ export function FamilyGovernancePanel({
                   try {
                     await onJoinFamily?.(buildJoinInvitePayload(joinForm));
                     setJoinForm({ ...EMPTY_JOIN });
+                  } catch (err) {
+                    flash(err?.message || t("joinFailedGate") || "Join failed", "error");
                   } finally {
                     setJoining(false);
                   }
                 }}
               >
-                {joining ? t("loading") : t("joinFamilySubmit") || "Send join request"}
+                {joining ? t("loading") : t("joinFamily") || "Join family"}
               </button>
             </div>
           </div>
@@ -1173,6 +1267,8 @@ export function FamilyGovernancePanel({
                             setDecidingId(requestId);
                             try {
                               await onDecideJoinRequest(requestId, "APPROVE");
+                            } catch (err) {
+                              flash(err?.message || "Approve failed", "error");
                             } finally {
                               setDecidingId("");
                             }
@@ -1188,6 +1284,8 @@ export function FamilyGovernancePanel({
                             setDecidingId(requestId);
                             try {
                               await onDecideJoinRequest(requestId, "REJECT");
+                            } catch (err) {
+                              flash(err?.message || "Reject failed", "error");
                             } finally {
                               setDecidingId("");
                             }

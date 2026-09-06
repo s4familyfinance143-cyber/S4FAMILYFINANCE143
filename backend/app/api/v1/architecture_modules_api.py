@@ -260,7 +260,7 @@ def list_investments(family_id: str, db: Session = Depends(get_db), user: User =
 
 @router.post("/investments", status_code=status.HTTP_201_CREATED)
 def create_investment(payload: InvestmentIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = Investment(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -299,7 +299,7 @@ def add_investment_return(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     inv = (
         db.query(Investment)
         .filter(
@@ -490,7 +490,7 @@ def list_health(family_id: str, db: Session = Depends(get_db), user: User = Depe
 
 @router.post("/health-expenses", status_code=status.HTTP_201_CREATED)
 def create_health(payload: HealthIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     year = payload.year or ((payload.expense_date or "")[:4] or None)
     row = HealthExpense(
         family_id=payload.family_id,
@@ -554,7 +554,7 @@ def list_vehicle(family_id: str, db: Session = Depends(get_db), user: User = Dep
 
 @router.post("/vehicle-expenses", status_code=status.HTTP_201_CREATED)
 def create_vehicle(payload: VehicleIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = VehicleExpense(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -617,7 +617,7 @@ def list_properties(family_id: str, db: Session = Depends(get_db), user: User = 
 
 @router.post("/properties", status_code=status.HTTP_201_CREATED)
 def create_property(payload: PropertyIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = Property(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -720,7 +720,7 @@ def list_subscriptions(family_id: str, db: Session = Depends(get_db), user: User
 
 @router.post("/subscriptions", status_code=status.HTTP_201_CREATED)
 def create_subscription(payload: SubscriptionIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     name = payload.name.strip()
     amount = payload.amount
     cycle = (payload.cycle or "MONTHLY").upper()
@@ -794,7 +794,7 @@ def list_documents(family_id: str, db: Session = Depends(get_db), user: User = D
 
 @router.post("/documents", status_code=status.HTTP_201_CREATED)
 def create_document(payload: DocumentIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = Document(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -961,7 +961,7 @@ def list_education(family_id: str, db: Session = Depends(get_db), user: User = D
 
 @router.post("/education-funds", status_code=status.HTTP_201_CREATED)
 def create_education(payload: EducationIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     annual = payload.annual_target
     monthly = payload.monthly_target
     if annual is None and monthly is not None:
@@ -1074,7 +1074,7 @@ def _close_row(row, payload: CloseIn, db: Session, member_id: str, entity: str):
 
 @router.patch("/investments/{item_id}")
 def patch_investment(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Investment).filter(Investment.id == item_id, Investment.family_id == payload.family_id, Investment.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1083,7 +1083,7 @@ def patch_investment(item_id: str, payload: ModuleUpdateIn, db: Session = Depend
 
 @router.patch("/health-expenses/{item_id}")
 def patch_health(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(HealthExpense).filter(HealthExpense.id == item_id, HealthExpense.family_id == payload.family_id, HealthExpense.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1092,7 +1092,7 @@ def patch_health(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(ge
 
 @router.patch("/vehicle-expenses/{item_id}")
 def patch_vehicle(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(VehicleExpense).filter(VehicleExpense.id == item_id, VehicleExpense.family_id == payload.family_id, VehicleExpense.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1101,7 +1101,7 @@ def patch_vehicle(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(g
 
 @router.patch("/education-funds/{item_id}")
 def patch_education(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(EducationFund).filter(EducationFund.id == item_id, EducationFund.family_id == payload.family_id, EducationFund.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1110,7 +1110,7 @@ def patch_education(item_id: str, payload: ModuleUpdateIn, db: Session = Depends
 
 @router.patch("/properties/{item_id}")
 def patch_property(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Property).filter(Property.id == item_id, Property.family_id == payload.family_id, Property.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1119,7 +1119,7 @@ def patch_property(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(
 
 @router.patch("/subscriptions/{item_id}")
 def patch_subscription(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Subscription).filter(Subscription.id == item_id, Subscription.family_id == payload.family_id, Subscription.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1128,7 +1128,7 @@ def patch_subscription(item_id: str, payload: ModuleUpdateIn, db: Session = Depe
 
 @router.patch("/documents/{item_id}")
 def patch_document(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Document).filter(Document.id == item_id, Document.family_id == payload.family_id, Document.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1137,7 +1137,7 @@ def patch_document(item_id: str, payload: ModuleUpdateIn, db: Session = Depends(
 
 @router.post("/investments/{item_id}/close")
 def close_investment(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Investment).filter(Investment.id == item_id, Investment.family_id == payload.family_id, Investment.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1146,7 +1146,7 @@ def close_investment(item_id: str, payload: CloseIn, db: Session = Depends(get_d
 
 @router.post("/health-expenses/{item_id}/close")
 def close_health(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(HealthExpense).filter(HealthExpense.id == item_id, HealthExpense.family_id == payload.family_id, HealthExpense.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1155,7 +1155,7 @@ def close_health(item_id: str, payload: CloseIn, db: Session = Depends(get_db), 
 
 @router.post("/vehicle-expenses/{item_id}/close")
 def close_vehicle(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(VehicleExpense).filter(VehicleExpense.id == item_id, VehicleExpense.family_id == payload.family_id, VehicleExpense.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1164,7 +1164,7 @@ def close_vehicle(item_id: str, payload: CloseIn, db: Session = Depends(get_db),
 
 @router.post("/education-funds/{item_id}/close")
 def close_education(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(EducationFund).filter(EducationFund.id == item_id, EducationFund.family_id == payload.family_id, EducationFund.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1173,7 +1173,7 @@ def close_education(item_id: str, payload: CloseIn, db: Session = Depends(get_db
 
 @router.post("/properties/{item_id}/close")
 def close_property(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Property).filter(Property.id == item_id, Property.family_id == payload.family_id, Property.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1182,7 +1182,7 @@ def close_property(item_id: str, payload: CloseIn, db: Session = Depends(get_db)
 
 @router.post("/subscriptions/{item_id}/close")
 def close_subscription(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Subscription).filter(Subscription.id == item_id, Subscription.family_id == payload.family_id, Subscription.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1191,7 +1191,7 @@ def close_subscription(item_id: str, payload: CloseIn, db: Session = Depends(get
 
 @router.post("/documents/{item_id}/close")
 def close_document(item_id: str, payload: CloseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Document).filter(Document.id == item_id, Document.family_id == payload.family_id, Document.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Not found")
@@ -1206,7 +1206,7 @@ async def upload_document(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, family_id, user.id, "report.read")
+    member = require_permission(db, family_id, user.id, "transaction.create")
     row = db.query(Document).filter(Document.id == item_id, Document.family_id == family_id, Document.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Document not found")

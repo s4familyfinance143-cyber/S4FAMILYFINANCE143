@@ -22,12 +22,30 @@ function safeName(name) {
 }
 
 const PROFILE_MAX_BYTES = 2 * 1024 * 1024;
-const PROFILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function extFromName(name) {
+  const m = String(name || "")
+    .toLowerCase()
+    .match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : "";
+}
+
+/** Normalize browser MIME quirks (empty type, image/jpg). */
+export function resolveProfilePhotoContentType(file) {
+  const raw = String(file?.type || "").toLowerCase().trim();
+  if (raw === "image/jpg" || raw === "image/jpeg") return "image/jpeg";
+  if (raw === "image/png" || raw === "image/webp") return raw;
+  const ext = extFromName(file?.name);
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  return raw;
+}
 
 export function validateProfilePhotoFile(file) {
   if (!file) return { ok: false, reason: "missing_file", message: "No file selected." };
-  const type = String(file.type || "").toLowerCase();
-  if (!PROFILE_TYPES.has(type)) {
+  const type = resolveProfilePhotoContentType(file);
+  if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
     return {
       ok: false,
       reason: "invalid_type",
@@ -41,7 +59,7 @@ export function validateProfilePhotoFile(file) {
       message: "Failed to upload. Max size 2MB, JPG/PNG/WebP only.",
     };
   }
-  return { ok: true };
+  return { ok: true, contentType: type };
 }
 
 /**
@@ -66,13 +84,13 @@ export async function uploadProfilePhotoToFirebase({ uid, file }) {
     throw new Error("Sign in required to upload profile photo.");
   }
 
+  const contentType = check.contentType || resolveProfilePhotoContentType(file) || "image/jpeg";
   const storage = getFirebaseStorage();
-  const ext =
-    file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
   const path = `users/${uid}/profile/avatar.${ext}`;
   const storageRef = ref(storage, path);
   const metadata = {
-    contentType: file.type || "image/jpeg",
+    contentType,
     customMetadata: {
       uploaded_by: String(uid),
       original_name: safeName(file.name || `avatar.${ext}`),

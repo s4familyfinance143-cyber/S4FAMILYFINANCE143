@@ -62,7 +62,7 @@ def list_tags(family_id: str, db: Session = Depends(get_db), user: User = Depend
 
 @router.post("/tags", status_code=status.HTTP_201_CREATED)
 def create_tag(payload: TagIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     existing = (
         db.query(Tag)
         .filter(Tag.family_id == payload.family_id, Tag.name == payload.name.strip(), Tag.deleted_at.is_(None))
@@ -90,7 +90,7 @@ def create_tag(payload: TagIn, db: Session = Depends(get_db), user: User = Depen
 
 @router.post("/transaction-tags", status_code=status.HTTP_201_CREATED)
 def attach_tag(payload: TxTagIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "transaction.create")
     tx = (
         db.query(Transaction)
         .filter(
@@ -166,7 +166,7 @@ def detach_tag(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, user.id, "report.read")
+    require_permission(db, family_id, user.id, "transaction.create")
     row = db.get(TransactionTag, link_id)
     if not row or row.deleted_at is not None:
         raise HTTPException(404, "Not found")
@@ -184,7 +184,7 @@ def update_tag(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(db, payload.family_id, user.id, "report.read")
+    require_permission(db, payload.family_id, user.id, "transaction.create")
     row = db.query(Tag).filter(Tag.id == tag_id, Tag.family_id == payload.family_id, Tag.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Tag not found")
@@ -202,7 +202,7 @@ def delete_tag(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, user.id, "report.read")
+    require_permission(db, family_id, user.id, "transaction.create")
     row = db.query(Tag).filter(Tag.id == tag_id, Tag.family_id == family_id, Tag.deleted_at.is_(None)).first()
     if not row:
         raise HTTPException(404, "Tag not found")
@@ -241,7 +241,7 @@ def list_loan_payments(
 
 @router.post("/loan-payments", status_code=status.HTTP_201_CREATED)
 def create_loan_payment(payload: LoanPaymentIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    member = require_permission(db, payload.family_id, user.id, "loan.payment")
     loan = (
         db.query(Loan)
         .filter(Loan.id == payload.loan_id, Loan.family_id == payload.family_id, Loan.deleted_at.is_(None))

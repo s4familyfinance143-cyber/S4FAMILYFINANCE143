@@ -1,5 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MoneyPill, TypeChip, typeTone } from "../ui/FinanceChips";
+
+function txTypeOf(tx) {
+  return String(tx?.transaction_type || tx?.type || "TX").toUpperCase();
+}
+
+function isVoided(tx) {
+  return String(tx?.status || "").toUpperCase() === "VOID";
+}
 
 export function TransactionsPanel({
   t,
@@ -18,21 +26,29 @@ export function TransactionsPanel({
   onParseExpenseOcrImage,
   voidBusyId = "",
   attachBusyId = "",
+  onGoWallets,
+  cloudLocalMode = false,
 }) {
   const [ocrText, setOcrText] = useState("");
   const [ocrResult, setOcrResult] = useState(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [attachFile, setAttachFile] = useState(null);
+  const [postBusy, setPostBusy] = useState(false);
 
-  const incomeCount = transactions.filter((tx) =>
-    String(tx.transaction_type || "").toUpperCase().includes("INCOME")
-  ).length;
-  const expenseCount = transactions.filter((tx) =>
-    String(tx.transaction_type || "").toUpperCase().includes("EXPENSE")
-  ).length;
-  const transferCount = transactions.filter((tx) =>
-    String(tx.transaction_type || "").toUpperCase().includes("TRANSFER")
-  ).length;
+  const activeWallets = useMemo(
+    () => (wallets || []).filter((w) => !w?.deleted_at && w?.is_active !== false),
+    [wallets],
+  );
+
+  const liveTx = useMemo(() => (transactions || []).filter((tx) => !isVoided(tx)), [transactions]);
+
+  const incomeTotal = liveTx
+    .filter((tx) => txTypeOf(tx).includes("INCOME"))
+    .reduce((s, tx) => s + Number(tx.amount || 0), 0);
+  const expenseTotal = liveTx
+    .filter((tx) => txTypeOf(tx).includes("EXPENSE"))
+    .reduce((s, tx) => s + Number(tx.amount || 0), 0);
+  const transferCount = liveTx.filter((tx) => txTypeOf(tx).includes("TRANSFER")).length;
 
   const filteredCategories = useMemo(() => {
     const want = String(txForm.type || "income").toUpperCase();
@@ -42,6 +58,33 @@ export function TransactionsPanel({
       return ct.includes(want);
     });
   }, [categories, txForm.type]);
+
+  // Keep category in sync with type; prefer first wallet when empty / invalid
+  useEffect(() => {
+    const fromOk = activeWallets.some((w) => String(w.id) === String(txForm.account_id));
+    if (!fromOk && activeWallets[0]?.id) {
+      const fromId = activeWallets[0].id;
+      const toId =
+        activeWallets.find((w) => String(w.id) !== String(fromId))?.id || "";
+      setTxForm((prev) => ({
+        ...prev,
+        account_id: fromId,
+        to_account_id: prev.to_account_id && String(prev.to_account_id) !== String(fromId)
+          ? prev.to_account_id
+          : toId,
+      }));
+    }
+  }, [activeWallets, txForm.account_id, setTxForm]);
+
+  useEffect(() => {
+    if (String(txForm.type || "").toLowerCase() === "transfer") return;
+    const match = filteredCategories[0];
+    if (!match) return;
+    const stillValid = filteredCategories.some((c) => String(c.id) === String(txForm.category_id));
+    if (!stillValid) {
+      setTxForm((prev) => ({ ...prev, category_id: match.id }));
+    }
+  }, [txForm.type, txForm.category_id, filteredCategories, setTxForm]);
 
   const isExpense = txForm.type === "expense";
   const isSplit = Boolean(txForm.split_enabled) && isExpense;
@@ -53,17 +96,25 @@ export function TransactionsPanel({
       const data = await onParseExpenseOcr(ocrText);
       setOcrResult(data);
       if (data?.suggested_total) {
-        setTxForm({ ...txForm, amount: String(data.suggested_total).replace(/\.0+$/, "") || data.suggested_total });
-      }
-      if (data?.lines?.[0]?.description && !txForm.description) {
         setTxForm((prev) => ({
           ...prev,
-          description: data.lines[0].description,
-          amount: prev.amount || String(data.suggested_total || ""),
+          amount: String(data.suggested_total).replace(/\.0+$/, "") || String(data.suggested_total),
+          description: prev.description || data?.lines?.[0]?.description || "",
         }));
       }
     } finally {
       setOcrBusy(false);
+    }
+  }
+
+  async function handlePost() {
+    if (postBusy) return;
+    setPostBusy(true);
+    try {
+      await onCreate?.(attachFile);
+      setAttachFile(null);
+    } finally {
+      setPostBusy(false);
     }
   }
 
@@ -82,11 +133,11 @@ export function TransactionsPanel({
       <div className="settings-stat-row">
         <div className="settings-stat">
           <span>{t("income")}</span>
-          <strong>{incomeCount}</strong>
+          <strong>{money(incomeTotal)}</strong>
         </div>
         <div className="settings-stat">
           <span>{t("expense")}</span>
-          <strong>{expenseCount}</strong>
+          <strong>{money(expenseTotal)}</strong>
         </div>
         <div className="settings-stat">
           <span>{t("transfer")}</span>
@@ -94,48 +145,68 @@ export function TransactionsPanel({
         </div>
         <div className="settings-stat">
           <span>{t("transactions")}</span>
-          <strong>{transactions.length}</strong>
+          <strong>{liveTx.length}</strong>
         </div>
       </div>
+
+      {activeWallets.length === 0 ? (
+        <div className="settings-block">
+          <p className="settings-empty">{t("createWalletFirst") || "Create a wallet first to post transactions."}</p>
+          {onGoWallets ? (
+            <button type="button" className="btn btn-primary" onClick={onGoWallets}>
+              {t("wallets")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="settings-stack">
         <div className="settings-block">
           <h4>{t("postTransaction")}</h4>
           <div className="finance-form">
-            <select value={txForm.type} onChange={(e) => setTxForm({ ...txForm, type: e.target.value, split_enabled: false })}>
+            <select
+              value={txForm.type || "income"}
+              onChange={(e) =>
+                setTxForm({ ...txForm, type: e.target.value, split_enabled: false, category_id: "" })
+              }
+              aria-label={t("transactions")}
+            >
               <option value="income">{t("income")}</option>
               <option value="expense">{t("expense")}</option>
               <option value="transfer">{t("transfer")}</option>
             </select>
 
             <select
-              value={txForm.account_id}
+              value={txForm.account_id || ""}
               onChange={(e) => setTxForm({ ...txForm, account_id: e.target.value })}
+              aria-label={t("selectWallet")}
             >
               <option value="">{t("selectWallet")}</option>
-              {wallets.map((wallet) => (
+              {activeWallets.map((wallet) => (
                 <option key={wallet.id} value={wallet.id}>
-                  {wallet.name}
+                  {wallet.name} ({money(wallet.current_balance ?? wallet.balance, wallet.currency)})
                 </option>
               ))}
             </select>
 
             {txForm.type === "transfer" ? (
               <select
-                value={txForm.to_account_id}
+                value={txForm.to_account_id || ""}
                 onChange={(e) => setTxForm({ ...txForm, to_account_id: e.target.value })}
+                aria-label={t("toWallet")}
               >
                 <option value="">{t("toWallet")}</option>
-                {wallets.map((wallet) => (
+                {activeWallets.map((wallet) => (
                   <option key={wallet.id} value={wallet.id}>
-                    {wallet.name}
+                    {wallet.name} ({money(wallet.current_balance ?? wallet.balance, wallet.currency)})
                   </option>
                 ))}
               </select>
             ) : (
               <select
-                value={txForm.category_id}
+                value={txForm.category_id || ""}
                 onChange={(e) => setTxForm({ ...txForm, category_id: e.target.value })}
+                aria-label={t("selectCategory")}
               >
                 <option value="">{t("selectCategory")}</option>
                 {filteredCategories.map((category) => (
@@ -148,13 +219,16 @@ export function TransactionsPanel({
 
             <input
               placeholder={t("amount")}
-              value={txForm.amount}
+              value={txForm.amount || ""}
               onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+              inputMode="decimal"
+              aria-label={t("amount")}
             />
             <input
               placeholder={t("description")}
-              value={txForm.description}
+              value={txForm.description || ""}
               onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
+              aria-label={t("description")}
             />
 
             {(txForm.type === "income" || txForm.type === "expense") && (
@@ -164,9 +238,14 @@ export function TransactionsPanel({
                 onChange={(e) => setAttachFile(e.target.files?.[0] || null)}
               />
             )}
+            {attachFile ? (
+              <p className="budget-hero-sub">
+                {t("fileSelected") || "File"}: {attachFile.name}
+              </p>
+            ) : null}
 
             {isExpense ? (
-              <label className="settings-check">
+              <label className="settings-check wallet-flag-row">
                 <input
                   type="checkbox"
                   checked={isSplit}
@@ -179,7 +258,7 @@ export function TransactionsPanel({
                     })
                   }
                 />
-                Split expense (2 members)
+                <span>{t("splitExpense") || "Split expense (2 members)"}</span>
               </label>
             ) : null}
 
@@ -189,7 +268,7 @@ export function TransactionsPanel({
                   value={txForm.split_member_a || ""}
                   onChange={(e) => setTxForm({ ...txForm, split_member_a: e.target.value })}
                 >
-                  <option value="">Member A</option>
+                  <option value="">{t("memberA") || "Member A"}</option>
                   {members.map((m) => (
                     <option key={m.member_id || m.id} value={m.member_id || m.id}>
                       {m.full_name || m.name || m.member_id || m.id}
@@ -200,7 +279,7 @@ export function TransactionsPanel({
                   value={txForm.split_member_b || ""}
                   onChange={(e) => setTxForm({ ...txForm, split_member_b: e.target.value })}
                 >
-                  <option value="">Member B</option>
+                  <option value="">{t("memberB") || "Member B"}</option>
                   {members.map((m) => (
                     <option key={m.member_id || m.id} value={m.member_id || m.id}>
                       {m.full_name || m.name || m.member_id || m.id}
@@ -213,23 +292,25 @@ export function TransactionsPanel({
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => onCreate?.(attachFile)}
+              disabled={postBusy || activeWallets.length === 0}
+              onClick={handlePost}
             >
-              {t("postTransaction")}
+              {postBusy ? t("loading") : t("postTransaction")}
             </button>
           </div>
         </div>
 
         {isExpense && onParseExpenseOcr ? (
           <div className="settings-block">
-            <h4>Bill scan OCR</h4>
+            <h4>{t("billScanOcr") || "Bill scan OCR"}</h4>
             <div className="finance-form">
               <textarea
                 rows={4}
-                placeholder="Paste bill text lines (item price)…"
+                placeholder={t("pasteBillText") || "Paste bill text lines (item + price)"}
                 value={ocrText}
                 onChange={(e) => setOcrText(e.target.value)}
               />
+              {!cloudLocalMode && onParseExpenseOcrImage ? (
               <input
                 type="file"
                 accept="image/*,.png,.jpg,.jpeg,.webp"
@@ -244,7 +325,9 @@ export function TransactionsPanel({
                     if (data?.suggested_total) {
                       setTxForm((prev) => ({
                         ...prev,
-                        amount: String(data.suggested_total).replace(/\.0+$/, "") || data.suggested_total,
+                        amount:
+                          String(data.suggested_total).replace(/\.0+$/, "") ||
+                          String(data.suggested_total),
                         description: prev.description || data?.lines?.[0]?.description || "",
                       }));
                     }
@@ -254,15 +337,25 @@ export function TransactionsPanel({
                   }
                 }}
               />
-              <button type="button" className="btn" disabled={ocrBusy || !ocrText.trim()} onClick={runOcr}>
-                {ocrBusy ? "Scanning…" : "Parse bill → fill amount"}
+              ) : cloudLocalMode ? (
+                <p className="settings-empty" style={{ margin: 0 }}>
+                  {t("ocrPasteOnlyHint") || "Cloud mode: paste bill text (image OCR not available yet)."}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="btn"
+                disabled={ocrBusy || !ocrText.trim()}
+                onClick={runOcr}
+              >
+                {ocrBusy ? t("scanning") || "Scanning�" : t("parseBillFillAmount") || "Parse bill ? fill amount"}
               </button>
             </div>
             {ocrResult ? (
               <p className="budget-hero-sub">
-                Suggested total: {ocrResult.suggested_total} · lines: {ocrResult.line_count} · engine:{" "}
-                {ocrResult.engine}
-                {ocrResult.note ? ` · ${ocrResult.note}` : ""}
+                {t("suggestedTotal") || "Suggested total"}: {ocrResult.suggested_total ?? "�"} �{" "}
+                {t("lines") || "lines"}: {ocrResult.line_count} � {ocrResult.engine}
+                {ocrResult.note ? ` � ${ocrResult.note}` : ""}
               </p>
             ) : null}
           </div>
@@ -275,8 +368,8 @@ export function TransactionsPanel({
           ) : (
             <div className="finance-feed">
               {transactions.map((tx) => {
-                const type = String(tx.transaction_type || "TX").toUpperCase();
-                const tone = typeTone(type);
+                const type = txTypeOf(tx);
+                const tone = isVoided(tx) ? "neutral" : typeTone(type);
                 const signed = tone === "income" ? "+" : tone === "expense" ? "-" : "";
                 const txId = tx.id || tx.transaction_id;
                 const status = String(tx.status || "POSTED").toUpperCase();
@@ -292,8 +385,9 @@ export function TransactionsPanel({
                         </strong>
                         <span className="tx-row-sub">
                           {status}
-                          {tx.is_split ? " · SPLIT" : ""}
-                          {tx.attachment_name ? ` · 📎 ${tx.attachment_name}` : ""}
+                          {tx.is_split ? ` � ${t("splitShort") || "SPLIT"}` : ""}
+                          {tx.attachment_name ? ` � ${tx.attachment_name}` : ""}
+                          {tx.transaction_date ? ` � ${tx.transaction_date}` : ""}
                         </span>
                       </div>
                       <div className="tx-row-amount">
@@ -302,7 +396,7 @@ export function TransactionsPanel({
                         </MoneyPill>
                       </div>
                     </div>
-                    <div className="finance-form" style={{ marginTop: 8 }}>
+                    <div className="wallet-card-actions">
                       {onVoid && status !== "VOID" ? (
                         <button
                           type="button"
@@ -310,12 +404,15 @@ export function TransactionsPanel({
                           disabled={voidBusyId === txId}
                           onClick={() => onVoid(txId)}
                         >
-                          {t("voidTransaction") || "Void"}
+                          {voidBusyId === txId ? t("loading") : t("voidTransaction") || "Void"}
                         </button>
                       ) : null}
                       {onUploadAttachment && status !== "VOID" ? (
-                        <label className="btn" style={{ display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
-                          {attachBusyId === txId ? "Uploading…" : "Attach"}
+                        <label
+                          className="btn"
+                          style={{ display: "inline-flex", alignItems: "center", cursor: "pointer" }}
+                        >
+                          {attachBusyId === txId ? t("uploading") || "Uploading�" : t("attach") || "Attach"}
                           <input
                             type="file"
                             hidden

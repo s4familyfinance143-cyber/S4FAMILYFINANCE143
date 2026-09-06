@@ -46,13 +46,17 @@ export function Phase16Panel({
   onUploadDocument,
   onDownloadDocument,
 }) {
-  const filteredItems = phase16Items.filter((item) => item.module_type === phase16ActiveTab);
+  const filteredItems = phase16Items.filter(
+    (item) => String(item.module_type || "").toUpperCase() === String(phase16ActiveTab || "").toUpperCase()
+  );
   const activeModule = phase16ActiveTab;
 
   function switchTab(moduleType) {
+    if (moduleType === phase16ActiveTab && !editingPhase16Id) return;
     setPhase16ActiveTab(moduleType);
-    setPhase16Form((prev) => ({ ...prev, module_type: moduleType }));
     setDocumentFile?.(null);
+    // Clear edit mode + form when changing tabs (prevents cross-module PATCH).
+    onCancelEdit?.(moduleType);
   }
 
   return (
@@ -76,7 +80,13 @@ export function Phase16Panel({
         {PHASE16_TABS.map((moduleType) => (
           <div className="card" key={moduleType}>
             <span>{moduleLabel(moduleType, t)}</span>
-            <strong>{digits(phase16Summary?.modules?.[moduleType]?.active_count || 0)}</strong>
+            <strong>
+              {digits(
+                phase16Summary?.modules?.[moduleType]?.active_count ??
+                  phase16Summary?.modules?.[moduleType]?.active ??
+                  0
+              )}
+            </strong>
             <p>{money(phase16Summary?.modules?.[moduleType]?.total_amount || 0)}</p>
             {(phase16Summary?.modules?.[moduleType]?.due_soon_count || 0) > 0 ? (
               <small className="due-badge">{t("dueSoon")}: {digits(phase16Summary.modules[moduleType].due_soon_count)}</small>
@@ -98,7 +108,10 @@ export function Phase16Panel({
         </select>
         <input placeholder={t("name")} value={phase16Form.name} onChange={(e) => setPhase16Form({ ...phase16Form, name: e.target.value })} />
         <input placeholder={t("category")} value={phase16Form.category} onChange={(e) => setPhase16Form({ ...phase16Form, category: e.target.value })} />
-        <input placeholder={t("amount")} value={phase16Form.amount} onChange={(e) => setPhase16Form({ ...phase16Form, amount: e.target.value })} />
+
+        {activeModule !== "PROPERTY" ? (
+          <input placeholder={t("amount")} value={phase16Form.amount} onChange={(e) => setPhase16Form({ ...phase16Form, amount: e.target.value })} />
+        ) : null}
 
         {activeModule === "SUBSCRIPTION" ? (
           <>
@@ -145,13 +158,16 @@ export function Phase16Panel({
             <input placeholder={t("location")} value={phase16Form.provider || ""} onChange={(e) => setPhase16Form({ ...phase16Form, provider: e.target.value })} />
             <input placeholder={t("valuation")} value={phase16Form.secondary_amount || ""} onChange={(e) => setPhase16Form({ ...phase16Form, secondary_amount: e.target.value })} />
             <input placeholder={t("rentalIncome")} value={phase16Form.amount || ""} onChange={(e) => setPhase16Form({ ...phase16Form, amount: e.target.value })} />
+            <input placeholder={t("reference")} value={phase16Form.reference || ""} onChange={(e) => setPhase16Form({ ...phase16Form, reference: e.target.value })} />
           </>
         ) : null}
 
         <input placeholder={t("note")} value={phase16Form.note || ""} onChange={(e) => setPhase16Form({ ...phase16Form, note: e.target.value })} />
-        <button onClick={onSave}>{editingPhase16Id ? t("saveItem") : t("createItem")}</button>
-        {editingPhase16Id ? <button onClick={onCancelEdit}>{t("cancelEdit")}</button> : null}
-        <button onClick={onRefresh}>{t("refreshDocsProperty")}</button>
+        <button type="button" onClick={onSave}>{editingPhase16Id ? t("saveItem") : t("createItem")}</button>
+        {editingPhase16Id ? (
+          <button type="button" onClick={() => onCancelEdit?.(phase16ActiveTab)}>{t("cancelEdit")}</button>
+        ) : null}
+        <button type="button" onClick={onRefresh}>{t("refreshDocsProperty")}</button>
       </div>
 
       <h3>{t("subscriptionsDocumentsPropertyItems")} · {moduleLabel(activeModule, t)}</h3>
@@ -163,7 +179,14 @@ export function Phase16Panel({
             <div className="row" key={item.id}>
               <span>{item.sub_type || item.category}</span>
               <span>{item.name}</span>
-              <strong>{money(item.amount, item.currency)}</strong>
+              <strong>
+                {money(
+                  activeModule === "PROPERTY"
+                    ? item.value ?? item.secondary_amount ?? 0
+                    : item.amount,
+                  item.currency
+                )}
+              </strong>
               <span>{item.renewal_or_expiry_date || t("noDate")}</span>
               <span>{item.reference || item.provider || t("noReference")}</span>
               <span>{item.status}</span>
@@ -180,11 +203,11 @@ export function Phase16Panel({
                   )}
                 </span>
               ) : null}
-              {item.status === "ACTIVE" ? (
+              {String(item.status || "").toUpperCase() === "ACTIVE" ? (
                 <>
-                  <button onClick={() => onEdit(item)}>{t("editItem")}</button>
+                  <button type="button" onClick={() => onEdit(item)}>{t("editItem")}</button>
                   {activeModule === "DOCUMENT" && item.has_file ? (
-                    <button onClick={() => onDownloadDocument(item)}>{t("downloadFile")}</button>
+                    <button type="button" onClick={() => onDownloadDocument(item)}>{t("downloadFile")}</button>
                   ) : null}
                   {activeModule === "DOCUMENT" && !item.has_file ? (
                     <label className="file-picker-label inline">
@@ -200,7 +223,7 @@ export function Phase16Panel({
                       />
                     </label>
                   ) : null}
-                  <button onClick={() => onClose(item)}>{t("close")}</button>
+                  <button type="button" onClick={() => onClose(item)}>{t("close")}</button>
                 </>
               ) : null}
             </div>

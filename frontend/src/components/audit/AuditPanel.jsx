@@ -19,6 +19,7 @@ export function AuditPanel({
   activeFamilyId,
   onRefresh,
   apiGet,
+  onError,
 }) {
   const [filterAction, setFilterAction] = useState("");
   const [filterEntity, setFilterEntity] = useState("");
@@ -63,12 +64,13 @@ export function AuditPanel({
       setSummary(sum);
       const list = Array.isArray(activity) ? activity : activity?.rows || activity?.items || activity?.activity || [];
       setRows(list);
-    } catch {
-      setRows([]);
+    } catch (err) {
+      setRows((prev) => prev || []);
+      onError?.(err?.message || t("auditLoadFailed") || "Audit filter load failed");
     } finally {
       setLoading(false);
     }
-  }, [activeFamilyId, activityPath, apiGet, onRefresh]);
+  }, [activeFamilyId, activityPath, apiGet, onError, onRefresh, t]);
 
   useEffect(() => {
     if (filterAction || filterEntity || filterSeverity || entityFocus || limit !== 25) {

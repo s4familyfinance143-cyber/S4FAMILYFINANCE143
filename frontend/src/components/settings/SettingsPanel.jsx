@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { defaultPermissionsForRole, applyPermissionOverrides, sanitizeRelationshipLabel } from "../../lib/familyRoles";
 import { CloudBackupPanel } from "./CloudBackupPanel";
 
 const SETTINGS_TABS = ["profile", "family", "permissions", "security", "cloud"];
@@ -138,12 +139,22 @@ function memberDisplayName(member) {
 }
 
 function memberRelationshipLabel(member) {
+  const role = String(member?.normalized_role || member?.role || "").toUpperCase();
   return (
-    member?.relationship_display_label ||
-    member?.relationship ||
-    member?.relationship_type ||
-    ""
+    sanitizeRelationshipLabel(
+      member?.relationship_display_label ||
+        member?.relationship ||
+        member?.relationship_type ||
+        "",
+      role,
+    ) || ""
   );
+}
+
+function resolveSettingsMemberId(member) {
+  return String(
+    member?.uid || member?.user_id || member?.member_id || member?.id || "",
+  ).trim();
 }
 
 function formatRoleBadge(role) {
@@ -158,6 +169,7 @@ function formatRoleBadge(role) {
 function normalizeMemberForPermissions(member) {
   const role = String(member?.normalized_role || member?.role || "MEMBER").toUpperCase();
   const memberId = member?.member_id || member?.id || member?.uid || member?.user_id;
+  const overrides = Array.isArray(member?.overrides) ? member.overrides : [];
   return {
     ...member,
     member_id: memberId,
@@ -165,23 +177,8 @@ function normalizeMemberForPermissions(member) {
     role,
     normalized_role: role,
     relationship: memberRelationshipLabel(member),
-    overrides: Array.isArray(member?.overrides) ? member.overrides : [],
-    effective_permissions: Array.isArray(member?.effective_permissions)
-      ? member.effective_permissions
-      : role === "OWNER" || role === "ADMIN"
-        ? ["*"]
-        : [
-            "dashboard.read",
-            "accounts.read",
-            "transactions.read",
-            "transactions.create",
-            "income.create",
-            "expense.create",
-            "reports.read",
-            "backup.read",
-            "sync.view",
-            "sync.pull",
-          ],
+    overrides,
+    effective_permissions: applyPermissionOverrides(defaultPermissionsForRole(role), overrides),
   };
 }
 
@@ -258,7 +255,11 @@ export function SettingsPanel({
   const displayName = currentUser?.full_name || currentUser?.email || email || "—";
   const displayEmail = currentUser?.email || email || "—";
   const role = myPermissions?.normalized_role || myPermissions?.role || "—";
-  const relationship = myPermissions?.relationship || "—";
+  const relationship =
+    sanitizeRelationshipLabel(
+      myPermissions?.relationship_display_label || myPermissions?.relationship,
+      role,
+    ) || "—";
   const initials = String(displayName).trim().slice(0, 2).toUpperCase();
   const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -274,6 +275,8 @@ export function SettingsPanel({
   const roleKey = String(role || "").toUpperCase();
   const isOwnerOrAdmin = roleKey === "OWNER" || roleKey === "ADMIN";
   const isLocalDev = Boolean(import.meta.env.DEV);
+  const cloudSessionReady = Boolean(cloudOnlyMode && firebaseUser);
+  const canRefreshSession = Boolean(refreshToken) || cloudSessionReady;
   // Family cloud/Firebase users never need localhost API URL.
   // Show only when Developer Mode is on AND not in cloud-only mode.
   const showApiBaseCard = Boolean(developerMode) && !cloudOnlyMode;
@@ -302,16 +305,18 @@ export function SettingsPanel({
         continue;
       }
       const existing = byKey.get(key);
+      const role = String(existing.normalized_role || existing.role || m.normalized_role || m.role || "MEMBER").toUpperCase();
+      const overrides = existing.overrides?.length ? existing.overrides : m.overrides || [];
       byKey.set(key, {
         ...m,
         ...existing,
         full_name: existing.full_name || m.full_name,
         relationship: existing.relationship || m.relationship,
         email: existing.email || m.email,
-        overrides: existing.overrides?.length ? existing.overrides : m.overrides,
-        effective_permissions: existing.effective_permissions?.length
-          ? existing.effective_permissions
-          : m.effective_permissions,
+        role,
+        normalized_role: role,
+        overrides,
+        effective_permissions: applyPermissionOverrides(defaultPermissionsForRole(role), overrides),
       });
     }
     const rows = [...byKey.values()];
@@ -647,8 +652,9 @@ export function SettingsPanel({
               <button
                 type="button"
                 className="btn btn-primary family-save-btn"
-                disabled={settingsSaving}
+                disabled={settingsSaving || !isOwnerOrAdmin}
                 onClick={onSaveFamilySettings}
+                title={!isOwnerOrAdmin ? t("ownerOnly") || "Owner / Admin only" : undefined}
               >
                 {settingsSaving ? t("saving") : t("saveFamilySettings")}
               </button>
@@ -727,7 +733,7 @@ export function SettingsPanel({
                         <details
                           key={`${cat.id}-${permMobile ? "m" : "d"}`}
                           className="permissions-category-card permissions-cat-accordion"
-                          {...(permMobile ? {} : { open: true })}
+                          defaultOpen={!permMobile}
                         >
                           <summary className="permissions-category-top permissions-cat-summary">
                             <h4>{t(cat.titleKey) || cat.id}</h4>
@@ -792,8 +798,9 @@ export function SettingsPanel({
                         member.normalized_role || member.role || "MEMBER",
                       ).toUpperCase();
                       const isOwnerMember = memberRole === "OWNER";
-                      const memberId =
-                        member.member_id || member.id || member.uid || member.user_id;
+                      const isAdminMember = memberRole === "ADMIN";
+                      const capsLocked = isOwnerMember || isAdminMember;
+                      const memberId = resolveSettingsMemberId(member);
                       const saving = permissionSavingMemberId === memberId;
                       const memberName = memberDisplayName(member);
                       const relation = memberRelationshipLabel(member);
@@ -823,17 +830,21 @@ export function SettingsPanel({
                                 ) : null}
                               </div>
                             </div>
-                            {isOwnerMember ? (
+                            {capsLocked ? (
                               <span className="perm-access-badge ok">
-                                {t("ownerPermissionsLocked")}
+                                {isOwnerMember
+                                  ? t("ownerPermissionsLocked")
+                                  : t("adminPermissionsLocked")}
                               </span>
                             ) : null}
                           </div>
 
-                          {isOwnerMember ? (
+                          {capsLocked ? (
                             <p className="hint permissions-owner-locked-note">
-                              {t("ownerPermissionsLockedHint") ||
-                                "Owner has full access. Permission toggles are locked."}
+                              {isOwnerMember
+                                ? t("ownerPermissionsLockedHint") ||
+                                  "Owner has full access. Permission toggles are locked."
+                                : t("adminPermissionsLocked")}
                             </p>
                           ) : (
                             <>
@@ -988,9 +999,9 @@ export function SettingsPanel({
                 <div className="security-row-title">
                   <h4>{t("session")}</h4>
                   <span
-                    className={`security-status-badge ${refreshToken ? "ok" : "warn"}`}
+                    className={`security-status-badge ${canRefreshSession ? "ok" : "warn"}`}
                   >
-                    {refreshToken ? t("sessionActive") : t("loginRequired")}
+                    {canRefreshSession ? t("sessionActive") : t("loginRequired")}
                   </span>
                 </div>
                 <p>{t("refreshSessionHelp")}</p>
@@ -998,7 +1009,7 @@ export function SettingsPanel({
               <button
                 type="button"
                 className="btn security-row-action"
-                disabled={securityAction === "refresh" || !refreshToken}
+                disabled={securityAction === "refresh" || !canRefreshSession}
                 onClick={refreshSession}
               >
                 {securityAction === "refresh" ? t("refreshing") : t("refreshSession")}
@@ -1048,7 +1059,9 @@ export function SettingsPanel({
                 className="btn security-row-action"
                 disabled={securityAction === "verification" || currentUser?.is_email_verified}
                 onClick={() => {
-                  Promise.resolve(resendVerification?.()).catch(() => {});
+                  Promise.resolve(resendVerification?.()).catch((err) => {
+                    console.warn("[S4 Security] resend verification failed", err);
+                  });
                 }}
               >
                 {securityAction === "verification"

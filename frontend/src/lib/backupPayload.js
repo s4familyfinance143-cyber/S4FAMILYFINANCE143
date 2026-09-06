@@ -26,15 +26,25 @@ export async function buildBackupBlob(familyId, deviceLabel = "web") {
   };
 }
 
-export async function restoreBackupBlob(blob) {
+export async function restoreBackupBlob(blob, { expectedFamilyId = null } = {}) {
   const text = await blob.text();
   const payload = JSON.parse(text);
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const payloadFamilyId = payload.family_id || null;
+  if (
+    expectedFamilyId
+    && payloadFamilyId
+    && String(payloadFamilyId) !== String(expectedFamilyId)
+  ) {
+    throw new Error(
+      `Backup family mismatch: file is for ${payloadFamilyId}, active family is ${expectedFamilyId}`,
+    );
+  }
   const restored = await importOfflineSnapshots(rows);
   return {
     restored,
     exportedAt: payload.exported_at || null,
-    familyId: payload.family_id || null,
+    familyId: payloadFamilyId,
     rowCount: rows.length,
   };
 }

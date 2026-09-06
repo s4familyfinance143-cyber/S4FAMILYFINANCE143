@@ -178,6 +178,16 @@
     max-width: 100% !important;
   }
 
+  .app-layout.shoyb-shell .mobile-brand-title--tagline {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+    white-space: normal !important;
+    text-align: center !important;
+    line-height: 1.25 !important;
+    max-width: min(220px, 58vw) !important;
+  }
+
   .app-layout.shoyb-shell .mobile-brand-title .s4 {
     color: var(--gold, #a8752e) !important;
   }

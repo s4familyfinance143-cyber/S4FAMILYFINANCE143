@@ -88,7 +88,7 @@ export function DesktopSidebar({
           </button>
           <div>
             <div className="brand-title">{digits("S4 FAMILY 143")}</div>
-            <div className="brand-sub">{currentUser?.full_name || t("brandTagline")}</div>
+            {currentUser?.full_name ? <div className="brand-sub">{currentUser.full_name}</div> : null}
           </div>
         </div>
 
@@ -203,9 +203,15 @@ export function TopHeader({
   _avatarUrl = "",
   currentUser,
   email,
+  navItems = [],
+  browserOnline = true,
+  syncStatus = null,
+  localOutboxPending = 0,
 }) {
   const menuHistoryRef = useRef([]);
   const prevMenuRef = useRef(activeMenu);
+  const [moduleQuery, setModuleQuery] = useState("");
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     const prev = prevMenuRef.current;
@@ -214,6 +220,43 @@ export function TopHeader({
     }
     prevMenuRef.current = activeMenu;
   }, [activeMenu]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && String(e.key || "").toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus?.();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const pendingOutbox =
+    Number(syncStatus?.pending_outbox || 0) + Number(localOutboxPending || 0);
+  const syncPillLabel = !browserOnline
+    ? t("offlineReady")
+    : pendingOutbox > 0
+      ? `${t("groceryPendingSync") || t("pending")} (${pendingOutbox})`
+      : t("syncAllOk");
+  const syncPillState = !browserOnline ? "offline" : pendingOutbox > 0 ? "pending" : "ok";
+
+  function runModuleSearch(rawQuery) {
+    const q = String(rawQuery || "").trim().toLowerCase();
+    if (!q) return;
+    const items = Array.isArray(navItems) ? navItems : [];
+    const hit =
+      items.find((row) => {
+        const menu = String(row?.[0] || "").toLowerCase();
+        const label = String(row?.[2] || row?.[1] || "").toLowerCase();
+        return menu.includes(q) || label.includes(q);
+      }) || null;
+    if (hit?.[0]) {
+      setActiveMenu(hit[0]);
+      setModuleQuery("");
+      closeMobileDrawer();
+    }
+  }
 
   function handleMobileBack() {
     closeMobileDrawer();
@@ -298,10 +341,18 @@ export function TopHeader({
       </div>
 
       <div className="shoyb-top-copy">
-        <div className="brand-heading">
-          <span className="s4">S4</span> FAMILY 143 — Dashboard
+        <div className="brand-heading-block">
+          <div className="brand-heading-left">
+            <span className="brand-eyebrow">{appLanguage === "bn" ? "পরিবারের ড্যাশবোর্ড" : "Family Dashboard"}</span>
+            <div className="brand-heading">
+              <span className="s4">S4</span>
+              <span className="brand-heading-rest">FAMILY 143</span>
+            </div>
+          </div>
+          <div className="brand-heading-right">
+            <div className="brand-sub">{t("welcomeBackOverview")}</div>
+          </div>
         </div>
-        <div className="brand-sub">{t("welcomeBackOverview")}</div>
       </div>
 
       <div className="mobile-brand" aria-label="S4 FAMILY 143">
@@ -309,7 +360,6 @@ export function TopHeader({
           <div className="mobile-brand-title">
             <span className="s4">S4</span> FAMILY 143
           </div>
-          <div className="mobile-brand-sub">{t("brandTagline")}</div>
         </div>
       </div>
 
@@ -317,15 +367,32 @@ export function TopHeader({
         <span className="sicon" aria-hidden="true">
           ⌕
         </span>
-        <input placeholder={t("searchModules")} aria-label={t("searchModules")} />
+        <input
+          ref={searchInputRef}
+          placeholder={t("searchModules")}
+          aria-label={t("searchModules")}
+          value={moduleQuery}
+          onChange={(e) => setModuleQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              runModuleSearch(moduleQuery);
+            }
+          }}
+        />
         <kbd>Ctrl K</kbd>
       </div>
 
       <div className="top-actions">
-        <div className="online-pill">
+        <button
+          type="button"
+          className={`online-pill is-${syncPillState}`}
+          onClick={() => setActiveMenu("sync")}
+          title={syncPillLabel}
+        >
           <span className="online-dot" />
-          <span>{t("syncAllOk")}</span>
-        </div>
+          <span>{syncPillLabel}</span>
+        </button>
 
         <label className="lang-select-wrap" title={t("languageLock")}>
           <span className="sr-only">{t("languageLock")}</span>

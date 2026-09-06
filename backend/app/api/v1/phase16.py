@@ -216,7 +216,7 @@ def get_item(db: Session, family_id: str, item_id: str) -> Phase16Item:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_phase16_item(payload: Phase16ItemCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     module_type = clean_module(payload.module_type)
     validate_phase16_payload(module_type, payload)
     item = Phase16Item(
@@ -298,7 +298,7 @@ def list_phase16_items(family_id: str, module_type: str | None = None, db: Sessi
 
 @router.patch("/{item_id}")
 def update_phase16_item(item_id: str, payload: Phase16ItemUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     item = get_item(db, payload.family_id, item_id)
     validate_phase16_payload(item.module_type, payload)
     apply_phase16_fields(item, payload, db, payload.family_id)
@@ -325,7 +325,7 @@ def update_phase16_item(item_id: str, payload: Phase16ItemUpdateRequest, db: Ses
 
 @router.post("/{item_id}/close")
 def close_phase16_item(item_id: str, payload: Phase16ItemCloseRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     item = get_item(db, payload.family_id, item_id)
     item.status = "CLOSED"
     write_audit_log(
@@ -351,7 +351,7 @@ async def upload_phase16_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, family_id, current_user.id, "report.read")
+    member = require_permission(db, family_id, current_user.id, "transaction.create")
     item = get_item(db, family_id, item_id)
     if item.module_type != "DOCUMENT":
         raise HTTPException(400, "File upload is only allowed for DOCUMENT items")

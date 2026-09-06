@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-/** Surfacing architecture cutover APIs: split, attachment, metal rates, per-km, readiness. */
+/** Architecture cutover tools: readiness, split, metal rates, vehicle km, attachments. */
 export function ArchitectureCutoverPanel({
   t,
+  money,
+  amount,
   apiGet,
   apiPost,
   apiUpload,
@@ -10,8 +12,13 @@ export function ArchitectureCutoverPanel({
   wallets = [],
   categories = [],
   members = [],
+  transactions = [],
+  currency = "BDT",
+  onMessage,
+  onFinanceChanged,
 }) {
   const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
   const [readiness, setReadiness] = useState(null);
   const [vault, setVault] = useState(null);
   const [splitForm, setSplitForm] = useState({
@@ -29,7 +36,41 @@ export function ArchitectureCutoverPanel({
   const [txId, setTxId] = useState("");
   const [file, setFile] = useState(null);
 
+  const activeWallets = useMemo(
+    () => (wallets || []).filter((w) => !w?.deleted_at && w?.is_active !== false),
+    [wallets],
+  );
+  const expenseCats = useMemo(
+    () =>
+      (categories || []).filter((c) =>
+        String(c.category_type || "").toUpperCase().includes("EXPENSE"),
+      ),
+    [categories],
+  );
+  const liveTx = useMemo(
+    () =>
+      (transactions || [])
+        .filter((tx) => String(tx.status || "").toUpperCase() !== "VOID")
+        .slice(0, 50),
+    [transactions],
+  );
+  const memberRows = useMemo(
+    () =>
+      (members || []).filter((m) => {
+        const status = String(m.status || "ACTIVE").toUpperCase();
+        return status !== "REMOVED" && status !== "LEFT";
+      }),
+    [members],
+  );
+
+  function notify(text, type = "success") {
+    setMsg(text);
+    if (typeof onMessage === "function") onMessage(text, type);
+  }
+
   async function loadReadiness() {
+    if (!apiGet) return;
+    setBusy(true);
     try {
       const [ready, vaultStatus] = await Promise.all([
         apiGet("/system/architecture-readiness"),
@@ -37,9 +78,14 @@ export function ArchitectureCutoverPanel({
       ]);
       setReadiness(ready);
       setVault(vaultStatus);
-      setMsg(`Architecture ${ready.architecture_feature_completeness_pct}%`);
+      notify(
+        `${t("architecture") || "Architecture"} ${ready?.architecture_feature_completeness_pct ?? 0}%`,
+        "success",
+      );
     } catch (err) {
-      setMsg(err.message || "Readiness failed");
+      notify(err.message || t("architectureLoadFailed") || "Readiness failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -48,116 +94,203 @@ export function ArchitectureCutoverPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFamilyId]);
 
+  useEffect(() => {
+    setSplitForm((prev) => ({
+      ...prev,
+      account_id: prev.account_id || activeWallets[0]?.id || "",
+      category_id: prev.category_id || expenseCats[0]?.id || "",
+      member_a: prev.member_a || memberRows[0]?.member_id || memberRows[0]?.id || "",
+      member_b:
+        prev.member_b ||
+        memberRows[1]?.member_id ||
+        memberRows[1]?.id ||
+        memberRows[0]?.member_id ||
+        memberRows[0]?.id ||
+        "",
+    }));
+  }, [activeWallets, expenseCats, memberRows]);
+
+  useEffect(() => {
+    if (!txId && liveTx[0]?.id) setTxId(String(liveTx[0].id));
+  }, [liveTx, txId]);
+
   async function loadRates() {
+    setBusy(true);
     try {
       const data = await apiGet("/zakat/metal-rates");
       setRates(data);
-      setMsg("Metal rates loaded");
+      notify(t("metalRatesLoaded") || "Metal rates loaded", "success");
     } catch (err) {
-      setMsg(err.message || "Failed");
+      notify(err.message || t("metalRatesLoadFailed") || "Failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function saveRate() {
+    const rate = Number(metalForm.rate_bdt);
+    if (!rate || rate <= 0) {
+      notify(t("validRateRequired") || "Valid rate required", "error");
+      return;
+    }
+    setBusy(true);
     try {
       await apiPost(`/zakat/metal-rates?family_id=${encodeURIComponent(activeFamilyId)}`, {
         metal: metalForm.metal,
-        rate_bdt: metalForm.rate_bdt,
+        rate_bdt: rate,
       });
-      setMsg("Rate saved");
+      notify(t("metalRateSaved") || "Rate saved", "success");
       await loadRates();
     } catch (err) {
-      setMsg(err.message || "Save failed");
+      notify(err.message || t("metalRateSaveFailed") || "Save failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function createSplit() {
+    if (!splitForm.account_id) {
+      notify(t("walletRequired") || "Wallet required", "error");
+      return;
+    }
+    if (!splitForm.category_id) {
+      notify(t("expenseCategoryRequired") || "Category required", "error");
+      return;
+    }
+    const amountNum = Number(splitForm.amount || 0);
+    if (!amountNum || amountNum <= 0) {
+      notify(t("validAmountRequired") || "Valid amount required", "error");
+      return;
+    }
+    if (!splitForm.member_a || !splitForm.member_b) {
+      notify(t("splitMembersRequired") || "Select both members", "error");
+      return;
+    }
+    if (String(splitForm.member_a) === String(splitForm.member_b)) {
+      notify(t("splitMembersDifferent") || "Split members must be different", "error");
+      return;
+    }
+    setBusy(true);
     try {
-      const amount = Number(splitForm.amount || 0);
-      const half = (amount / 2).toFixed(4);
+      const half = (amountNum / 2).toFixed(4);
       await apiPost("/expenses/split", {
         family_id: activeFamilyId,
         account_id: splitForm.account_id,
         category_id: splitForm.category_id,
-        amount,
-        currency: "BDT",
-        description: splitForm.description,
+        amount: amountNum,
+        currency: currency || "BDT",
+        description: splitForm.description || t("splitExpense") || "Split expense",
         splits: [
           { member_id: splitForm.member_a, share_amount: half },
-          { member_id: splitForm.member_b, share_amount: (amount - Number(half)).toFixed(4) },
+          { member_id: splitForm.member_b, share_amount: (amountNum - Number(half)).toFixed(4) },
         ],
       });
-      setMsg("Split expense created");
+      setSplitForm((prev) => ({ ...prev, amount: "", description: "" }));
+      notify(t("splitExpenseCreated") || "Split expense created", "success");
+      if (typeof onFinanceChanged === "function") await onFinanceChanged();
     } catch (err) {
-      setMsg(err.message || "Split failed");
+      notify(err.message || t("splitExpenseFailed") || "Split failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function loadPerKm() {
+    setBusy(true);
     try {
-      const q = new URLSearchParams({ family_id: activeFamilyId, vehicle_name: vehicleName });
+      const q = new URLSearchParams({
+        family_id: activeFamilyId,
+        vehicle_name: vehicleName.trim(),
+      });
       const data = await apiGet(`/vehicle-expenses/cost-per-km?${q}`);
       setPerKm(data);
+      notify(t("vehicleCostLoaded") || "Vehicle cost analyzed", "success");
     } catch (err) {
-      setMsg(err.message || "Per-km failed");
+      notify(err.message || t("vehicleCostFailed") || "Per-km failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function uploadAttachment() {
-    if (!txId || !file || !apiUpload) {
-      setMsg("Pick transaction + file");
+    if (!txId) {
+      notify(t("transactionRequired") || "Transaction required", "error");
       return;
     }
+    if (!file || !apiUpload) {
+      notify(t("fileRequired") || "Pick a file", "error");
+      return;
+    }
+    setBusy(true);
     try {
       const fd = new FormData();
       fd.append("family_id", activeFamilyId);
       fd.append("file", file);
       await apiUpload(`/transactions/${txId}/attachment`, fd);
-      setMsg("Attachment uploaded");
+      setFile(null);
+      notify(t("attachmentUploaded") || "Attachment uploaded", "success");
     } catch (err) {
-      setMsg(err.message || "Upload failed");
+      notify(err.message || t("attachmentUploadFailed") || "Upload failed", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
-  const expenseCats = (categories || []).filter((c) => String(c.category_type || "").includes("EXPENSE"));
+  function txLabel(tx) {
+    const type = String(tx.transaction_type || tx.type || "TX").slice(0, 12);
+    const amt = typeof amount === "function" ? amount(tx.amount) : tx.amount;
+    const desc = String(tx.description || "").slice(0, 28);
+    return `${type} · ${amt}${desc ? ` · ${desc}` : ""}`;
+  }
+
   const pct = readiness?.architecture_feature_completeness_pct ?? null;
+  const rateList = Array.isArray(rates?.rates)
+    ? rates.rates
+    : rates && typeof rates === "object"
+      ? Object.keys(rates)
+          .filter((k) => ["GOLD", "SILVER"].includes(String(k).toUpperCase()))
+          .map((k) => ({ metal: k, rate_bdt: rates[k] }))
+      : [];
 
   return (
     <section className="panel settings-panel settings-smart finance-smart">
       <div className="settings-head">
         <div>
-          <p className="settings-kicker">Architecture</p>
-          <h2>{t("cutover") || "Missing cutover tools"}</h2>
+          <p className="settings-kicker">{t("architecture")}</p>
+          <h2>{t("cutover")}</h2>
         </div>
-        <button type="button" className="btn" onClick={loadReadiness}>
-          {t("refresh") || "Refresh"}
+        <button type="button" className="btn" onClick={loadReadiness} disabled={busy}>
+          {t("refresh")}
         </button>
       </div>
       {msg ? <p className="budget-hero-sub">{msg}</p> : null}
 
+      <div className="summary-metric-grid" role="group" aria-label={t("architecture")}>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("architecture")}</span>
+          <strong className="summary-metric-value">{pct == null ? "…" : `${pct}%`}</strong>
+        </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("modules")}</span>
+          <strong className="summary-metric-value">
+            {readiness ? `${readiness.done_count}/${readiness.module_count}` : "…"}
+          </strong>
+        </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("vault")}</span>
+          <strong className="summary-metric-value">{vault?.storage_backend || "…"}</strong>
+        </div>
+        <div className="summary-metric-card">
+          <span className="summary-metric-label">{t("status")}</span>
+          <strong className="summary-metric-value">
+            {readiness?.architecture_status || vault?.architecture_status || "…"}
+          </strong>
+        </div>
+      </div>
+
       <div className="settings-stack">
         <div className="settings-block">
-          <h4>Feature completeness</h4>
-          <div className="settings-stat-row">
-            <div className="settings-stat">
-              <span>Architecture</span>
-              <strong>{pct == null ? "…" : `${pct}%`}</strong>
-            </div>
-            <div className="settings-stat">
-              <span>Modules</span>
-              <strong>
-                {readiness ? `${readiness.done_count}/${readiness.module_count}` : "…"}
-              </strong>
-            </div>
-            <div className="settings-stat">
-              <span>Vault</span>
-              <strong>{vault?.storage_backend || "…"}</strong>
-            </div>
-            <div className="settings-stat">
-              <span>Status</span>
-              <strong>{readiness?.architecture_status || vault?.architecture_status || "…"}</strong>
-            </div>
-          </div>
+          <h4>{t("featureCompleteness")}</h4>
           {readiness?.ops?.note ? <p className="budget-hero-sub">{readiness.ops.note}</p> : null}
           {vault?.note ? <p className="budget-hero-sub">{vault.note}</p> : null}
           {readiness?.modules?.length ? (
@@ -169,7 +302,11 @@ export function ArchitectureCutoverPanel({
                       <strong>{m.name}</strong>
                       <span className="tx-row-sub">
                         {m.status}
-                        {typeof m.ops_live === "boolean" ? (m.ops_live ? " · ops live" : " · ops env optional") : ""}
+                        {typeof m.ops_live === "boolean"
+                          ? m.ops_live
+                            ? ` · ${t("opsLive")}`
+                            : ` · ${t("opsOptional")}`
+                          : ""}
                       </span>
                     </div>
                     <div className="tx-row-amount">
@@ -183,85 +320,175 @@ export function ArchitectureCutoverPanel({
         </div>
 
         <div className="settings-block">
-          <h4>Split expense</h4>
+          <h4>{t("splitExpense")}</h4>
           <div className="finance-form">
-            <select value={splitForm.account_id} onChange={(e) => setSplitForm({ ...splitForm, account_id: e.target.value })}>
-              <option value="">Wallet</option>
-              {wallets.map((w) => (
+            <select
+              value={splitForm.account_id}
+              onChange={(e) => setSplitForm({ ...splitForm, account_id: e.target.value })}
+            >
+              <option value="">{t("selectWallet")}</option>
+              {activeWallets.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
                 </option>
               ))}
             </select>
-            <select value={splitForm.category_id} onChange={(e) => setSplitForm({ ...splitForm, category_id: e.target.value })}>
-              <option value="">Category</option>
+            <select
+              value={splitForm.category_id}
+              onChange={(e) => setSplitForm({ ...splitForm, category_id: e.target.value })}
+            >
+              <option value="">{t("selectCategory")}</option>
               {expenseCats.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name_en || c.name_bn}
+                  {c.name_en || c.name_bn || c.name}
                 </option>
               ))}
             </select>
-            <input placeholder="Amount" value={splitForm.amount} onChange={(e) => setSplitForm({ ...splitForm, amount: e.target.value })} />
-            <select value={splitForm.member_a} onChange={(e) => setSplitForm({ ...splitForm, member_a: e.target.value })}>
-              <option value="">Member A</option>
-              {members.map((m) => (
+            <input
+              placeholder={t("amount")}
+              value={splitForm.amount}
+              onChange={(e) => setSplitForm({ ...splitForm, amount: e.target.value })}
+            />
+            <input
+              placeholder={t("description")}
+              value={splitForm.description}
+              onChange={(e) => setSplitForm({ ...splitForm, description: e.target.value })}
+            />
+            <select
+              value={splitForm.member_a}
+              onChange={(e) => setSplitForm({ ...splitForm, member_a: e.target.value })}
+            >
+              <option value="">{t("memberA")}</option>
+              {memberRows.map((m) => (
                 <option key={m.member_id || m.id} value={m.member_id || m.id}>
-                  {m.full_name || m.name || m.member_id}
+                  {m.full_name || m.name || m.member_id || m.id}
                 </option>
               ))}
             </select>
-            <select value={splitForm.member_b} onChange={(e) => setSplitForm({ ...splitForm, member_b: e.target.value })}>
-              <option value="">Member B</option>
-              {members.map((m) => (
+            <select
+              value={splitForm.member_b}
+              onChange={(e) => setSplitForm({ ...splitForm, member_b: e.target.value })}
+            >
+              <option value="">{t("memberB")}</option>
+              {memberRows.map((m) => (
                 <option key={m.member_id || m.id} value={m.member_id || m.id}>
-                  {m.full_name || m.name || m.member_id}
+                  {m.full_name || m.name || m.member_id || m.id}
                 </option>
               ))}
             </select>
-            <button type="button" className="btn btn-primary" onClick={createSplit}>
-              Create split
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={createSplit}>
+              {t("createSplit")}
             </button>
           </div>
+          {memberRows.length < 2 ? (
+            <p className="settings-empty">{t("needTwoMembersForSplit")}</p>
+          ) : null}
         </div>
 
         <div className="settings-block">
-          <h4>Zakat metal rates</h4>
+          <h4>{t("zakatMetalRates")}</h4>
           <div className="finance-form">
-            <select value={metalForm.metal} onChange={(e) => setMetalForm({ ...metalForm, metal: e.target.value })}>
-              <option value="GOLD">GOLD</option>
-              <option value="SILVER">SILVER</option>
+            <select
+              value={metalForm.metal}
+              onChange={(e) => setMetalForm({ ...metalForm, metal: e.target.value })}
+            >
+              <option value="GOLD">{t("metalGold")}</option>
+              <option value="SILVER">{t("metalSilver")}</option>
             </select>
-            <input placeholder="Rate BDT / gram" value={metalForm.rate_bdt} onChange={(e) => setMetalForm({ ...metalForm, rate_bdt: e.target.value })} />
-            <button type="button" className="btn" onClick={saveRate}>
-              Save rate
+            <input
+              placeholder={t("rateBdtPerGram")}
+              value={metalForm.rate_bdt}
+              onChange={(e) => setMetalForm({ ...metalForm, rate_bdt: e.target.value })}
+            />
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={saveRate}>
+              {t("saveRate")}
             </button>
-            <button type="button" className="btn" onClick={loadRates}>
-              Load rates
+            <button type="button" className="btn" disabled={busy} onClick={loadRates}>
+              {t("loadRates")}
             </button>
           </div>
-          {rates ? <pre style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{JSON.stringify(rates, null, 2)}</pre> : null}
+          {rateList.length ? (
+            <div className="finance-feed" style={{ marginTop: 12 }}>
+              {rateList.map((r) => (
+                <div className="finance-card" key={r.metal}>
+                  <strong>{r.metal}</strong>
+                  <span className="tx-row-sub">
+                    {typeof money === "function"
+                      ? money(r.rate_bdt, currency)
+                      : `${r.rate_bdt} ${currency}`}{" "}
+                    / {t("gram") || "g"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="settings-block">
-          <h4>Vehicle cost per km</h4>
+          <h4>{t("vehicleCostPerKm")}</h4>
           <div className="finance-form">
-            <input placeholder="Vehicle name" value={vehicleName} onChange={(e) => setVehicleName(e.target.value)} />
-            <button type="button" className="btn" onClick={loadPerKm}>
-              Analyze
+            <input
+              placeholder={t("vehicleName")}
+              value={vehicleName}
+              onChange={(e) => setVehicleName(e.target.value)}
+            />
+            <button type="button" className="btn" disabled={busy} onClick={loadPerKm}>
+              {t("analyze")}
             </button>
           </div>
-          {perKm ? <pre style={{ fontSize: 12 }}>{JSON.stringify(perKm, null, 2)}</pre> : null}
+          {perKm ? (
+            <div className="budget-amount-row" style={{ marginTop: 12 }}>
+              <div className="budget-amount-cell">
+                <span>{t("expenseCount")}</span>
+                <strong>{perKm.expense_count ?? 0}</strong>
+              </div>
+              <div className="budget-amount-cell">
+                <span>{t("totalCost")}</span>
+                <strong>
+                  {typeof money === "function" ? money(perKm.total_cost, currency) : perKm.total_cost}
+                </strong>
+              </div>
+              <div className="budget-amount-cell">
+                <span>{t("totalKm")}</span>
+                <strong>{perKm.total_km ?? 0}</strong>
+              </div>
+              <div className="budget-amount-cell">
+                <span>{t("costPerKm")}</span>
+                <strong>
+                  {perKm.cost_per_km == null
+                    ? "—"
+                    : typeof money === "function"
+                      ? money(perKm.cost_per_km, currency)
+                      : perKm.cost_per_km}
+                </strong>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="settings-block">
-          <h4>Transaction attachment</h4>
+          <h4>{t("transactionAttachment")}</h4>
           <div className="finance-form">
-            <input placeholder="Transaction ID" value={txId} onChange={(e) => setTxId(e.target.value)} />
-            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            <button type="button" className="btn" onClick={uploadAttachment}>
-              Upload
+            <select value={txId} onChange={(e) => setTxId(e.target.value)}>
+              <option value="">{t("selectTransaction")}</option>
+              {liveTx.map((tx) => (
+                <option key={tx.id} value={tx.id}>
+                  {txLabel(tx)}
+                </option>
+              ))}
+            </select>
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              aria-label={t("chooseFile")}
+            />
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={uploadAttachment}>
+              {t("upload")}
             </button>
           </div>
+          {liveTx.length === 0 ? (
+            <p className="settings-empty">{t("noTransactionsForAttachment")}</p>
+          ) : null}
         </div>
       </div>
     </section>

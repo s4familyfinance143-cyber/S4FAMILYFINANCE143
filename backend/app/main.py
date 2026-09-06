@@ -1,4 +1,4 @@
-﻿from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 import asyncio
 
 from fastapi import FastAPI, HTTPException, Request
@@ -171,7 +171,8 @@ else:
         allow_headers=["*"],
     )
 
-app.include_router(family_governance_hardened_router)
+# Family governance: versioned only (/api/v1, /api/v2) — no bare /families
+_mount_versioned(family_governance_hardened_router, include_legacy=False)
 # Primary versioned API on both /api/v1 and /api/v2. Bare mount is opt-in.
 if settings.ENABLE_LEGACY_UNVERSIONED_API:
     app.include_router(api_router)

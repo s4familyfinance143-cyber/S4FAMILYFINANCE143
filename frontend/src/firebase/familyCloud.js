@@ -87,7 +87,10 @@ export async function ensureFamilyCloudShell({
         uid,
         email: email || null,
         display_name: displayName || null,
-        role: isFirst ? "OWNER" : role || "MEMBER",
+        role:
+          isFirst || String(metaSnap.data()?.owner_uid || "").trim() === uid
+            ? "OWNER"
+            : role || "MEMBER",
         ...(relation
           ? {
               relationship_type: relation,
@@ -107,11 +110,21 @@ export async function ensureFamilyCloudShell({
       memberSnap.data()?.relationship ||
       memberSnap.data()?.relationship_display_label ||
       "";
+    const existingRole = String(memberSnap.data()?.role || "").toUpperCase();
+    const metaOwner = String(metaSnap.data()?.owner_uid || "").trim();
+    // Only elevate from meta/first — never trust caller role:"OWNER" (sync used to pass that for everyone)
+    const shouldBeOwner = isFirst || (metaOwner && metaOwner === uid);
+    const nextRole = shouldBeOwner
+      ? "OWNER"
+      : existingRole === "OWNER"
+        ? "OWNER"
+        : existingRole || role || "MEMBER";
     await setDoc(
       familyMemberRef(familyId, uid),
       {
         email: email || memberSnap.data()?.email || null,
         display_name: displayName || memberSnap.data()?.display_name || null,
+        role: nextRole,
         // Backfill relation only when missing (never overwrite a corrected label)
         ...(!existingRelation && relation
           ? {
@@ -127,12 +140,14 @@ export async function ensureFamilyCloudShell({
     );
   }
 
+  const existingOwnerUid = String(metaSnap.data()?.owner_uid || "").trim();
   await setDoc(
     familyMetaRef(familyId),
     {
       id: familyId,
       name: familyName || metaSnap.data()?.name || "Family",
-      owner_uid: isFirst ? uid : metaSnap.data()?.owner_uid || uid,
+      // Never let a later member overwrite owner_uid
+      ...(isFirst || !existingOwnerUid ? { owner_uid: existingOwnerUid || uid } : {}),
       created_at: metaSnap.exists() ? metaSnap.data()?.created_at || serverTimestamp() : serverTimestamp(),
       updated_at: serverTimestamp(),
     },
@@ -277,16 +292,45 @@ export async function joinFamilyByInviteCode({
   const familyId = inv.family_id;
   if (!familyId) throw new Error("Invite missing family");
 
+  const existingMember = await getDoc(familyMemberRef(familyId, uid));
+  const metaSnap = await getDoc(familyMetaRef(familyId));
+  const ownerUid = String(metaSnap.data()?.owner_uid || inv.owner_uid || "").trim();
+  const isOwner = Boolean(ownerUid && ownerUid === uid);
+  const existingRole = String(existingMember.data()?.role || "").toUpperCase();
+  // Never demote an existing OWNER/ADMIN via invite re-join
+  const nextRole = isOwner
+    ? "OWNER"
+    : existingRole === "OWNER" || existingRole === "ADMIN"
+      ? existingRole
+      : existingMember.exists()
+        ? existingRole || "MEMBER"
+        : "MEMBER";
+
+  const relation = String(relationshipType || "").trim();
+  const existingRelation =
+    existingMember.data()?.relationship_type ||
+    existingMember.data()?.relationship ||
+    existingMember.data()?.relationship_display_label ||
+    "";
+
   await setDoc(
     familyMemberRef(familyId, uid),
     {
       uid,
-      email: email || null,
-      display_name: displayName || null,
-      role: "MEMBER",
-      relationship_type: relationshipType,
+      email: email || existingMember.data()?.email || null,
+      display_name: displayName || existingMember.data()?.display_name || null,
+      role: nextRole,
+      ...(existingRelation
+        ? {}
+        : relation
+          ? {
+              relationship_type: relation,
+              relationship: relation,
+              relationship_display_label: relation,
+            }
+          : {}),
       status: "ACTIVE",
-      joined_at: serverTimestamp(),
+      ...(existingMember.exists() ? {} : { joined_at: serverTimestamp() }),
       updated_at: serverTimestamp(),
       invite_code: key,
     },
@@ -298,7 +342,7 @@ export async function joinFamilyByInviteCode({
     doc(db, "users", uid),
     {
       family_id: familyId,
-      role: "MEMBER",
+      role: nextRole,
       joined_via_invite: key,
       updated_at: serverTimestamp(),
     },
@@ -320,7 +364,7 @@ export async function joinFamilyByInviteCode({
   const pull = await pullFamilyCloudSnapshot(familyId);
   return {
     familyId,
-    member: { uid, email, role: "MEMBER", relationship_type: relationshipType },
+    member: { uid, email, role: nextRole, relationship_type: relation || existingRelation || "" },
     invite: { ...inv, uses: nextUses },
     restored: pull.restored,
   };
@@ -380,7 +424,9 @@ export async function pullFamilyCloudSnapshot(familyId) {
     .filter((row) => row && typeof row.data === "string")
     .sort((a, b) => Number(a.index) - Number(b.index));
   const jsonText = ordered.map((p) => p.data).join("");
-  const result = await restoreBackupBlob(new Blob([jsonText], { type: "application/json" }));
+  const result = await restoreBackupBlob(new Blob([jsonText], { type: "application/json" }), {
+    expectedFamilyId: familyId,
+  });
   return {
     restored: result.restored,
     exportedAt: result.exportedAt || meta.exported_at || null,
@@ -411,6 +457,8 @@ export async function updateFamilyMemberPermissionOverrides({
     if (actorRole !== "OWNER" && actorRole !== "ADMIN") {
       throw new Error("Only OWNER/ADMIN can change permissions");
     }
+  } else {
+    throw new Error("Actor required to change permissions");
   }
   const list = Array.isArray(overrides) ? overrides : [];
   await setDoc(
@@ -433,10 +481,70 @@ export async function setFamilyMemberRole({ familyId, memberUid, role, actorUid 
   }
   await setDoc(
     familyMemberRef(familyId, memberUid),
-    { role: String(role).toUpperCase(), updated_at: serverTimestamp() },
+    {
+      role: String(role).toUpperCase(),
+      // Clear custom overrides so role baseline applies on every device
+      overrides: [],
+      permission_overrides: [],
+      updated_at: serverTimestamp(),
+    },
     { merge: true },
   );
   return { ok: true, memberUid, role: String(role).toUpperCase() };
+}
+
+/**
+ * Recipient completes ownership transfer:
+ * 1) promote self to OWNER (self-update allowed by rules)
+ * 2) set families/{id}.owner_uid
+ * 3) demote previous owners to ADMIN
+ */
+export async function acceptOwnershipTransferCloud({
+  familyId,
+  toUid,
+  fromUid = "",
+}) {
+  if (!familyId || !toUid) throw new Error("family/toUid required");
+  const db = getFirestoreDb();
+  const now = serverTimestamp();
+
+  // Promote recipient first (self-doc update)
+  await setDoc(
+    familyMemberRef(familyId, toUid),
+    { role: "OWNER", updated_at: now },
+    { merge: true },
+  );
+
+  await setDoc(
+    familyMetaRef(familyId),
+    { owner_uid: toUid, updated_at: now },
+    { merge: true },
+  );
+
+  const prevOwners = [];
+  if (fromUid && fromUid !== toUid) prevOwners.push(fromUid);
+
+  try {
+    const snap = await getDocs(collection(db, "families", familyId, "members"));
+    snap.forEach((d) => {
+      if (d.id === toUid) return;
+      const role = String(d.data()?.role || "").toUpperCase();
+      if (role === "OWNER") prevOwners.push(d.id);
+    });
+  } catch {
+    /* offline listing — still demote fromUid if present */
+  }
+
+  const unique = [...new Set(prevOwners.filter(Boolean))];
+  for (const mid of unique) {
+    await setDoc(
+      familyMemberRef(familyId, mid),
+      { role: "ADMIN", updated_at: serverTimestamp() },
+      { merge: true },
+    );
+  }
+
+  return { ok: true, familyId, owner_uid: toUid, demoted: unique };
 }
 
 /** Owner (or self) updates family relationship label (Husband / Wife / …). */

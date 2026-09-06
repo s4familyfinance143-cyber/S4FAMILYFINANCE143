@@ -112,11 +112,11 @@
     display: flex !important;
     align-items: center !important;
     justify-content: space-between !important;
-    padding: 16px 28px 12px !important;
+    padding: 20px 32px 16px !important;
     background: var(--paper) !important;
     border-bottom: 0 !important;
     backdrop-filter: none !important;
-    gap: 12px !important;
+    gap: 20px !important;
     position: static !important;
     width: 100% !important;
     max-width: none !important;
@@ -137,29 +137,130 @@
 
   .app-layout.shoyb-shell .shoyb-top-copy {
     display: block !important;
+    flex: 1 1 auto !important;
     min-width: 0;
+    position: relative;
+    padding-left: 18px;
+    padding-right: 12px;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #c9a227 0%, #0e5e49 55%, #123056 100%);
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-block {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-right {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    text-align: right;
+    padding-left: 16px;
+    border-left: 1px solid rgba(18, 48, 86, 0.12);
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-eyebrow {
+    display: inline-flex;
+    align-self: flex-start;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.14em !important;
+    text-transform: uppercase;
+    color: #0e5e49 !important;
+    background: linear-gradient(90deg, rgba(14, 94, 73, 0.12), rgba(18, 48, 86, 0.06));
+    border: 1px solid rgba(14, 94, 73, 0.18);
+    border-radius: 999px;
+    padding: 3px 11px;
+    line-height: 1.3;
   }
 
   .app-layout.shoyb-shell .shoyb-top-copy .brand-heading {
-    font-size: 19px !important;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 34px !important;
     font-weight: 800 !important;
-    color: var(--ink) !important;
-    line-height: 1.2;
+    color: #0f172a !important;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
   }
 
   .app-layout.shoyb-shell .shoyb-top-copy .brand-heading .s4 {
-    color: var(--gold) !important;
+    color: #b8860b !important;
+    background: linear-gradient(135deg, #d4a017 0%, #8b6914 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 900 !important;
+    letter-spacing: 0.02em;
+    font-size: 1.05em;
+  }
+
+  .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-rest {
+    color: #123056 !important;
+    font-weight: 800 !important;
   }
 
   .app-layout.shoyb-shell .shoyb-top-copy .brand-sub {
-    font-size: 11.5px !important;
-    color: var(--ink-muted) !important;
-    margin-top: 2px !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: #5c7a70 !important;
+    margin-top: 0 !important;
+    letter-spacing: 0.01em;
+    max-width: 34ch;
+    line-height: 1.4;
+  }
+
+  html[data-theme="dark"] .app-layout.shoyb-shell .shoyb-top-copy .brand-eyebrow {
+    color: #7ec9a4 !important;
+    background: linear-gradient(90deg, rgba(126, 201, 164, 0.14), rgba(56, 189, 248, 0.08));
+    border-color: rgba(126, 201, 164, 0.28);
+  }
+
+  html[data-theme="dark"] .app-layout.shoyb-shell .shoyb-top-copy .brand-heading {
+    color: #f8fafc !important;
+  }
+
+  html[data-theme="dark"] .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-rest {
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme="dark"] .app-layout.shoyb-shell .shoyb-top-copy .brand-sub {
+    color: #94a3b8 !important;
+  }
+
+  html[data-theme="dark"] .app-layout.shoyb-shell .shoyb-top-copy .brand-heading-right {
+    border-left-color: rgba(148, 163, 184, 0.22);
   }
 
   .app-layout.shoyb-shell .top-actions {
-    gap: 12px !important;
-    margin-left: auto;
+    gap: 14px !important;
+    margin-left: 8px;
+    flex: 0 0 auto !important;
     display: flex !important;
     align-items: center !important;
   }
@@ -167,17 +268,17 @@
   .app-layout.shoyb-shell .main-content .icon-btn.shoyb-bell,
   .app-layout.shoyb-shell .main-content button.shoyb-bell {
     position: relative !important;
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    min-height: 36px !important;
-    border-radius: 10px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    border-radius: 12px !important;
     background: #fffdf7 !important;
     background-image: none !important;
     border: 1px solid #ded2b3 !important;
     display: grid !important;
     place-items: center !important;
-    font-size: 14px !important;
+    font-size: 16px !important;
     color: var(--navy) !important;
     padding: 0 !important;
     box-shadow: none !important;
@@ -188,13 +289,13 @@
     position: absolute !important;
     top: -3px !important;
     right: -3px !important;
-    width: 15px !important;
-    height: 15px !important;
-    min-width: 15px !important;
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
     border-radius: 50% !important;
     background: var(--rust) !important;
     color: #fff !important;
-    font-size: 8px !important;
+    font-size: 9px !important;
     font-weight: 700 !important;
     display: grid !important;
     place-items: center !important;
@@ -202,10 +303,10 @@
   }
 
   .app-layout.shoyb-shell .main-content button.avatar-mini {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    min-height: 36px !important;
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
     border-radius: 50% !important;
     background: var(--gold-soft) !important;
     background-image: none !important;
@@ -213,7 +314,7 @@
     display: grid !important;
     place-items: center !important;
     font-weight: 700 !important;
-    font-size: 12.5px !important;
+    font-size: 13px !important;
     border: 1.5px solid #ded2b3 !important;
     padding: 0 !important;
     box-shadow: none !important;

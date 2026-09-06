@@ -38,6 +38,18 @@ from app.services.avatar_service import (
     find_avatar_file,
     save_avatar,
 )
+
+def _dev_exposed_auth_token(raw_token: str | None) -> str | None:
+    """Never leak tokens outside explicit local development."""
+    if not raw_token:
+        return None
+    if settings.IS_PRODUCTION:
+        return None
+    if str(settings.ENVIRONMENT or "").lower() != "development":
+        return None
+    if not bool(getattr(settings, "EXPOSE_DEV_AUTH_TOKENS", False)):
+        return None
+    return raw_token
 from app.services.email_service import (
     is_smtp_configured,
     send_email_verification_email,
@@ -256,7 +268,7 @@ def resend_email_verification(
 
     return ResendEmailVerificationResponse(
         message=message,
-        verification_token=None if settings.IS_PRODUCTION else raw_token,
+        verification_token=_dev_exposed_auth_token(raw_token),
         email_delivery=delivery.as_dict(),
     )
 
@@ -290,7 +302,7 @@ def forgot_password(
 
     return ForgotPasswordResponse(
         message=message,
-        reset_token=None if settings.IS_PRODUCTION else raw_token,
+        reset_token=_dev_exposed_auth_token(raw_token),
         email_delivery=delivery.as_dict(),
     )
 

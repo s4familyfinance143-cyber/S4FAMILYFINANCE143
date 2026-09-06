@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MoneyPill, TypeChip } from "../ui/FinanceChips";
 
-const TABS = ["loans", "payment"];
+const TABS = ["manage", "create", "payment"];
 
 export function LoansPanel({
   t,
@@ -28,11 +28,41 @@ export function LoansPanel({
   onClose,
   onClearFilters,
 }) {
-  const [tab, setTab] = useState("loans");
-  const active = loans.filter((loan) => loan.status === "ACTIVE");
-  const given = active.filter((loan) => loan.loan_type === "GIVEN").length;
-  const taken = active.filter((loan) => loan.loan_type === "TAKEN").length;
+  const [tab, setTab] = useState("manage");
+  const active = loans.filter((loan) => String(loan.status || "").toUpperCase() === "ACTIVE");
+  const given = active.filter((loan) => String(loan.loan_type || "").toUpperCase() === "GIVEN").length;
+  const taken = active.filter((loan) => String(loan.loan_type || "").toUpperCase() === "TAKEN").length;
   const remainingTotal = active.reduce((sum, loan) => sum + Number(loan.remaining_amount || 0), 0);
+  const activeWallets = (wallets || []).filter((w) => !w?.deleted_at && w?.is_active !== false);
+
+  useEffect(() => {
+    if (!loanForm?.wallet_account_id && activeWallets[0]?.id) {
+      setLoanForm((prev) => ({ ...prev, wallet_account_id: activeWallets[0].id }));
+    }
+  }, [activeWallets, loanForm?.wallet_account_id, setLoanForm]);
+
+  useEffect(() => {
+    if (!loanPaymentForm?.wallet_account_id && activeWallets[0]?.id) {
+      setLoanPaymentForm((prev) => ({ ...prev, wallet_account_id: activeWallets[0].id }));
+    }
+  }, [activeWallets, loanPaymentForm?.wallet_account_id, setLoanPaymentForm]);
+
+  useEffect(() => {
+    if (!loanPaymentForm?.loan_id && active[0]?.id) {
+      setLoanPaymentForm((prev) => ({ ...prev, loan_id: active[0].id }));
+    }
+  }, [active, loanPaymentForm?.loan_id, setLoanPaymentForm]);
+
+  async function handleCreate() {
+    const ok = await onCreate?.();
+    if (ok) setTab("manage");
+  }
+
+  function tabLabel(key) {
+    if (key === "manage") return t("loans");
+    if (key === "create") return t("createLoan");
+    return t("loanPayment");
+  }
 
   return (
     <section className="panel settings-panel settings-smart finance-smart">
@@ -56,7 +86,7 @@ export function LoansPanel({
             className={tab === key ? "settings-tab active" : "settings-tab"}
             onClick={() => setTab(key)}
           >
-            {t(key === "loans" ? "createLoan" : "loanPayment")}
+            {tabLabel(key)}
           </button>
         ))}
       </div>
@@ -80,73 +110,8 @@ export function LoansPanel({
         </div>
       </div>
 
-      {tab === "loans" ? (
+      {tab === "manage" ? (
         <div className="settings-stack">
-          <div className="settings-block">
-            <h4>{t("createLoan")}</h4>
-            <div className="finance-form">
-              <select
-                value={loanForm.loan_type}
-                onChange={(e) => setLoanForm({ ...loanForm, loan_type: e.target.value })}
-              >
-                <option value="GIVEN">{t("given")}</option>
-                <option value="TAKEN">{t("taken")}</option>
-              </select>
-              <select
-                value={loanForm.wallet_account_id}
-                onChange={(e) => setLoanForm({ ...loanForm, wallet_account_id: e.target.value })}
-              >
-                <option value="">{t("selectWallet")}</option>
-                {wallets.map((wallet) => (
-                  <option key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder={t("personName")}
-                value={loanForm.person_name}
-                onChange={(e) => setLoanForm({ ...loanForm, person_name: e.target.value })}
-              />
-              <input
-                placeholder={t("loanAmount")}
-                value={loanForm.principal_amount}
-                onChange={(e) => setLoanForm({ ...loanForm, principal_amount: e.target.value })}
-              />
-              <input
-                placeholder="Interest rate %"
-                value={loanForm.interest_rate || "0"}
-                onChange={(e) => setLoanForm({ ...loanForm, interest_rate: e.target.value })}
-              />
-              <select
-                value={loanForm.interest_type || "NONE"}
-                onChange={(e) => setLoanForm({ ...loanForm, interest_type: e.target.value })}
-              >
-                <option value="NONE">No interest</option>
-                <option value="FLAT">Flat</option>
-                <option value="REDUCING">Reducing</option>
-              </select>
-              <input
-                placeholder="Installments (months)"
-                value={loanForm.installment_count || ""}
-                onChange={(e) => setLoanForm({ ...loanForm, installment_count: e.target.value })}
-              />
-              <input
-                type="date"
-                value={loanForm.start_date || ""}
-                onChange={(e) => setLoanForm({ ...loanForm, start_date: e.target.value })}
-              />
-              <input
-                placeholder={t("note")}
-                value={loanForm.note}
-                onChange={(e) => setLoanForm({ ...loanForm, note: e.target.value })}
-              />
-              <button type="button" className="btn btn-primary" onClick={onCreate}>
-                {t("createLoan")}
-              </button>
-            </div>
-          </div>
-
           <div className="settings-block">
             <h4>{t("loanSearchFilter")}</h4>
             <div className="finance-form">
@@ -161,12 +126,12 @@ export function LoansPanel({
                 <option value="CLOSED">{t("closedStatus")}</option>
               </select>
               <select value={loanTypeFilter} onChange={(e) => setLoanTypeFilter(e.target.value)}>
-                <option value="ALL">All Type</option>
+                <option value="ALL">{t("allType")}</option>
                 <option value="GIVEN">{t("given")}</option>
                 <option value="TAKEN">{t("taken")}</option>
               </select>
               <button type="button" className="btn" onClick={onClearFilters}>
-                Clear Filter
+                {t("clearFilter")}
               </button>
             </div>
           </div>
@@ -174,7 +139,7 @@ export function LoansPanel({
           <div className="settings-block">
             <h4>{t("loans")}</h4>
             {filteredLoans.length === 0 ? (
-              <p className="settings-empty">{t("loans")}: 0</p>
+              <p className="settings-empty">{t("noLoansYet")}</p>
             ) : (
               <div className="finance-feed">
                 {filteredLoans.map((loan) => (
@@ -201,7 +166,7 @@ export function LoansPanel({
                         <MoneyPill>{money(loan.principal_amount, loan.currency)}</MoneyPill>
                       </div>
                       <div className="budget-amount-cell">
-                        <span>{t("postPayment")}</span>
+                        <span>{t("paidAmount")}</span>
                         <MoneyPill tone="income">{money(loan.paid_amount, loan.currency)}</MoneyPill>
                       </div>
                       <div className="budget-amount-cell">
@@ -217,7 +182,7 @@ export function LoansPanel({
                       <button type="button" className="btn" onClick={() => onHistory(loan)}>
                         {t("history")}
                       </button>
-                      {loan.status === "ACTIVE" ? (
+                      {String(loan.status || "").toUpperCase() === "ACTIVE" ? (
                         <button type="button" className="btn" onClick={() => onClose(loan)}>
                           {t("close")}
                         </button>
@@ -229,7 +194,78 @@ export function LoansPanel({
             )}
           </div>
         </div>
-      ) : (
+      ) : null}
+
+      {tab === "create" ? (
+        <div className="settings-stack">
+          <div className="settings-block">
+            <h4>{t("createLoan")}</h4>
+            <div className="finance-form">
+              <select
+                value={loanForm.loan_type}
+                onChange={(e) => setLoanForm({ ...loanForm, loan_type: e.target.value })}
+              >
+                <option value="GIVEN">{t("given")}</option>
+                <option value="TAKEN">{t("taken")}</option>
+              </select>
+              <select
+                value={loanForm.wallet_account_id}
+                onChange={(e) => setLoanForm({ ...loanForm, wallet_account_id: e.target.value })}
+              >
+                <option value="">{t("selectWallet")}</option>
+                {activeWallets.map((wallet) => (
+                  <option key={wallet.id} value={wallet.id}>
+                    {wallet.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                placeholder={t("personName")}
+                value={loanForm.person_name}
+                onChange={(e) => setLoanForm({ ...loanForm, person_name: e.target.value })}
+              />
+              <input
+                placeholder={t("loanAmount")}
+                value={loanForm.principal_amount}
+                onChange={(e) => setLoanForm({ ...loanForm, principal_amount: e.target.value })}
+              />
+              <input
+                placeholder={t("interestRatePercent")}
+                value={loanForm.interest_rate || "0"}
+                onChange={(e) => setLoanForm({ ...loanForm, interest_rate: e.target.value })}
+              />
+              <select
+                value={loanForm.interest_type || "NONE"}
+                onChange={(e) => setLoanForm({ ...loanForm, interest_type: e.target.value })}
+              >
+                <option value="NONE">{t("noInterest")}</option>
+                <option value="FLAT">{t("interestFlat")}</option>
+                <option value="REDUCING">{t("interestReducing")}</option>
+              </select>
+              <input
+                placeholder={t("installmentsMonths")}
+                value={loanForm.installment_count || ""}
+                onChange={(e) => setLoanForm({ ...loanForm, installment_count: e.target.value })}
+              />
+              <input
+                type="date"
+                value={loanForm.start_date || ""}
+                onChange={(e) => setLoanForm({ ...loanForm, start_date: e.target.value })}
+              />
+              <input
+                placeholder={t("note")}
+                value={loanForm.note}
+                onChange={(e) => setLoanForm({ ...loanForm, note: e.target.value })}
+              />
+              <button type="button" className="btn btn-primary" onClick={handleCreate}>
+                {t("createLoan")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "payment" ? (
         <div className="settings-stack">
           <div className="settings-block">
             <h4>{t("loanPayment")}</h4>
@@ -252,7 +288,7 @@ export function LoansPanel({
                 }
               >
                 <option value="">{t("selectWallet")}</option>
-                {wallets.map((wallet) => (
+                {activeWallets.map((wallet) => (
                   <option key={wallet.id} value={wallet.id}>
                     {wallet.name}
                   </option>
@@ -274,7 +310,7 @@ export function LoansPanel({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

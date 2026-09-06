@@ -9,27 +9,38 @@ service firebase.storage {
       return request.auth.token.email_verified == true;
     }
 
-    function familyMember(familyId) {
+    // Align with Firestore familyMemberLoose — membership doc is enough for file I/O
+    function familyMemberLoose(familyId) {
       return signedIn()
-        && emailOk()
         && firestore.exists(/databases/(default)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
-    // Profile avatars: users/{uid}/profile/avatar.*
+    function familyMember(familyId) {
+      return familyMemberLoose(familyId) && emailOk();
+    }
+
+    // Profile avatars: users/{uid}/profile/avatar.* — owner only (no email gate)
     match /users/{userId}/profile/{allPaths=**} {
-      allow read: if signedIn();
+      allow read: if signedIn() && request.auth.uid == userId;
       allow create, update: if signedIn()
         && request.auth.uid == userId
         && request.resource.size < 2 * 1024 * 1024
-        && request.resource.contentType.matches('image/jpeg|image/png|image/webp');
+        && request.resource.contentType.matches('image/jpeg|image/jpg|image/png|image/webp');
       allow delete: if signedIn() && request.auth.uid == userId;
     }
 
+    // Family documents + attachments
     match /families/{familyId}/{allPaths=**} {
-      allow read: if familyMember(familyId);
-      allow write: if familyMember(familyId)
+      allow read: if familyMemberLoose(familyId);
+
+      allow create, update: if familyMemberLoose(familyId)
         && request.resource.size < 25 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*|application/pdf|application/octet-stream|text/.*|application/msword|application/vnd\\..*');
+        && request.resource.contentType.matches(
+          'image/.*|application/pdf|application/octet-stream|text/.*|application/msword|application/vnd\\..*|application/zip|application/x-zip-compressed'
+        );
+
+      // Deletes have no request.resource — must not reuse create/update checks
+      allow delete: if familyMemberLoose(familyId);
     }
   }
 }

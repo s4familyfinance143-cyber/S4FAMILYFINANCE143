@@ -1,0 +1,376 @@
+/* Mobile / iPhone dashboard onescreen — matches S4_FAMILY_143_DASHBOARD_DEMO_3_ONESCREEN.html
+   Desktop/PC: fully hidden; existing dash-shoyb rules untouched. */
+
+.m1-dash {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .dash-shoyb > .m1-dash {
+    --m1-deep: #0b4a3a;
+    --m1-deep-2: #0e5e49;
+    --m1-mint: #e3f3ec;
+    --m1-paper: #f5f8f6;
+    --m1-ink: #122420;
+    --m1-ink-muted: #5c7a70;
+    --m1-line: #e1eae5;
+    --m1-c-green: #0f8f6f;
+    --m1-c-green-soft: #dff3ea;
+    --m1-c-red: #d5482f;
+    --m1-c-red-soft: #fbe4dd;
+    --m1-c-purple: #6c4fc9;
+    --m1-c-purple-soft: #ebe5fa;
+    --m1-c-teal: #1d8fa0;
+    --m1-c-teal-soft: #dff1f4;
+    --m1-c-blue: #2660c4;
+    --m1-c-blue-soft: #e1ebfa;
+    --m1-c-orange: #d98b1f;
+    --m1-c-orange-soft: #fbebd3;
+
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+    background: var(--m1-paper);
+    color: var(--m1-ink);
+  }
+
+  .dash-shoyb > .dash-shoyb-grid {
+    display: none !important;
+  }
+
+  .app-layout.shoyb-shell .main-content > .page.dash-shoyb,
+  .app-layout.shoyb-shell .main-content > .arch-page.dash-shoyb {
+    padding: 0 !important;
+    padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow: hidden !important;
+    gap: 0 !important;
+    background: var(--m1-paper, #f5f8f6) !important;
+  }
+
+  .m1-hero {
+    flex: 0 0 auto;
+    padding: 10px 12px 0;
+    background: var(--m1-paper);
+    color: var(--m1-ink);
+  }
+
+  /* Compact navy card — no green surround */
+  .m1-balance-card {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 80% at 100% 0%, rgba(56, 189, 248, 0.22), transparent 55%),
+      linear-gradient(135deg, #0b1b3a 0%, #123056 42%, #0e4a6e 100%);
+    border: 0;
+    outline: none;
+    border-radius: 14px;
+    padding: 8px 10px 8px;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: none;
+  }
+
+  .m1-balance-card-accent {
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 4px 4px 0;
+    background: linear-gradient(180deg, #38bdf8, #2563eb);
+  }
+
+  .m1-balance-card,
+  .m1-balance-card * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+
+  .m1-balance-top {
+    margin-bottom: 6px;
+    padding-left: 6px;
+  }
+
+  .m1-balance-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .m1-balance-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .m1-eye,
+  .m1-more {
+    border: 0;
+    background: rgba(255, 255, 255, 0.12);
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+  }
+
+  .m1-balance-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.92;
+  }
+
+  .m1-balance-value {
+    margin-top: 2px;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .m1-balance-delta {
+    display: inline-flex;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(22, 163, 74, 0.55);
+  }
+
+  .m1-balance-delta.down {
+    background: rgba(220, 38, 38, 0.45);
+    color: #fecaca !important;
+    -webkit-text-fill-color: #fecaca !important;
+  }
+
+  .m1-balance-rows {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding-left: 4px;
+  }
+
+  .m1-balance-col {
+    border-radius: 9px;
+    padding: 5px 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    text-align: left;
+    min-width: 0;
+  }
+
+  .m1-balance-col-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 7.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    opacity: 0.88;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .m1-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: #94a3b8;
+  }
+
+  .m1-balance-col.income .m1-dot {
+    background: #4ade80;
+  }
+
+  .m1-balance-col.expense .m1-dot {
+    background: #fb7185;
+  }
+
+  .m1-balance-col.savings .m1-dot {
+    background: #38bdf8;
+  }
+
+  .m1-balance-col-value {
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .m1-balance-col.income .m1-balance-col-value {
+    color: #86efac !important;
+    -webkit-text-fill-color: #86efac !important;
+  }
+
+  .m1-balance-col.expense .m1-balance-col-value {
+    color: #fda4af !important;
+    -webkit-text-fill-color: #fda4af !important;
+  }
+
+  .m1-balance-col.savings .m1-balance-col-value {
+    color: #7dd3fc !important;
+    -webkit-text-fill-color: #7dd3fc !important;
+  }
+
+  .m1-sheet {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 0;
+    position: relative;
+    z-index: 2;
+    padding: 10px 12px 6px;
+    border-radius: 0;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    box-shadow: none;
+  }
+
+  .m1-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6px 4px;
+  }
+
+  .m1-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--m1-ink);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .m1-tile:active {
+    transform: scale(0.96);
+  }
+
+  .m1-tile-icon {
+    width: clamp(38px, 11vw, 48px);
+    height: clamp(38px, 11vw, 48px);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .m1-tile[data-tone="green"] .m1-tile-icon {
+    background: var(--m1-c-green-soft);
+    color: var(--m1-c-green);
+  }
+  .m1-tile[data-tone="red"] .m1-tile-icon {
+    background: var(--m1-c-red-soft);
+    color: var(--m1-c-red);
+  }
+  .m1-tile[data-tone="purple"] .m1-tile-icon {
+    background: var(--m1-c-purple-soft);
+    color: var(--m1-c-purple);
+  }
+  .m1-tile[data-tone="teal"] .m1-tile-icon {
+    background: var(--m1-c-teal-soft);
+    color: var(--m1-c-teal);
+  }
+  .m1-tile[data-tone="blue"] .m1-tile-icon {
+    background: var(--m1-c-blue-soft);
+    color: var(--m1-c-blue);
+  }
+  .m1-tile[data-tone="orange"] .m1-tile-icon {
+    background: var(--m1-c-orange-soft);
+    color: var(--m1-c-orange);
+  }
+
+  .m1-tile-label {
+    max-width: 70px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--m1-ink);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .m1-sync {
+    flex: 0 0 auto;
+    margin: 10px 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 11px;
+    background: var(--m1-mint);
+    color: var(--m1-c-green);
+    font-size: 10px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .m1-sync-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--m1-c-green);
+    flex: 0 0 auto;
+  }
+
+  .m1-sync[data-state="pending"] {
+    color: #b45309;
+    background: #fef3c7;
+  }
+  .m1-sync[data-state="pending"] .m1-sync-dot {
+    background: #d97706;
+  }
+
+  .m1-sync[data-state="offline"] {
+    color: var(--m1-ink-muted);
+    background: #eef2f1;
+  }
+  .m1-sync[data-state="offline"] .m1-sync-dot {
+    background: #94a3b8;
+  }
+
+  .m1-sync-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

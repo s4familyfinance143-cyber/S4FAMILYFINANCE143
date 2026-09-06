@@ -169,7 +169,7 @@ def create_phase15_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     module_type = clean_module(payload.module_type)
     validate_phase15_payload(module_type, payload, is_create=True)
     item = Phase15Item(
@@ -259,7 +259,7 @@ def update_phase15_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     item = get_item(db, payload.family_id, item_id)
     validate_phase15_payload(item.module_type, payload, is_create=False)
     apply_phase15_fields(item, payload, db, payload.family_id)
@@ -292,7 +292,7 @@ def close_phase15_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    member = require_permission(db, payload.family_id, current_user.id, "transaction.create")
     item = get_item(db, payload.family_id, item_id)
     item.status = "CLOSED"
     write_audit_log(

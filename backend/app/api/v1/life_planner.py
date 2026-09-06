@@ -111,7 +111,7 @@ def create_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, payload.family_id, current_user.id, "dashboard.read")
+    require_permission(db, payload.family_id, current_user.id, "transaction.create")
     member = _member(db, payload.family_id, current_user.id)
     row = FamilyTask(
         family_id=payload.family_id,
@@ -138,7 +138,7 @@ def update_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "dashboard.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     row = (
         db.query(FamilyTask)
         .filter(FamilyTask.id == task_id, FamilyTask.family_id == family_id, FamilyTask.deleted_at.is_(None))
@@ -167,7 +167,7 @@ def complete_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "dashboard.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     row = (
         db.query(FamilyTask)
         .filter(FamilyTask.id == task_id, FamilyTask.family_id == family_id, FamilyTask.deleted_at.is_(None))
@@ -188,7 +188,7 @@ def delete_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "dashboard.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     row = (
         db.query(FamilyTask)
         .filter(FamilyTask.id == task_id, FamilyTask.family_id == family_id, FamilyTask.deleted_at.is_(None))
@@ -232,7 +232,7 @@ def create_calendar_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, payload.family_id, current_user.id, "dashboard.read")
+    require_permission(db, payload.family_id, current_user.id, "transaction.create")
     member = _member(db, payload.family_id, current_user.id)
     row = CalendarEvent(
         family_id=payload.family_id,
@@ -260,7 +260,7 @@ def update_calendar_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "dashboard.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     row = (
         db.query(CalendarEvent)
         .filter(CalendarEvent.id == event_id, CalendarEvent.family_id == family_id, CalendarEvent.deleted_at.is_(None))
@@ -289,7 +289,7 @@ def delete_calendar_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "dashboard.read")
+    require_permission(db, family_id, current_user.id, "transaction.create")
     row = (
         db.query(CalendarEvent)
         .filter(CalendarEvent.id == event_id, CalendarEvent.family_id == family_id, CalendarEvent.deleted_at.is_(None))

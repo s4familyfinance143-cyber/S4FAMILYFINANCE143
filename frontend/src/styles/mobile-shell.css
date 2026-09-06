@@ -160,6 +160,15 @@
     max-width: 100%;
   }
 
+  .mobile-brand-title--tagline {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    white-space: normal !important;
+    text-align: center !important;
+    line-height: 1.25 !important;
+    max-width: min(220px, 58vw) !important;
+  }
+
   .mobile-brand-sub {
     font-size: 9px !important;
     color: var(--muted) !important;

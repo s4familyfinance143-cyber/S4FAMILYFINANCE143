@@ -35,12 +35,16 @@ export function Phase15Panel({
   onClose,
   onRefresh,
 }) {
-  const filteredItems = phase15Items.filter((item) => item.module_type === phase15ActiveTab);
+  const filteredItems = phase15Items.filter(
+    (item) => String(item.module_type || "").toUpperCase() === String(phase15ActiveTab || "").toUpperCase()
+  );
   const activeModule = phase15ActiveTab;
 
   function switchTab(moduleType) {
+    if (moduleType === phase15ActiveTab && !editingPhase15Id) return;
     setPhase15ActiveTab(moduleType);
-    setPhase15Form((prev) => ({ ...prev, module_type: moduleType }));
+    // Always clear edit mode + form when changing tabs (prevents cross-module PATCH).
+    onCancelEdit?.(moduleType);
   }
 
   return (
@@ -64,7 +68,13 @@ export function Phase15Panel({
         {PHASE15_TABS.map((moduleType) => (
           <div className="card" key={moduleType}>
             <span>{moduleLabel(moduleType, t)}</span>
-            <strong>{digits(phase15Summary?.modules?.[moduleType]?.active_count || 0)}</strong>
+            <strong>
+              {digits(
+                phase15Summary?.modules?.[moduleType]?.active_count ??
+                  phase15Summary?.modules?.[moduleType]?.active ??
+                  0
+              )}
+            </strong>
             <p>{money(phase15Summary?.modules?.[moduleType]?.total_amount || 0)}</p>
             {(phase15Summary?.modules?.[moduleType]?.due_soon_count || 0) > 0 ? (
               <small className="due-badge">{t("dueSoon")}: {digits(phase15Summary.modules[moduleType].due_soon_count)}</small>
@@ -120,9 +130,11 @@ export function Phase15Panel({
 
         <input type="date" value={phase15Form.target_date || ""} onChange={(e) => setPhase15Form({ ...phase15Form, target_date: e.target.value })} />
         <input placeholder={t("note")} value={phase15Form.note || ""} onChange={(e) => setPhase15Form({ ...phase15Form, note: e.target.value })} />
-        <button onClick={onSave}>{editingPhase15Id ? t("saveItem") : t("createItem")}</button>
-        {editingPhase15Id ? <button onClick={onCancelEdit}>{t("cancelEdit")}</button> : null}
-        <button onClick={onRefresh}>{t("refreshAssetsFunds")}</button>
+        <button type="button" onClick={onSave}>{editingPhase15Id ? t("saveItem") : t("createItem")}</button>
+        {editingPhase15Id ? (
+          <button type="button" onClick={() => onCancelEdit?.(phase15ActiveTab)}>{t("cancelEdit")}</button>
+        ) : null}
+        <button type="button" onClick={onRefresh}>{t("refreshAssetsFunds")}</button>
       </div>
 
       <h3>{t("assetsFundsItems")} · {moduleLabel(activeModule, t)}</h3>
@@ -138,10 +150,10 @@ export function Phase15Panel({
               <strong>{money(item.amount, item.currency)}</strong>
               <span>{item.target_date || item.secondary_date || t("noDate")}</span>
               <span>{item.status}</span>
-              {item.status === "ACTIVE" ? (
+              {String(item.status || "").toUpperCase() === "ACTIVE" ? (
                 <>
-                  <button onClick={() => onEdit(item)}>{t("editItem")}</button>
-                  <button onClick={() => onClose(item)}>{t("close")}</button>
+                  <button type="button" onClick={() => onEdit(item)}>{t("editItem")}</button>
+                  <button type="button" onClick={() => onClose(item)}>{t("close")}</button>
                 </>
               ) : null}
             </div>
