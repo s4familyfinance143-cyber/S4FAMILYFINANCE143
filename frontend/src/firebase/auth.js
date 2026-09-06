@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   GoogleAuthProvider,
   onAuthStateChanged,
   sendEmailVerification,
@@ -90,6 +91,18 @@ export function formatFirebaseAuthError(error, lang = "en") {
     "auth/user-not-found": bn
       ? "ব্যবহারকারী পাওয়া যায়নি। আবার সাইন ইন করুন।"
       : "User not found. Sign out and sign in again.",
+    "auth/email-already-in-use": bn
+      ? "এই ইমেইল ইতিমধ্যে Firebase Authentication-এ আছে। Login করুন, অথবা Console → Authentication → Users থেকে ইউজার ডিলিট করে আবার Create করুন।"
+      : "This email already exists in Firebase Authentication. Sign in, or delete the user in Console → Authentication → Users, then create again.",
+    "auth/invalid-credential": bn
+      ? "ইমেইল/পাসওয়ার্ড মিলছে না। Firestore ডেটা মুছলেও Auth ইউজার থাকতে পারে — পুরনো পাসওয়ার্ড দিয়ে Login করুন, অথবা Authentication → Users থেকে ইমেইলটি ডিলিট করে নতুন Create করুন।"
+      : "Email/password do not match. Deleting Firestore data does not remove Auth users — sign in with the old password, or delete the email under Authentication → Users and create again.",
+    "auth/wrong-password": bn
+      ? "পাসওয়ার্ড ভুল। পুরনো পাসওয়ার্ড দিন, অথবা Authentication থেকে ইউজার ডিলিট করে নতুন অ্যাকাউন্ট তৈরি করুন।"
+      : "Wrong password. Use the old password, or delete the Auth user and create a new account.",
+    "auth/email-exists-wrong-password": bn
+      ? "এই ইমেইল Auth-এ আগে থেকেই আছে, কিন্তু পাসওয়ার্ড মিলছে না। Firebase Console → Authentication → Users → এই ইমেইল Delete করুন, তারপর আবার Create family করুন।"
+      : "This email already exists in Auth, but the password does not match. In Firebase Console → Authentication → Users, delete this email, then Create family again.",
   };
 
   if (code && byCode[code]) {
@@ -241,50 +254,52 @@ export async function firebaseSignInEmail(email, password) {
   return cred.user;
 }
 
+/** Remove the current Auth user (used to roll back a failed Create family). */
+export async function firebaseDeleteCurrentUser(user) {
+  const target = user || getFirebaseAuth()?.currentUser;
+  if (!target) return false;
+  await deleteUser(target);
+  return true;
+}
+
 export async function firebaseRegisterEmail(email, password, fullName = "") {
   const auth = getFirebaseAuth();
   if (!auth) throw new Error("Firebase is not configured");
 
-  // 1) Create account
+  // 1) Create Auth account first (Firebase always does this BEFORE email verify)
   const cred = await createUserWithEmailAndPassword(auth, String(email).trim(), password);
 
-  // 2) Trigger verification IMMEDIATELY — do not wait on profile update.
-  //    Firebase’s built-in mailer can still be slow; we still fire at t=0 after create.
+  // 2) Display name — short timeout only
+  if (fullName.trim().length > 0) {
+    try {
+      await Promise.race([
+        updateProfile(cred.user, { displayName: fullName.trim() }),
+        new Promise((resolve) => {
+          window.setTimeout(resolve, 4000);
+        }),
+      ]);
+    } catch (err) {
+      console.warn("[firebase] updateProfile after register failed", err);
+    }
+  }
+
+  // 3) Verification email in background — never blocks Create family UI
   let verificationSent = false;
   let verificationError = null;
-  const verifyPromise = dispatchVerificationEmail(cred.user, { reason: "register" })
-    .then((result) => {
+  void dispatchVerificationEmail(cred.user, { reason: "register" })
+    .then(() => {
       verificationSent = true;
-      return result;
     })
     .catch((error) => {
       verificationError = error;
       console.error("[firebase] initial sendEmailVerification failed", error);
-      return null;
+      void dispatchVerificationEmail(cred.user, { reason: "register-retry" }).catch((retryErr) => {
+        verificationError = retryErr;
+        console.error("[firebase] initial sendEmailVerification retry failed", retryErr);
+      });
     });
 
-  // 3) Display name in parallel (does not block the verification request start)
-  const profilePromise =
-    fullName.trim().length > 0
-      ? updateProfile(cred.user, { displayName: fullName.trim() }).catch((err) => {
-          console.warn("[firebase] updateProfile after register failed", err);
-        })
-      : Promise.resolve();
-
-  await Promise.all([verifyPromise, profilePromise]);
-
-  // One more attempt if the first send failed (e.g. transient network)
-  if (!verificationSent) {
-    try {
-      await dispatchVerificationEmail(cred.user, { reason: "register-retry" });
-      verificationSent = true;
-      verificationError = null;
-    } catch (retryErr) {
-      verificationError = retryErr;
-      console.error("[firebase] initial sendEmailVerification retry failed", retryErr);
-    }
-  }
-
+  // Account exists now with emailVerified=false until user clicks the mail link.
   return { user: cred.user, verificationSent, verificationError };
 }
 

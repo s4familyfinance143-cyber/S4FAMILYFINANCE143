@@ -3644,18 +3644,52 @@ function App() {
     }
     setCloudBusy(true);
     setAuthLoading(true);
+    setStatus(t("creatingFamilyGate"));
     try {
-      const { user, familyId, existing, verificationSent, verificationError } = await createCloudFamilyAccount({
-        email,
-        password,
-        fullName,
-        familyName,
-        currency,
-        timezone,
-        ownerRelation,
-        deviceLabel: SYNC_DEVICE_ID || "mobile",
-      });
-      await activateCloudSession(user, familyId, familyName);
+      const created = await Promise.race([
+        createCloudFamilyAccount({
+          email,
+          password,
+          fullName,
+          familyName,
+          currency,
+          timezone,
+          ownerRelation,
+          deviceLabel: SYNC_DEVICE_ID || "mobile",
+        }),
+        new Promise((_, reject) => {
+          window.setTimeout(
+            () =>
+              reject(
+                new Error(
+                  appLanguage === "bn"
+                    ? "ফ্যামিলি তৈরি সময় শেষ — ইন্টারনেট/Firebase চেক করে আবার চেষ্টা করুন।"
+                    : "Create family timed out — check internet/Firebase and try again.",
+                ),
+              ),
+            35000,
+          );
+        }),
+      ]);
+      const { user, familyId, existing, verificationSent, verificationError } = created;
+
+      // Unlock UI immediately; hydrate in background (same as login fix)
+      const activatePromise = activateCloudSession(user, familyId, familyName);
+      setAuthLoading(false);
+      setStatus("");
+      setCloudBusy(false);
+
+      try {
+        await Promise.race([
+          activatePromise,
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 15000);
+          }),
+        ]);
+      } catch (err) {
+        console.warn("[S4 Auth] activate after create slow/failed", err);
+      }
+
       if (existing) {
         setMessage(t("cloudFamilyRestored"), "success");
       } else if (verificationSent) {
@@ -3670,10 +3704,12 @@ function App() {
         setMessage(t("cloudFamilyCreated"), "success");
       }
     } catch (err) {
-      setMessage(err.message || t("familyCreateFailed"), "error");
+      const lang = appLanguage === "bn" ? "bn" : "en";
+      setMessage(formatFirebaseAuthError(err, lang) || err.message || t("familyCreateFailed"), "error");
     } finally {
       setCloudBusy(false);
       setAuthLoading(false);
+      setStatus((current) => (current === t("creatingFamilyGate") ? "" : current));
     }
   }
 

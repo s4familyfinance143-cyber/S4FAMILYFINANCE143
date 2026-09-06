@@ -3,6 +3,7 @@ export {
   subscribeFirebaseAuth,
   firebaseSignInEmail,
   firebaseRegisterEmail,
+  firebaseDeleteCurrentUser,
   firebaseSignInGoogle,
   firebaseSignOut,
   firebaseUserLabel,
