@@ -3310,7 +3310,12 @@ function App() {
     // Pull shared family snapshot BEFORE hydrating UI so wallets from other devices appear
     if (isBrowserOnline() && canSyncCloudFinance(user)) {
       try {
-        const restored = await pullCloudSnapshot(user.uid);
+        const restored = await Promise.race([
+          pullCloudSnapshot(user.uid),
+          new Promise((resolve) => {
+            window.setTimeout(() => resolve(null), 10000);
+          }),
+        ]);
         if (restored?.familyId) {
           persistCloudFamilyId(restored.familyId);
           familyId = restored.familyId;
@@ -3406,16 +3411,26 @@ function App() {
     let familyId = loadCloudFamilyId();
     if (!familyId) {
       try {
-        const profile = await getUserFamilyProfile(uid);
+        const profile = await Promise.race([
+          getUserFamilyProfile(uid),
+          new Promise((resolve) => {
+            window.setTimeout(() => resolve(null), 6000);
+          }),
+        ]);
         familyId = profile?.family_id || "";
       } catch {
         /* ignore */
       }
     }
-    // Snapshot pull requires verified email (Firestore rules).
+    // Snapshot pull requires verified email (Firestore rules). Never block login forever.
     if (isCloudEmailReady(user || firebaseUser)) {
       try {
-        const restored = await pullCloudSnapshot(uid);
+        const restored = await Promise.race([
+          pullCloudSnapshot(uid),
+          new Promise((resolve) => {
+            window.setTimeout(() => resolve(null), 8000);
+          }),
+        ]);
         if (restored?.familyId) familyId = restored.familyId;
       } catch {
         /* first-time cloud user may have no snapshot */
@@ -3423,13 +3438,18 @@ function App() {
     }
     if (!familyId) {
       try {
-        const profile = await getUserFamilyProfile(uid);
+        const profile = await Promise.race([
+          getUserFamilyProfile(uid),
+          new Promise((resolve) => {
+            window.setTimeout(() => resolve(null), 6000);
+          }),
+        ]);
         familyId = profile?.family_id || "";
       } catch {
         /* ignore */
       }
     }
-    return familyId;
+    return familyId || loadCloudFamilyId() || "";
   }
 
   function applyOfflineCacheToState(cache) {
@@ -3548,23 +3568,64 @@ function App() {
     }
     setCloudBusy(true);
     setAuthLoading(true);
+    setStatus(t("signingIn"));
     try {
-      const user = await firebaseSignInEmail(email, password);
-      await ensureUserProfile(user.uid, user);
+      const user = await Promise.race([
+        firebaseSignInEmail(email, password),
+        new Promise((_, reject) => {
+          window.setTimeout(
+            () => reject(new Error(appLanguage === "bn" ? "লগইন সময় শেষ — ইন্টারনেট/Firebase চেক করুন।" : "Sign-in timed out — check internet/Firebase.")),
+            25000,
+          );
+        }),
+      ]);
 
-      const familyId = await resolveCloudFamilyId(user.uid, user);
+      try {
+        await Promise.race([
+          ensureUserProfile(user.uid, user),
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 8000);
+          }),
+        ]);
+      } catch (err) {
+        console.warn("[S4 Auth] ensureUserProfile skipped", err);
+      }
+
+      const familyId = await Promise.race([
+        resolveCloudFamilyId(user.uid, user),
+        new Promise((resolve) => {
+          window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 10000);
+        }),
+      ]);
       if (!familyId) {
         setMessage(t("cloudOnlyNoDataCreate"), "error");
         return;
       }
 
-      await activateCloudSession(user, familyId);
+      // Sync unlock runs before first await inside activateCloudSession.
+      // Do not keep "Signing in..." overlay during snapshot hydrate (can hang on Firestore).
+      const activatePromise = activateCloudSession(user, familyId);
+      setAuthLoading(false);
+      setStatus("");
+      setCloudBusy(false);
+
+      try {
+        await Promise.race([
+          activatePromise,
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 15000);
+          }),
+        ]);
+      } catch (err) {
+        console.warn("[S4 Auth] activateCloudSession slow/failed", err);
+      }
       setMessage(t("cloudOnlySignInSuccess"), "success");
     } catch (err) {
       setMessage(err.message || t("firebaseSyncFailed"), "error");
     } finally {
       setCloudBusy(false);
       setAuthLoading(false);
+      setStatus((current) => (current === t("signingIn") ? "" : current));
     }
   }
 
