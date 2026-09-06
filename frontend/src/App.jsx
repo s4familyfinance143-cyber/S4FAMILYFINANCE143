@@ -802,6 +802,17 @@ function App() {
     }, 3000);
   }
 
+  /** Surface auth/sync soft failures in UI (still logs to console). */
+  function softFail(scope, err, type = "warning") {
+    const detail = String(err?.message || err || "").trim();
+    console.warn(`[S4 ${scope}]`, err);
+    if (!detail) {
+      setMessage(`${scope}: ${t("somethingWentWrong") || "Something went wrong"}`, type);
+      return;
+    }
+    setMessage(`${scope}: ${detail}`, type);
+  }
+
   const isAppAuthed =
     Boolean(token) ||
     (cloudOnlyMode && Boolean(firebaseUser?.uid)) ||
@@ -867,7 +878,7 @@ function App() {
         displayName: user.displayName || null,
       });
     } catch (err) {
-      console.warn("[S4 Sync] push failed", err);
+      softFail("Sync push", err);
     }
   }
 
@@ -897,7 +908,7 @@ function App() {
       }
       return result || { restored: 0 };
     } catch (err) {
-      console.warn("[S4 Sync] pull failed", err);
+      softFail("Sync pull", err);
       return { restored: 0, error: err };
     }
   }
@@ -970,7 +981,7 @@ function App() {
           }),
         ]);
       } catch (err) {
-        console.warn("[S4 Auth] bindCloudFamilyIdentity failed", err);
+        softFail("Family bind", err);
       }
     }
     setFamilies([{ id: familyId, name: familyName || t("cloudOnlyFamilyLabel") }]);
@@ -1009,7 +1020,7 @@ function App() {
           /* ignore */
         }
       } catch (err) {
-        console.warn("[S4 Sync] activate pull failed", err);
+        softFail("Sync activate", err);
       }
     }
     await hydrateFromCloudCache(familyId);
@@ -1102,7 +1113,7 @@ function App() {
       ]);
       return String(familyId || loadCloudFamilyId() || "");
     } catch (err) {
-      console.warn("[S4 Auth] resolveCloudFamilyId failed", err);
+      softFail("Family resolve", err);
       return loadCloudFamilyId() || "";
     }
   }
@@ -1243,7 +1254,7 @@ function App() {
           }),
         ]);
       } catch (err) {
-        console.warn("[S4 Auth] ensureUserProfile skipped", err);
+        softFail("Profile sync", err);
       }
 
       // Must verify email before entering the family dashboard
@@ -1314,7 +1325,7 @@ function App() {
           }),
         ]);
       } catch (err) {
-        console.warn("[S4 Auth] activateCloudSession slow/failed", err);
+        softFail("Session activate", err);
       }
       setMessage(t("cloudOnlySignInSuccess"), "success");
     } catch (err) {
@@ -1408,7 +1419,7 @@ function App() {
           }),
         ]);
       } catch (err) {
-        console.warn("[S4 Auth] activate after create slow/failed", err);
+        softFail("Session activate", err);
       }
 
       if (existing) {
@@ -5115,14 +5126,25 @@ function App() {
       return;
     }
     if (isCloudLocalMode()) {
-      setGroceryOcrPreview({
-        suggestions: [],
-        suggestion_count: 0,
-        engine: "cloud_local",
-        note: t("ocrPasteOnlyHint"),
-        source: "cloud_local",
-      });
-      setMessage(t("ocrPasteOnlyHint"), "warning");
+      try {
+        setMessage(t("ocrScanningImage") || "Reading receipt image…", "info");
+        const { extractTextFromImageFile, grocerySuggestionsFromOcrText } = await import("./lib/clientOcr");
+        const rawText = await extractTextFromImageFile(file);
+        if (!rawText) {
+          setMessage(t("ocrNoTextFound") || "No text found in image — try a clearer photo or paste text.", "warning");
+          return;
+        }
+        setGroceryScanForm((prev) => ({ ...prev, raw_text: rawText }));
+        const result = grocerySuggestionsFromOcrText(rawText);
+        setGroceryOcrPreview(result);
+        setMessage(
+          t("ocrSuggestionsCount").replace("{n}", digits(result.suggestion_count || 0)),
+          "success",
+        );
+      } catch (err) {
+        setGroceryOcrPreview(null);
+        setMessage(err.message || t("ocrImageFailed") || "OCR image parse failed", "error");
+      }
       return;
     }
     if (!token) {
@@ -6640,13 +6662,18 @@ function App() {
   async function parseExpenseOcrImage(file) {
     if (!file) return null;
     if (isCloudLocalMode()) {
-      return {
-        suggested_total: null,
-        line_count: 0,
-        engine: "cloud_local",
-        note: "Image OCR needs backend; paste bill text instead",
-        source: "cloud_local",
-      };
+      const { extractTextFromImageFile, expenseParseFromOcrText } = await import("./lib/clientOcr");
+      const rawText = await extractTextFromImageFile(file);
+      if (!rawText) {
+        return {
+          suggested_total: null,
+          line_count: 0,
+          engine: "tesseract_client",
+          note: t("ocrNoTextFound") || "No text found in image",
+          source: "cloud_local_ocr",
+        };
+      }
+      return expenseParseFromOcrText(rawText);
     }
     const fd = new FormData();
     fd.append("family_id", activeFamilyId);
@@ -9303,7 +9330,10 @@ function App() {
     // Never leave the user stuck if network/Firestore hangs during restore
     safetyTimer = window.setTimeout(() => {
       if (cancelled || bootDone) return;
-      console.warn("[S4 Family] session bootstrap timed out — releasing loading gate");
+      softFail(
+        "Session bootstrap",
+        new Error(t("sessionBootstrapTimeout") || "Timed out — check internet, then tap Refresh."),
+      );
       bootDone = true;
       setSessionBootstrapping(false);
       setIsFamilyLoading(false);
@@ -9368,7 +9398,7 @@ function App() {
             ]);
             if (restored?.familyId) familyId = restored.familyId;
           } catch (err) {
-            console.warn("[S4 Family] bootstrap pull failed", err);
+            softFail("Bootstrap pull", err);
           }
         }
         if (!familyId) familyId = loadCloudFamilyId();
@@ -9376,7 +9406,7 @@ function App() {
         if (familyId && !cancelled) {
           // Unlock UI ASAP (flags cleared inside activateCloudSession)
           void activateCloudSession(user, familyId).catch((err) => {
-            console.warn("[S4 Family] activateCloudSession failed", err);
+            softFail("Session restore", err);
             markBootDone();
           });
           markBootDone();
@@ -9393,7 +9423,7 @@ function App() {
           markBootDone();
         }
       } catch (err) {
-        console.warn("[S4 Family] session restore failed", err);
+        softFail("Session restore", err);
         const storedId = loadCloudFamilyId();
         if (storedId && !cancelled) {
           try {

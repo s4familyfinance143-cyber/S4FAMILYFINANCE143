@@ -140,9 +140,19 @@ service cloud.firestore {
         || familyHasNoOwner(request.resource.data.family_id);
     }
 
+    // Create: no prior resource — only allow family_id when empty/null, already a member,
+    // or bootstrapping a family that has no owner yet.
+    function userFamilyIdCreateOk() {
+      return !('family_id' in request.resource.data)
+        || request.resource.data.family_id == null
+        || request.resource.data.family_id == ''
+        || familyMemberLoose(request.resource.data.family_id)
+        || familyHasNoOwner(request.resource.data.family_id);
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId) && userFamilyIdCreateOk();
       allow update: if isOwner(userId) && userFamilyIdWriteOk();
       allow delete: if isOwner(userId);
 

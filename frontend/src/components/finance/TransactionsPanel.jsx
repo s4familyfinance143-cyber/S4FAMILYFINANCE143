@@ -339,7 +339,7 @@ export function TransactionsPanel({
               />
               ) : cloudLocalMode ? (
                 <p className="settings-empty" style={{ margin: 0 }}>
-                  {t("ocrPasteOnlyHint") || "Cloud mode: paste bill text (image OCR not available yet)."}
+                  {t("ocrPasteOnlyHint") || "Cloud mode: on-device image OCR (or paste bill text)."}
                 </p>
               ) : null}
               <button
