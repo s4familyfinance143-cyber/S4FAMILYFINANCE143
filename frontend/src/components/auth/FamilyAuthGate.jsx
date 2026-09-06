@@ -470,8 +470,12 @@ export function FamilyAuthGate({
       setAuthLoading(true);
       setStatus(t("signingIn"));
       try {
-        await onCloudEmailSignIn({ email: email.trim(), password });
+        const result = await onCloudEmailSignIn({ email: email.trim(), password });
         setStatus("");
+        if (result?.needsFamilySetup) {
+          setView("createFamily");
+          setModeMenuOpen(false);
+        }
       } catch (error) {
         setMessage(formatFetchError(error, lang), "error");
         setStatus("");

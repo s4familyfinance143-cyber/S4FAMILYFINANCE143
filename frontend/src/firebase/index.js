@@ -16,10 +16,11 @@ export {
   getVerificationResendRemainingMs,
   VERIFY_RESEND_COOLDOWN_MS,
 } from "./auth";
-export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile, getUserProfileDoc } from "./cloudSync";
+export { pushCloudSnapshot, pullCloudSnapshot, getCloudSnapshotMeta, ensureUserProfile, getUserFamilyProfile, linkUserFamilyId, bindCloudFamilyIdentity, resolveAndBindUserFamily, getUserProfileDoc } from "./cloudSync";
 export { createCloudFamilyAccount, seedNewFamilyCache } from "./cloudOnboarding";
 export {
   ensureFamilyCloudShell,
+  findFamilyIdsForUid,
   publishFamilyInvite,
   joinFamilyByInviteCode,
   pushFamilyCloudSnapshot,

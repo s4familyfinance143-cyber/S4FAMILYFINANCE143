@@ -32,7 +32,7 @@
 
 | Menu | Status | Notes |
 |------|--------|-------|
-| Family members + invite codes | REAL | Codes published to `familyInvites/{code}`; join switches account to shared family |
+| Family members + invite codes | REAL | Codes published to `familyInvites/{code}`; share manually; join switches account to shared family. SMTP email is optional/backend-only |
 | Roles / permissions | REAL | OWNER / MEMBER in `families/{id}/members` |
 | Planner (tasks + calendar) | REAL | via shim |
 | Grocery lists / items / vendors | REAL | via shim |
@@ -67,4 +67,24 @@
 
 ## Version lock
 
-All targets: **1.0.12** · Capacitor APK official · Expo secondary · Tauri Windows CSP locked · PWA (Safari/Chrome)
+All targets: **1.0.19**
+
+| Target | Path | Role |
+|--------|------|------|
+| PWA / Web | `frontend/` | Primary UI |
+| Android APK | `frontend/android/` via **Capacitor** | **Official** phone release |
+| Windows EXE | `desktop/` Tauri | Official desktop |
+| Expo RN | `mobile/` | **Secondary** prototype / optional — not the store APK path |
+
+## Family invites
+
+| Channel | Status | Notes |
+|---------|--------|-------|
+| Invite code (manual share) | REAL | Generate → copy → WhatsApp/SMS/in person → Join |
+| Invite link | REAL | Same as code; deep-link friendly |
+| SMTP email invite | PARTIAL | Optional PC-backend only; Firebase cloud mode does **not** send email |
+
+## Client stacks (avoid confusion)
+
+- **Official Android build:** Capacitor wrapping the Vite `frontend/` PWA (`npm run build:android` / CI APK artifact).
+- **`mobile/` Expo:** Separate React Native submodule for experiments; do not treat as the production APK pipeline.

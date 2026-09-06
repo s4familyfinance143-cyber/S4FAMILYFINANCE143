@@ -4,12 +4,15 @@
  */
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 
@@ -74,13 +77,28 @@ export async function ensureFamilyCloudShell({
   const db = getFirestoreDb();
   if (!db) return;
 
-  const memberSnap = await getDoc(familyMemberRef(familyId, uid));
-  const metaSnap = await getDoc(familyMetaRef(familyId));
-  const isFirst = !metaSnap.exists() || !metaSnap.data()?.owner_uid;
+  let memberSnap;
+  let metaSnap;
+  try {
+    memberSnap = await getDoc(familyMemberRef(familyId, uid));
+  } catch {
+    memberSnap = null;
+  }
+  try {
+    metaSnap = await getDoc(familyMetaRef(familyId));
+  } catch {
+    // Older rules blocked meta get before membership — treat as missing
+    metaSnap = null;
+  }
+
+  const metaExists = Boolean(metaSnap?.exists?.());
+  const metaData = metaExists ? metaSnap.data() || {} : {};
+  const isFirst = !metaExists || !metaData.owner_uid;
   const relation = String(relationshipType || "").trim();
+  const memberExists = Boolean(memberSnap?.exists?.());
 
   // Member first so subsequent family meta updates pass familyMember/owner rules.
-  if (!memberSnap.exists()) {
+  if (!memberExists) {
     await setDoc(
       familyMemberRef(familyId, uid),
       {
@@ -88,7 +106,7 @@ export async function ensureFamilyCloudShell({
         email: email || null,
         display_name: displayName || null,
         role:
-          isFirst || String(metaSnap.data()?.owner_uid || "").trim() === uid
+          isFirst || String(metaData.owner_uid || "").trim() === uid
             ? "OWNER"
             : role || "MEMBER",
         ...(relation
@@ -111,8 +129,7 @@ export async function ensureFamilyCloudShell({
       memberSnap.data()?.relationship_display_label ||
       "";
     const existingRole = String(memberSnap.data()?.role || "").toUpperCase();
-    const metaOwner = String(metaSnap.data()?.owner_uid || "").trim();
-    // Only elevate from meta/first — never trust caller role:"OWNER" (sync used to pass that for everyone)
+    const metaOwner = String(metaData.owner_uid || "").trim();
     const shouldBeOwner = isFirst || (metaOwner && metaOwner === uid);
     const nextRole = shouldBeOwner
       ? "OWNER"
@@ -125,7 +142,6 @@ export async function ensureFamilyCloudShell({
         email: email || memberSnap.data()?.email || null,
         display_name: displayName || memberSnap.data()?.display_name || null,
         role: nextRole,
-        // Backfill relation only when missing (never overwrite a corrected label)
         ...(!existingRelation && relation
           ? {
               relationship_type: relation,
@@ -140,15 +156,14 @@ export async function ensureFamilyCloudShell({
     );
   }
 
-  const existingOwnerUid = String(metaSnap.data()?.owner_uid || "").trim();
+  const existingOwnerUid = String(metaData.owner_uid || "").trim();
   await setDoc(
     familyMetaRef(familyId),
     {
       id: familyId,
-      name: familyName || metaSnap.data()?.name || "Family",
-      // Never let a later member overwrite owner_uid
+      name: familyName || metaData.name || "Family",
       ...(isFirst || !existingOwnerUid ? { owner_uid: existingOwnerUid || uid } : {}),
-      created_at: metaSnap.exists() ? metaSnap.data()?.created_at || serverTimestamp() : serverTimestamp(),
+      created_at: metaExists ? metaData.created_at || serverTimestamp() : serverTimestamp(),
       updated_at: serverTimestamp(),
     },
     { merge: true },
@@ -226,11 +241,32 @@ export async function publishFamilyInvite({
   inviteeEmail = null,
   expiresInDays = 7,
   maxUses = 1,
+  email = null,
+  displayName = null,
+  familyName = null,
 }) {
   const key = String(code || "")
     .trim()
     .toUpperCase();
   if (!key || !familyId || !ownerUid) throw new Error("Invite code/family/owner required");
+
+  // Membership + meta must exist or Firestore invite create is denied
+  await ensureFamilyCloudShell({
+    familyId,
+    uid: ownerUid,
+    email,
+    displayName,
+    familyName: familyName || familyId,
+    role: "OWNER",
+  });
+
+  try {
+    const { linkUserFamilyId } = await import("./cloudSync");
+    await linkUserFamilyId(ownerUid, familyId);
+  } catch {
+    /* profile heal optional */
+  }
+
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + Number(expiresInDays || 7));
 
@@ -587,6 +623,28 @@ export async function removeFamilyCloudMember({ familyId, memberUid, actorUid })
   }
   await deleteDoc(familyMemberRef(familyId, memberUid));
   return { ok: true };
+}
+
+/**
+ * Recover family ids for a user when users/{uid}.family_id is missing
+ * (other PC/phone login). Uses collection group on members.uid.
+ */
+export async function findFamilyIdsForUid(uid) {
+  if (!uid) return [];
+  const db = getFirestoreDb();
+  if (!db) return [];
+  try {
+    const snaps = await getDocs(query(collectionGroup(db, "members"), where("uid", "==", uid)));
+    const ids = [];
+    snaps.forEach((snap) => {
+      const familyId = snap.ref.parent?.parent?.id;
+      if (familyId && !ids.includes(familyId)) ids.push(familyId);
+    });
+    return ids;
+  } catch (err) {
+    console.warn("[S4] findFamilyIdsForUid failed", err?.code || err?.message || err);
+    return [];
+  }
 }
 
 export { emailOk };

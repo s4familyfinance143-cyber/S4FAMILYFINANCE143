@@ -96,15 +96,17 @@ Guides: [`deploy/FIREBASE_SETUP.md`](deploy/FIREBASE_SETUP.md) · [`deploy/GOOGL
 
 ```
 S4FAMILYFINANCE143/
-├── backend/          # FastAPI + SQLite API
-├── frontend/         # React + Vite PWA
-│   └── android/      # Capacitor Android APK
+├── backend/          # FastAPI + SQLite API (optional / advanced)
+├── frontend/         # React + Vite PWA (primary UI)
+│   └── android/      # Capacitor Android — official APK
+├── desktop/          # Tauri Windows EXE (official desktop)
+├── mobile/           # Expo RN — secondary / experimental (not the release APK)
 ├── deploy/           # Hosting, Firebase, installer docs
-├── desktop/          # Tauri desktop shell (optional)
 ├── setup_local.ps1   # One-time local setup
 └── start_dev.ps1     # Start backend + frontend
 ```
 
+**Platform note:** Store/sideload Android builds come from **Capacitor** (`frontend/android`). The `mobile/` Expo app is a separate stack — use Capacitor for production APKs.
 ---
 
 ## Deploy PWA to Firebase Hosting

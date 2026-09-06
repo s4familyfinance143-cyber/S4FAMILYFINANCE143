@@ -10,7 +10,7 @@ import {
 
 import { buildBackupPayload, restoreBackupBlob } from "../lib/backupPayload";
 import { getFirestoreDb } from "./config";
-import { ensureFamilyCloudShell, pullFamilyCloudSnapshot, pushFamilyCloudSnapshot } from "./familyCloud";
+import { ensureFamilyCloudShell, findFamilyIdsForUid, pullFamilyCloudSnapshot, pushFamilyCloudSnapshot } from "./familyCloud";
 
 const SNAPSHOT_DOC_ID = "latest";
 const MAX_PART_CHARS = 750_000;
@@ -70,8 +70,12 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
 
   await batch.commit();
 
-  // Shared family truth for multi-account members
   if (familyId) {
+    try {
+      await linkUserFamilyId(uid, familyId);
+    } catch {
+      /* profile heal optional */
+    }
     try {
       await ensureFamilyCloudShell({
         familyId,
@@ -180,6 +184,113 @@ export async function getUserFamilyProfile(uid) {
   const snap = await getDoc(doc(db, "users", uid));
   if (!snap.exists()) return null;
   return snap.data() || null;
+}
+
+/** Persist family_id on the user profile so other devices can resolve the same family. */
+export async function linkUserFamilyId(uid, familyId, extra = {}) {
+  if (!uid || !familyId) return;
+  const db = getFirestoreDb();
+  if (!db) return;
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      family_id: familyId,
+      updated_at: serverTimestamp(),
+      ...extra,
+    },
+    { merge: true },
+  );
+}
+
+/**
+ * Write family_id + members shell so the next PC/phone login finds this family.
+ */
+export async function bindCloudFamilyIdentity({
+  uid,
+  familyId,
+  email = null,
+  displayName = null,
+  familyName = null,
+  role = "MEMBER",
+}) {
+  if (!uid || !familyId) return { familyId: "", bound: false };
+  await linkUserFamilyId(uid, familyId);
+  await ensureFamilyCloudShell({
+    familyId,
+    uid,
+    email,
+    displayName,
+    familyName: familyName || familyId,
+    role,
+  });
+  return { familyId, bound: true };
+}
+
+/**
+ * Resolve family for login on a fresh device, then bind profile + shell.
+ * Order: local hint → user profile → snapshot meta → membership index → snapshot pull.
+ */
+export async function resolveAndBindUserFamily({
+  uid,
+  email = null,
+  displayName = null,
+  localFamilyId = "",
+}) {
+  if (!uid) return "";
+  let familyId = String(localFamilyId || "").trim();
+
+  if (!familyId) {
+    try {
+      const profile = await getUserFamilyProfile(uid);
+      familyId = String(profile?.family_id || "").trim();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!familyId) {
+    try {
+      const meta = await getCloudSnapshotMeta(uid);
+      familyId = String(meta?.familyId || "").trim();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!familyId) {
+    try {
+      const ids = await findFamilyIdsForUid(uid);
+      if (ids.length) familyId = String(ids[0] || "").trim();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!familyId) {
+    try {
+      const restored = await pullCloudSnapshot(uid);
+      familyId = String(restored?.familyId || "").trim();
+    } catch {
+      /* no snapshot yet */
+    }
+  }
+
+  if (!familyId) return "";
+
+  try {
+    await bindCloudFamilyIdentity({
+      uid,
+      familyId,
+      email,
+      displayName,
+      familyName: familyId,
+      role: "MEMBER",
+    });
+  } catch (err) {
+    console.warn("[S4] bindCloudFamilyIdentity failed", err?.code || err?.message || err);
+  }
+
+  return familyId;
 }
 
 export async function ensureUserProfile(uid, user) {

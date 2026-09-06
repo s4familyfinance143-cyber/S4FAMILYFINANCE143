@@ -2612,7 +2612,10 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
     try {
       const { publishFamilyInvite } = await import("../firebase/familyCloud");
       const uid = currentUser?.firebase_uid || currentUser?.uid || body.owner_uid;
-      if (uid) {
+      if (!uid) {
+        row.cloud_published = false;
+        row.cloud_publish_error = "missing_firebase_uid";
+      } else {
         await publishFamilyInvite({
           code,
           familyId,
@@ -2620,13 +2623,17 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
           inviteeEmail: body.invitee_email || null,
           expiresInDays: Number(body.expires_in_days || 7),
           maxUses: Number(body.max_uses || 1),
+          email: currentUser?.email || null,
+          displayName: currentUser?.full_name || currentUser?.displayName || null,
         });
         row.cloud_published = true;
       }
     } catch (err) {
       row.cloud_published = false;
-      row.cloud_publish_error = err?.message || "publish_failed";
+      row.cloud_publish_error = err?.code || err?.message || "publish_failed";
     }
+    // Persist publish flags on the invite row
+    await writeList(familyId, "family", "invites", [row, ...invites]);
     await after();
     return { handled: true, data: row };
   }

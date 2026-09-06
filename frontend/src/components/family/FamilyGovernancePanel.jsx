@@ -1015,7 +1015,8 @@ export function FamilyGovernancePanel({
           <div className="settings-block">
             <h4>{t("generateInvite")}</h4>
             <p className="budget-hero-sub" style={{ marginTop: 4 }}>
-              {t("invite")}
+              {t("inviteShareCodeHint") ||
+                "Primary flow: generate a code and share it manually (WhatsApp, SMS, in person). Email send is optional and only works if SMTP is configured on a backend — cloud Firebase mode does not send mail."}
             </p>
             <div className="finance-form">
               <input
@@ -1031,8 +1032,8 @@ export function FamilyGovernancePanel({
                 onChange={(e) => setInviteForm({ ...inviteForm, max_uses: e.target.value })}
               />
               <input
-                aria-label="Email"
-                placeholder="invitee@email.com"
+                aria-label="Email (optional note)"
+                placeholder="invitee@email.com (optional)"
                 value={inviteForm.invitee_email || ""}
                 onChange={(e) => setInviteForm({ ...inviteForm, invitee_email: e.target.value })}
               />
@@ -1042,7 +1043,7 @@ export function FamilyGovernancePanel({
                   checked={Boolean(inviteForm.send_email)}
                   onChange={(e) => setInviteForm({ ...inviteForm, send_email: e.target.checked })}
                 />
-                Send email invite
+                Request SMTP email (optional / backend only)
               </label>
               <button
                 type="button"
@@ -1058,8 +1059,14 @@ export function FamilyGovernancePanel({
                 </button>
               ) : null}
               {onInviteEmail ? (
-                <button type="button" className="btn" disabled={inviteGenerating || !(inviteForm.invitee_email || "").includes("@")} onClick={onInviteEmail}>
-                  Email invite
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={inviteGenerating || !(inviteForm.invitee_email || "").includes("@")}
+                  onClick={onInviteEmail}
+                  title="Requires optional SMTP on PC backend — not used in Firebase cloud mode"
+                >
+                  Email invite (optional SMTP)
                 </button>
               ) : null}
             </div>

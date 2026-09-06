@@ -144,7 +144,11 @@ service cloud.firestore {
 
     // Shared family shell + snapshot (multi-account truth)
     match /families/{familyId} {
-      allow read: if familyMemberLoose(familyId);
+      // get: members always; signed-in users may probe by id (unguessable fam_*)
+      // so first-device bootstrap can detect missing meta before creating member.
+      // list: never (no family browsing).
+      allow get: if familyMemberLoose(familyId) || signedIn();
+      allow list: if false;
       allow create: if signedIn() && emailOk();
 
       // Owner: full meta updates
@@ -156,7 +160,9 @@ service cloud.firestore {
 
       match /members/{memberId} {
         allow read: if familyMemberLoose(familyId)
-          || (signedIn() && request.auth.uid == memberId);
+          || (signedIn() && request.auth.uid == memberId)
+          // Collection-group recovery: find all families this uid belongs to
+          || (signedIn() && resource.data.uid == request.auth.uid);
 
         // Create self only: first OWNER, or MEMBER/VIEWER/CHILD with valid invite_code
         allow create: if selfCreateFirstOwner(familyId)
@@ -206,7 +212,14 @@ service cloud.firestore {
         && emailOk()
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.keys().hasAll(['code', 'family_id', 'owner_uid', 'status'])
-        && familyAdminOrOwner(request.resource.data.family_id);
+        && (
+          familyAdminOrOwner(request.resource.data.family_id)
+          // Bootstrap: profile already points at this family but members/{uid} may be missing
+          || (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id
+              == request.resource.data.family_id
+          )
+        );
 
       // Owner revoke/edit, or joiner consume (uses/status only)
       allow update: if signedIn() && emailOk() && (
