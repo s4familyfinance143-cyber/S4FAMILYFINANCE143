@@ -30,8 +30,11 @@ See **`deploy/HYBRID_ARCHITECTURE_LOCK.md`**:
 
 1. Firebase Console → Firestore → **Rules**
 2. Paste contents of `deploy/firebase/firestore.rules`
-3. **Publish** (rules require **email verified** for cloud snapshot read/write).
-   Owners may update family `currency` / `default_currency` / `timezone` on `families/{familyId}`.
+3. **Publish**. Notes on current rules:
+   - Shared `families/{id}/cloudSnapshots` sync uses **membership** (`familyMemberLoose`) — email verify is **not** required for snapshot read/write.
+   - Creating invites / joining still requires **email verified**.
+   - Owners may update family `currency` / `default_currency` / `timezone` on `families/{familyId}`.
+   - `users/{uid}.family_id` can only be set if you are already a member of that family, or the family has no owner yet (create flow).
 
 4. Firebase Console → Storage → **Get started** (enable Storage; Blaze may be required for cross-service rules)
 5. Storage → **Rules** → paste `deploy/firebase/storage.rules` → **Publish**

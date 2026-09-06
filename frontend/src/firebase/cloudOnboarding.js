@@ -4,7 +4,7 @@ import { saveOfflineSnapshot } from "../lib/offlineCache";
 import { DEFAULT_CLOUD_CATEGORIES } from "../lib/cloudLocalFinance";
 import { seedCloudModuleCaches } from "../lib/cloudApiShim";
 import { firebaseRegisterEmail, firebaseSignInEmail, firebaseDeleteCurrentUser, isFirebaseEmailVerified } from "./auth";
-import { ensureUserProfile, getCloudSnapshotMeta, getUserFamilyProfile, pushCloudSnapshot } from "./cloudSync";
+import { ensureUserProfile, getCloudSnapshotMeta, getUserFamilyProfile, linkUserFamilyId, pushCloudSnapshot } from "./cloudSync";
 import { getFirestoreDb } from "./config";
 import { ensureFamilyCloudShell } from "./familyCloud";
 
@@ -163,7 +163,6 @@ export async function createCloudFamilyAccount({
             {
               email: user.email || null,
               display_name: user.displayName || fullName || null,
-              family_id: familyId,
               family_name: familyName,
               default_currency: currency,
               timezone,
@@ -196,6 +195,15 @@ export async function createCloudFamilyAccount({
               role: "OWNER",
               relationshipType: ownerRelation,
             });
+            try {
+              await linkUserFamilyId(user.uid, familyId, {
+                family_name: familyName,
+                default_currency: currency,
+                timezone,
+              });
+            } catch {
+              /* optional */
+            }
             await pushCloudSnapshot({
               uid: user.uid,
               familyId,

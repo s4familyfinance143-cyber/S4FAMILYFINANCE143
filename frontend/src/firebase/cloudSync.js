@@ -72,11 +72,6 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
 
   if (familyId) {
     try {
-      await linkUserFamilyId(uid, familyId);
-    } catch {
-      /* profile heal optional */
-    }
-    try {
       await ensureFamilyCloudShell({
         familyId,
         uid,
@@ -86,6 +81,11 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
         // Never pass OWNER here — only meta.owner_uid / first-member logic may elevate
         role: "MEMBER",
       });
+      try {
+        await linkUserFamilyId(uid, familyId);
+      } catch {
+        /* profile heal optional */
+      }
       await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
     } catch {
       /* family shell may already exist with different owner role — still try snapshot */
@@ -214,7 +214,7 @@ export async function bindCloudFamilyIdentity({
   role = "MEMBER",
 }) {
   if (!uid || !familyId) return { familyId: "", bound: false };
-  await linkUserFamilyId(uid, familyId);
+  // Membership first — rules only allow users.family_id when member / new family.
   await ensureFamilyCloudShell({
     familyId,
     uid,
@@ -223,6 +223,7 @@ export async function bindCloudFamilyIdentity({
     familyName: familyName || familyId,
     role,
   });
+  await linkUserFamilyId(uid, familyId);
   return { familyId, bound: true };
 }
 

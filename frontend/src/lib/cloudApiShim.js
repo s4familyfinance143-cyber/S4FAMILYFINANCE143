@@ -2593,10 +2593,11 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       max_uses: Number(body.max_uses || 1),
       uses: 0,
       status: "ACTIVE",
-      email_sent: Boolean(body.send_email && body.invitee_email),
+      email_sent: false,
       email_reason: body.send_email
-        ? "Invite code ready — share manually (SMTP optional)"
+        ? "Cloud mode does not send SMTP email — share the invite code manually"
         : "code_only",
+      email_requested: Boolean(body.send_email && body.invitee_email),
       created_at: new Date().toISOString(),
       created_by: currentUser?.email || "owner",
       source: "cloud_local",
@@ -3253,6 +3254,7 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
           updated_at: new Date().toISOString(),
         });
 
+        let ownershipCloudWarning = null;
         try {
           const { acceptOwnershipTransferCloud } = await import("../firebase/familyCloud");
           await acceptOwnershipTransferCloud({
@@ -3261,13 +3263,22 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
             fromUid: fromId || actorUid,
           });
         } catch (err) {
-          console.warn("[S4 OwnershipTransfer] cloud sync skipped", err);
+          ownershipCloudWarning = `Ownership updated locally — cloud sync failed: ${String(err?.message || err)}`;
         }
         await appendAudit(familyId, {
           action: "OWNERSHIP_TRANSFER_ACCEPT",
           to_member_id: toId,
           from_member_id: fromId,
         });
+        await after();
+        return {
+          handled: true,
+          data: {
+            ...(next.find((r) => String(r.id) === String(requestId)) || { ok: true }),
+            cloud_synced: !ownershipCloudWarning,
+            cloud_sync_warning: ownershipCloudWarning,
+          },
+        };
       }
 
       await after();
@@ -3510,6 +3521,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
     });
 
     // Persist to Firestore family meta (multi-device)
+    let cloudSyncWarning = null;
     try {
       const { updateFamilyCloudSettings } = await import("../firebase/familyCloud");
       await updateFamilyCloudSettings({
@@ -3519,15 +3531,11 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
         actorUid: currentUser?.uid || currentUser?.firebase_uid || me?.user_id || me?.uid,
       });
     } catch (err) {
-      // Local snapshots already saved — surface Firestore errors clearly
       const msg = String(err?.message || "");
-      if (/permission denied/i.test(msg)) {
+      if (/permission denied/i.test(msg) || /network|unavailable|connection/i.test(msg)) {
         throw err;
       }
-      if (/network|unavailable|connection/i.test(msg)) {
-        throw err;
-      }
-      console.warn("[S4 FamilySettings] Firestore meta update skipped", err);
+      cloudSyncWarning = `Saved on this device only — cloud settings sync failed: ${msg}`;
     }
 
     await after();
@@ -3543,6 +3551,8 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
         default_currency: appliedCurrency,
         timezone: appliedTimezone,
         source: "cloud_local",
+        cloud_synced: !cloudSyncWarning,
+        cloud_sync_warning: cloudSyncWarning,
       },
     };
   }
@@ -3767,6 +3777,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
       if (!nextRole) {
         return { handled: true, data: { ok: false, detail: "role required" }, error: "role required" };
       }
+      let cloudSyncWarning = null;
       try {
         const { setFamilyMemberRole } = await import("../firebase/familyCloud");
         await setFamilyMemberRole({
@@ -3780,7 +3791,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
         if (/Only OWNER|permission|denied|required/i.test(msg)) {
           return { handled: true, data: { ok: false, detail: msg }, error: msg };
         }
-        console.warn("[S4 MemberRole] Firestore update skipped", err);
+        cloudSyncWarning = `Saved on this device only — cloud role sync failed: ${msg}`;
       }
       let rows = await readList(familyId, "family", "members");
       let found = false;
@@ -3814,7 +3825,16 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
       await writeList(familyId, "family", "members", next);
       await appendAudit(familyId, { action: "MEMBER_ROLE", member_id: memberId, role: nextRole });
       await after();
-      return { handled: true, data: { ok: true, member_id: memberId, role: nextRole } };
+      return {
+        handled: true,
+        data: {
+          ok: true,
+          member_id: memberId,
+          role: nextRole,
+          cloud_synced: !cloudSyncWarning,
+          cloud_sync_warning: cloudSyncWarning,
+        },
+      };
     }
 
     if (action === "relationship" || body?.relationship_type || body?.relationship) {
@@ -3828,6 +3848,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
           error: "relationship required",
         };
       }
+      let cloudSyncWarning = null;
       try {
         const { setFamilyMemberRelationship } = await import("../firebase/familyCloud");
         await setFamilyMemberRelationship({
@@ -3841,7 +3862,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
         if (/Only OWNER|permission|denied|required/i.test(msg)) {
           return { handled: true, data: { ok: false, detail: msg }, error: msg };
         }
-        console.warn("[S4 MemberRelation] Firestore update skipped", err);
+        cloudSyncWarning = `Saved on this device only — cloud relationship sync failed: ${msg}`;
       }
       let rows = await readList(familyId, "family", "members");
       let found = false;
@@ -3885,6 +3906,8 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
           member_id: memberId,
           relationship: relation,
           relationship_type: relation,
+          cloud_synced: !cloudSyncWarning,
+          cloud_sync_warning: cloudSyncWarning,
         },
       };
     }
@@ -3986,6 +4009,7 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
     const mapped = mapFamilyMemberPermissions(updated || {});
 
     // Also write overrides onto Firestore member doc for multi-device truth
+    let cloudSyncWarning = null;
     try {
       const { updateFamilyMemberPermissionOverrides } = await import("../firebase/familyCloud");
       const firestoreUid = String(
@@ -4002,11 +4026,14 @@ export async function cloudApiPatch({ familyId, path, body, onAfterWrite, curren
       if (/Only OWNER|permission|denied|Actor/i.test(msg)) {
         return { handled: true, data: { ok: false, detail: msg }, error: msg };
       }
-      console.warn("[S4 Permissions] Firestore override skipped", err);
+      cloudSyncWarning = `Saved on this device only — cloud permissions sync failed: ${msg}`;
     }
 
     await after();
-    return { handled: true, data: mapped };
+    return {
+      handled: true,
+      data: { ...mapped, cloud_synced: !cloudSyncWarning, cloud_sync_warning: cloudSyncWarning },
+    };
   }
 
   return { handled: false };
@@ -4034,6 +4061,7 @@ export async function cloudApiDelete({ familyId, path, onAfterWrite, currentUser
         error: "Cannot remove yourself",
       };
     }
+    let cloudSyncWarning = null;
     try {
       const { removeFamilyCloudMember } = await import("../firebase/familyCloud");
       await removeFamilyCloudMember({ familyId, memberUid: memberId, actorUid });
@@ -4042,7 +4070,7 @@ export async function cloudApiDelete({ familyId, path, onAfterWrite, currentUser
       if (/Only OWNER|Cannot remove|permission|denied|required/i.test(msg)) {
         return { handled: true, data: { ok: false, detail: msg }, error: msg };
       }
-      console.warn("[S4 RemoveMember] Firestore remove skipped", err);
+      cloudSyncWarning = `Removed locally — cloud member remove failed: ${msg}`;
     }
     const rows = await readList(familyId, "family", "members");
     const next = rows.filter((raw) => {
@@ -4052,7 +4080,15 @@ export async function cloudApiDelete({ familyId, path, onAfterWrite, currentUser
     await writeList(familyId, "family", "members", next);
     await appendAudit(familyId, { action: "MEMBER_REMOVE", member_id: memberId });
     await after();
-    return { handled: true, data: { ok: true, member_id: memberId } };
+    return {
+      handled: true,
+      data: {
+        ok: true,
+        member_id: memberId,
+        cloud_synced: !cloudSyncWarning,
+        cloud_sync_warning: cloudSyncWarning,
+      },
+    };
   }
 
   if (parts[0] === "tasks" && parts[1]) {

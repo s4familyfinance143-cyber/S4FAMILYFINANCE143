@@ -260,6 +260,7 @@ export function FamilyGovernancePanel({
   apiPatch,
   apiDelete,
   activeFamilyId,
+  cloudMode = false,
 }) {
   const [tab, setTab] = useState("members");
   const [copied, setCopied] = useState(false);
@@ -1033,18 +1034,20 @@ export function FamilyGovernancePanel({
               />
               <input
                 aria-label="Email (optional note)"
-                placeholder="invitee@email.com (optional)"
+                placeholder="invitee@email.com (optional note)"
                 value={inviteForm.invitee_email || ""}
                 onChange={(e) => setInviteForm({ ...inviteForm, invitee_email: e.target.value })}
               />
-              <label className="settings-check">
-                <input
-                  type="checkbox"
-                  checked={Boolean(inviteForm.send_email)}
-                  onChange={(e) => setInviteForm({ ...inviteForm, send_email: e.target.checked })}
-                />
-                Request SMTP email (optional / backend only)
-              </label>
+              {!cloudMode ? (
+                <label className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(inviteForm.send_email)}
+                    onChange={(e) => setInviteForm({ ...inviteForm, send_email: e.target.checked })}
+                  />
+                  Request SMTP email (optional / backend only)
+                </label>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-primary"
@@ -1058,7 +1061,7 @@ export function FamilyGovernancePanel({
                   Create invite link
                 </button>
               ) : null}
-              {onInviteEmail ? (
+              {!cloudMode && onInviteEmail ? (
                 <button
                   type="button"
                   className="btn"

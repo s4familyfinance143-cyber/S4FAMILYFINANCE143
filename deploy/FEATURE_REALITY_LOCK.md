@@ -67,7 +67,7 @@
 
 ## Version lock
 
-All targets: **1.0.19**
+All targets: **1.0.20**
 
 | Target | Path | Role |
 |--------|------|------|
@@ -88,3 +88,12 @@ All targets: **1.0.19**
 
 - **Official Android build:** Capacitor wrapping the Vite `frontend/` PWA (`npm run build:android` / CI APK artifact).
 - **`mobile/` Expo:** Separate React Native submodule for experiments; do not treat as the production APK pipeline.
+- Submodule remote may need a different GitHub org/credentials; Capacitor release does **not** depend on pushing Expo `mobile/`.
+
+## Notifications
+
+| Channel | Status |
+|---------|--------|
+| In-app notification list | REAL |
+| Browser Notification API | REAL |
+| FCM web push (VAPID) | PARTIAL — set `VITE_FIREBASE_VAPID_KEY` for full push |

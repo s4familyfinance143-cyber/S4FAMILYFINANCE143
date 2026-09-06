@@ -1,4 +1,4 @@
-/* Mobile Shoyb dashboard — 100% match S4_FAMILY_SHOYB_DASHBOARD_v2.html */
+/* Mobile dashboard shell — legacy class `shoyb-shell` kept as alias for `s4-shell`. */
 
 @media (max-width: 960px) {
   html,

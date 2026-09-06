@@ -125,8 +125,26 @@ service cloud.firestore {
         .hasOnly(['uses', 'status', 'updated_at', 'last_joined_uid']);
     }
 
+    // Profile may set family_id only when already a member, clearing it, or
+    // bootstrapping a brand-new family (no owner yet). Blocks forging invites
+    // by writing a stolen family_id onto users/{uid}.
+    function userFamilyIdWriteOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['family_id'])
+        || request.resource.data.family_id == null
+        || request.resource.data.family_id == ''
+        || (
+          'family_id' in resource.data
+          && request.resource.data.family_id == resource.data.family_id
+        )
+        || familyMemberLoose(request.resource.data.family_id)
+        || familyHasNoOwner(request.resource.data.family_id);
+    }
+
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && userFamilyIdWriteOk();
+      allow delete: if isOwner(userId);
 
       match /fcmTokens/{tokenId} {
         allow read, write: if isOwner(userId);
@@ -144,10 +162,14 @@ service cloud.firestore {
 
     // Shared family shell + snapshot (multi-account truth)
     match /families/{familyId} {
-      // get: members always; signed-in users may probe by id (unguessable fam_*)
-      // so first-device bootstrap can detect missing meta before creating member.
+      // get: members, or profile already linked to this family_id (heal path).
       // list: never (no family browsing).
-      allow get: if familyMemberLoose(familyId) || signedIn();
+      allow get: if familyMemberLoose(familyId)
+        || (
+          signedIn()
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id == familyId
+        );
       allow list: if false;
       allow create: if signedIn() && emailOk();
 
@@ -208,18 +230,12 @@ service cloud.firestore {
       allow get: if signedIn() && emailOk();
       allow list: if false;
 
+      // Only OWNER/ADMIN of that family may mint invite codes (no profile.family_id shortcut).
       allow create: if signedIn()
         && emailOk()
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.keys().hasAll(['code', 'family_id', 'owner_uid', 'status'])
-        && (
-          familyAdminOrOwner(request.resource.data.family_id)
-          // Bootstrap: profile already points at this family but members/{uid} may be missing
-          || (
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id
-              == request.resource.data.family_id
-          )
-        );
+        && familyAdminOrOwner(request.resource.data.family_id);
 
       // Owner revoke/edit, or joiner consume (uses/status only)
       allow update: if signedIn() && emailOk() && (

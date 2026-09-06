@@ -98,17 +98,20 @@ export async function ensureFamilyCloudShell({
   const memberExists = Boolean(memberSnap?.exists?.());
 
   // Member first so subsequent family meta updates pass familyMember/owner rules.
+  // If meta get was denied (not linked yet), do not assume empty family — use caller role.
   if (!memberExists) {
+    const roleUpper = String(role || "MEMBER").toUpperCase();
+    const assumeOwner =
+      metaExists
+        ? !metaData.owner_uid || String(metaData.owner_uid || "").trim() === uid
+        : roleUpper === "OWNER";
     await setDoc(
       familyMemberRef(familyId, uid),
       {
         uid,
         email: email || null,
         display_name: displayName || null,
-        role:
-          isFirst || String(metaData.owner_uid || "").trim() === uid
-            ? "OWNER"
-            : role || "MEMBER",
+        role: assumeOwner ? "OWNER" : roleUpper || "MEMBER",
         ...(relation
           ? {
               relationship_type: relation,
@@ -156,14 +159,27 @@ export async function ensureFamilyCloudShell({
     );
   }
 
-  const existingOwnerUid = String(metaData.owner_uid || "").trim();
+  // After membership exists, re-read meta (get may have been denied before join).
+  try {
+    metaSnap = await getDoc(familyMetaRef(familyId));
+  } catch {
+    metaSnap = null;
+  }
+  const metaExistsNow = Boolean(metaSnap?.exists?.());
+  const metaDataNow = metaExistsNow ? metaSnap.data() || {} : {};
+  const existingOwnerUid = String(metaDataNow.owner_uid || "").trim();
+  const shouldSetOwner =
+    !metaExistsNow || !existingOwnerUid || existingOwnerUid === uid;
+
   await setDoc(
     familyMetaRef(familyId),
     {
       id: familyId,
-      name: familyName || metaData.name || "Family",
-      ...(isFirst || !existingOwnerUid ? { owner_uid: existingOwnerUid || uid } : {}),
-      created_at: metaExists ? metaData.created_at || serverTimestamp() : serverTimestamp(),
+      name: familyName || metaDataNow.name || metaData.name || "Family",
+      ...(shouldSetOwner ? { owner_uid: existingOwnerUid || uid } : {}),
+      created_at: metaExistsNow
+        ? metaDataNow.created_at || serverTimestamp()
+        : serverTimestamp(),
       updated_at: serverTimestamp(),
     },
     { merge: true },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import "./App.css";
 import "./styles/architecture-shell.css";
 import "./styles/design-polish.css";
@@ -29,14 +29,20 @@ import {
 } from "./lib/offlineBlobs";
 import { ExecutiveDashboard } from "./components/dashboard/ExecutiveDashboard";
 import { DesktopSidebar, MobileBottomNavigation, TopHeader } from "./components/layout/AppNavigation";
-import { Phase15Panel } from "./components/phase/Phase15Panel";
-import { Phase16Panel } from "./components/phase/Phase16Panel";
+const Phase15Panel = lazy(() =>
+  import("./components/phase/Phase15Panel").then((m) => ({ default: m.Phase15Panel })),
+);
+const Phase16Panel = lazy(() =>
+  import("./components/phase/Phase16Panel").then((m) => ({ default: m.Phase16Panel })),
+);
+const ReportsPanel = lazy(() =>
+  import("./components/reports/ReportsPanel").then((m) => ({ default: m.ReportsPanel })),
+);
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GroceryPanel } from "./components/grocery/GroceryPanel";
 import { SyncPanel } from "./components/sync/SyncPanel";
 import { AuditPanel } from "./components/audit/AuditPanel";
 import { NotificationsPanel } from "./components/notifications/NotificationsPanel";
-import { ReportsPanel } from "./components/reports/ReportsPanel";
 import { WalletsPanel } from "./components/finance/WalletsPanel";
 import { TransactionsPanel } from "./components/finance/TransactionsPanel";
 import { SavingsPanel } from "./components/finance/SavingsPanel";
@@ -2354,6 +2360,9 @@ function App() {
         if (hit.error || hit.data?.ok === false) {
           throw new Error(hit.error || hit.data?.detail || "Request failed");
         }
+        if (hit.data?.cloud_sync_warning) {
+          setMessage(hit.data.cloud_sync_warning, "warning");
+        }
         return hit.data;
       }
       if (!token) {
@@ -2389,6 +2398,9 @@ function App() {
         if (hit.handled) {
           if (hit.error || hit.data?.ok === false) {
             throw new Error(hit.error || hit.data?.detail || "Request failed");
+          }
+          if (hit.data?.cloud_sync_warning) {
+            setMessage(hit.data.cloud_sync_warning, "warning");
           }
           return hit.data;
         }
@@ -2481,6 +2493,9 @@ function App() {
       if (hit.handled) {
         if (hit.error || hit.data?.ok === false) {
           throw new Error(hit.error || hit.data?.detail || "Request failed");
+        }
+        if (hit.data?.cloud_sync_warning) {
+          setMessage(hit.data.cloud_sync_warning, "warning");
         }
         return hit.data;
       }
@@ -5582,6 +5597,14 @@ function App() {
   }
 
   async function inviteFamilyByEmail() {
+    if (isCloudLocalMode()) {
+      setMessage(
+        t("inviteShareCodeHint") ||
+          "Cloud mode does not send email — generate a code and share it manually.",
+        "info",
+      );
+      return generateFamilyInvite();
+    }
     const email = (inviteForm.invitee_email || "").trim();
     if (!email.includes("@")) {
       setMessage("Valid email required", "error");
@@ -5595,7 +5618,9 @@ function App() {
         max_uses: Number(inviteForm.max_uses || 1),
       });
       setGeneratedInvite(data);
-      const hint = data.email_sent ? "Email sent" : `Invite ready (${data.email_reason || "SMTP off"})`;
+      const hint = data.email_sent
+        ? "Email sent"
+        : `Invite ready — share code manually (${data.email_reason || "SMTP off"})`;
       setMessage(hint, data.email_sent ? "success" : "info");
     } catch (err) {
       setMessage(err.message || "Email invite failed", "error");
@@ -10075,7 +10100,7 @@ function App() {
   }
 
   return (
-    <div className="app-layout shoyb-shell" lang={currentLanguage.code} dir={currentLanguage.dir}>
+    <div className="app-layout s4-shell shoyb-shell" lang={currentLanguage.code} dir={currentLanguage.dir}>
       {showBackupOnboarding && cloudOnlyMode && firebaseUser?.uid ? (
         <CloudBackupOnboarding
           t={t}
@@ -11157,7 +11182,7 @@ function App() {
               await loadSettingsData();
             }}
             onGenerateInvite={generateFamilyInvite}
-            onInviteEmail={inviteFamilyByEmail}
+            onInviteEmail={isCloudLocalMode() ? null : inviteFamilyByEmail}
             onInviteLink={inviteFamilyByLink}
             onRevokeInvite={revokeFamilyInvite}
             onDecideJoinRequest={decideJoinRequest}
@@ -11167,6 +11192,7 @@ function App() {
             apiPatch={apiPatch}
             apiDelete={apiDelete}
             activeFamilyId={activeFamilyId}
+            cloudMode={isCloudLocalMode()}
           />
         )}
 
@@ -11262,31 +11288,33 @@ function App() {
         )}
 
         {activeFamilyId && activeMenu === "reports" && (
-          <ReportsPanel
-            t={t}
-            digits={digits}
-            money={money}
-            amount={amount}
-            currencyName={currencyName}
-            financialReport={financialReport}
-            walletReport={walletReport}
-            ledgerReport={ledgerReport}
-            netWorthReport={netWorthReport}
-            categoryReport={categoryReport}
-            budgetReport={budgetReport}
-            loanReport={loanReport}
-            savingsTrendReport={savingsTrendReport}
-            apiLogsReport={apiLogsReport}
-            reportAccountId={reportAccountId}
-            setReportAccountId={setReportAccountId}
-            reportsLoading={reportsLoading}
-            wallets={wallets}
-            activeFamily={activeFamily}
-            onRefresh={loadReports}
-            onLoadLedger={loadReportLedger}
-            onLoadExtraReport={loadExtraReport}
-            onDownload={downloadReport}
-          />
+          <Suspense fallback={<section className="panel"><p>{t("loading") || "Loading…"}</p></section>}>
+            <ReportsPanel
+              t={t}
+              digits={digits}
+              money={money}
+              amount={amount}
+              currencyName={currencyName}
+              financialReport={financialReport}
+              walletReport={walletReport}
+              ledgerReport={ledgerReport}
+              netWorthReport={netWorthReport}
+              categoryReport={categoryReport}
+              budgetReport={budgetReport}
+              loanReport={loanReport}
+              savingsTrendReport={savingsTrendReport}
+              apiLogsReport={apiLogsReport}
+              reportAccountId={reportAccountId}
+              setReportAccountId={setReportAccountId}
+              reportsLoading={reportsLoading}
+              wallets={wallets}
+              activeFamily={activeFamily}
+              onRefresh={loadReports}
+              onLoadLedger={loadReportLedger}
+              onLoadExtraReport={loadExtraReport}
+              onDownload={downloadReport}
+            />
+          </Suspense>
         )}
 
         {activeFamilyId && activeMenu === "zakat" && (
@@ -11366,50 +11394,54 @@ function App() {
         )}
 
         {activeFamilyId && isPhase15Menu(activeMenu) && (
-          <Phase15Panel
-            t={t}
-            digits={digits}
-            money={money}
-            phase15Summary={phase15Summary}
-            phase15Items={phase15Items}
-            phase15Form={phase15Form}
-            setPhase15Form={setPhase15Form}
-            phase15ActiveTab={phase15ActiveTab}
-            setPhase15ActiveTab={setPhase15ActiveTab}
-            editingPhase15Id={editingPhase15Id}
-            governanceMembers={governanceMembers}
-            onSave={savePhase15Item}
-            onEdit={startEditPhase15Item}
-            onCancelEdit={(moduleType) => resetPhase15Form(moduleType || phase15ActiveTab)}
-            onClose={closePhase15Item}
-            onRefresh={loadPhase15}
-          />
+          <Suspense fallback={<section className="panel"><p>{t("loading") || "Loading…"}</p></section>}>
+            <Phase15Panel
+              t={t}
+              digits={digits}
+              money={money}
+              phase15Summary={phase15Summary}
+              phase15Items={phase15Items}
+              phase15Form={phase15Form}
+              setPhase15Form={setPhase15Form}
+              phase15ActiveTab={phase15ActiveTab}
+              setPhase15ActiveTab={setPhase15ActiveTab}
+              editingPhase15Id={editingPhase15Id}
+              governanceMembers={governanceMembers}
+              onSave={savePhase15Item}
+              onEdit={startEditPhase15Item}
+              onCancelEdit={(moduleType) => resetPhase15Form(moduleType || phase15ActiveTab)}
+              onClose={closePhase15Item}
+              onRefresh={loadPhase15}
+            />
+          </Suspense>
         )}
 
         {activeFamilyId && isPhase16Menu(activeMenu) && (
-          <Phase16Panel
-            t={t}
-            digits={digits}
-            money={money}
-            phase16Summary={phase16Summary}
-            phase16Items={phase16Items}
-            phase16Form={phase16Form}
-            setPhase16Form={setPhase16Form}
-            phase16ActiveTab={phase16ActiveTab}
-            setPhase16ActiveTab={setPhase16ActiveTab}
-            editingPhase16Id={editingPhase16Id}
-            governanceMembers={governanceMembers}
-            wallets={wallets}
-            documentFile={documentFile}
-            setDocumentFile={setDocumentFile}
-            onSave={savePhase16Item}
-            onEdit={startEditPhase16Item}
-            onCancelEdit={(moduleType) => resetPhase16Form(moduleType || phase16ActiveTab)}
-            onClose={closePhase16Item}
-            onRefresh={loadPhase16}
-            onUploadDocument={uploadDocumentForItem}
-            onDownloadDocument={downloadPhase16Document}
-          />
+          <Suspense fallback={<section className="panel"><p>{t("loading") || "Loading…"}</p></section>}>
+            <Phase16Panel
+              t={t}
+              digits={digits}
+              money={money}
+              phase16Summary={phase16Summary}
+              phase16Items={phase16Items}
+              phase16Form={phase16Form}
+              setPhase16Form={setPhase16Form}
+              phase16ActiveTab={phase16ActiveTab}
+              setPhase16ActiveTab={setPhase16ActiveTab}
+              editingPhase16Id={editingPhase16Id}
+              governanceMembers={governanceMembers}
+              wallets={wallets}
+              documentFile={documentFile}
+              setDocumentFile={setDocumentFile}
+              onSave={savePhase16Item}
+              onEdit={startEditPhase16Item}
+              onCancelEdit={(moduleType) => resetPhase16Form(moduleType || phase16ActiveTab)}
+              onClose={closePhase16Item}
+              onRefresh={loadPhase16}
+              onUploadDocument={uploadDocumentForItem}
+              onDownloadDocument={downloadPhase16Document}
+            />
+          </Suspense>
         )}
 
         {activeFamilyId && activeMenu === "grocery" && (
