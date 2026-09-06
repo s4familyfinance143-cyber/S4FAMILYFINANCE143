@@ -87,3 +87,7 @@ S4_FAMILY_143_*.html
 S4_FAMILY_143_*.png
 S4-FAMILY_Architecture_*.html
 SETUP_COMPLETE.md
+
+.tmp-*.json
+.tmp-*.zip
+
