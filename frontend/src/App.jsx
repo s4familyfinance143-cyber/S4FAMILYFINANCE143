@@ -3591,6 +3591,41 @@ function App() {
         console.warn("[S4 Auth] ensureUserProfile skipped", err);
       }
 
+      // Must verify email before entering the family dashboard
+      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
+        let pendingFamilyId = loadCloudFamilyId();
+        try {
+          pendingFamilyId =
+            (await Promise.race([
+              resolveCloudFamilyId(user.uid, user),
+              new Promise((resolve) => {
+                window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 8000);
+              }),
+            ])) || pendingFamilyId;
+        } catch {
+          /* ignore */
+        }
+        if (pendingFamilyId) {
+          persistCloudFamilyId(pendingFamilyId);
+          setActiveFamilyId(pendingFamilyId);
+        }
+        persistCloudOnlyMode(true);
+        setCloudOnlyMode(true);
+        setFirebaseUser(user);
+        setCurrentUser({
+          full_name: user.displayName || user.email || "Cloud User",
+          email: user.email || "",
+          is_email_verified: false,
+          is_active: true,
+          uid: user.uid,
+          firebase_uid: user.uid,
+        });
+        setIsFamilyLoading(false);
+        setSessionBootstrapping(false);
+        setMessage(t("verifyEmailBeforeApp") || t("verifyEmailTitle"), "warning");
+        return;
+      }
+
       const familyId = await Promise.race([
         resolveCloudFamilyId(user.uid, user),
         new Promise((resolve) => {
@@ -3602,8 +3637,6 @@ function App() {
         return;
       }
 
-      // Sync unlock runs before first await inside activateCloudSession.
-      // Do not keep "Signing in..." overlay during snapshot hydrate (can hang on Firestore).
       const activatePromise = activateCloudSession(user, familyId);
       setAuthLoading(false);
       setStatus("");
@@ -3673,7 +3706,31 @@ function App() {
       ]);
       const { user, familyId, existing, verificationSent, verificationError } = created;
 
-      // Unlock UI immediately; hydrate in background (same as login fix)
+      // Rule: unverified accounts stay pending — verify email, then Login (no dashboard yet)
+      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
+        if (familyId) persistCloudFamilyId(familyId);
+        try {
+          await firebaseSignOut();
+        } catch {
+          /* ignore */
+        }
+        setFirebaseUser(null);
+        setCurrentUser(null);
+        setCloudOnlyMode(false);
+        persistCloudOnlyMode(false);
+        setActiveFamilyId("");
+        setIsFamilyLoading(false);
+        setSessionBootstrapping(false);
+        if (familyId) persistCloudFamilyId(familyId);
+        setMessage(
+          t("cloudFamilyCreatedVerifyThenLogin") ||
+            t("cloudFamilyCreatedVerify") ||
+            "Account created. Verify your email, then Login.",
+          "success",
+        );
+        return;
+      }
+
       const activatePromise = activateCloudSession(user, familyId, familyName);
       setAuthLoading(false);
       setStatus("");
@@ -5548,10 +5605,28 @@ function App() {
       );
       if (isFirebaseEmailVerified(refreshed)) {
         setMessage(t("emailVerified") || "Email verified", "success");
+        let familyId = activeFamilyId || loadCloudFamilyId();
+        if (!familyId) {
+          try {
+            familyId = await Promise.race([
+              resolveCloudFamilyId(refreshed.uid, refreshed),
+              new Promise((resolve) => {
+                window.setTimeout(() => resolve(""), 8000);
+              }),
+            ]);
+          } catch {
+            familyId = "";
+          }
+        }
+        if (familyId) {
+          await activateCloudSession(refreshed, familyId);
+        } else {
+          setMessage(t("cloudOnlyNoDataCreate"), "warning");
+        }
         if (!loadBackupOnboardingDone(refreshed.uid)) {
           setShowBackupOnboarding(true);
         }
-        await pushCloudSnapshotIfReady(refreshed, activeFamilyId || loadCloudFamilyId());
+        await pushCloudSnapshotIfReady(refreshed, familyId || activeFamilyId || loadCloudFamilyId());
         runCloudAutoBackup({ force: true });
       } else {
         setMessage(t("verifyEmailStillPending"), "warning");

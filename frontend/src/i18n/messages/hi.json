@@ -148,6 +148,8 @@
   "cloudAutoSync4h": "हर 4 घंटे",
   "cloudFamilyCreated": "Firebase में परिवार बनाया गया — डैशबोर्ड खुल रहा है",
   "cloudFamilyCreatedVerify": "परिवार बनाया गया। सत्यापन लिंक आपके ईमेल पर भेजा गया — inbox/spam देखें।",
+  "cloudFamilyCreatedVerifyThenLogin": "Account created. Verify your email from the link, then Login to open your family.",
+  "verifyEmailBeforeApp": "Verify your email before opening the family dashboard. Check inbox/spam, then tap refresh.",
   "cloudFamilyRestored": "आपका क्लाउड परिवार पुनर्स्थापित हो गया",
   "cloudOnlyBanner": "सुरक्षित क्लाउड सिंक चालू — डेटा आपके खाते में सुरक्षित है।",
   "cloudOnlyFamilyLabel": "क्लाउड परिवार",
