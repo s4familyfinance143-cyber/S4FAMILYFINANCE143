@@ -1806,7 +1806,13 @@ function App() {
   }
 
   function t(key) {
-    return LOCALE_MESSAGES[appLanguage]?.[key] || LOCALE_MESSAGES.en[key] || key;
+    return (
+      LOCALE_MESSAGES[appLanguage]?.[key] ||
+      UI_TEXT[appLanguage]?.[key] ||
+      LOCALE_MESSAGES.en?.[key] ||
+      UI_TEXT.en?.[key] ||
+      key
+    );
   }
 
   function digits(value) {
