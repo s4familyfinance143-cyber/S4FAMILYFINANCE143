@@ -1,6 +1,42 @@
-import { useEffect, useState } from "react";
-import { defaultPermissionsForRole, applyPermissionOverrides, sanitizeRelationshipLabel } from "../../lib/familyRoles";
+import { useEffect, useMemo, useState } from "react";
+import {
+  defaultPermissionsForRole,
+  applyPermissionOverrides,
+  sanitizeRelationshipLabel,
+  preferElevatedRole,
+} from "../../lib/familyRoles";
 import { CloudBackupPanel } from "./CloudBackupPanel";
+
+function resolveSettingsGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily }) {
+  const uid = String(
+    currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+  ).trim();
+  const mail = String(currentUser?.email || email || "")
+    .trim()
+    .toLowerCase();
+
+  const matchedMembers = (governanceMembers || []).filter((m) => {
+    const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
+    const memberEmail = String(m.email || m.user_email || "")
+      .trim()
+      .toLowerCase();
+    if (uid && memberUid && memberUid === uid) return true;
+    if (mail && memberEmail && memberEmail === mail) return true;
+    return false;
+  });
+
+  const fromMembers = preferElevatedRole(
+    ...matchedMembers.map((m) => m.normalized_role || m.role || m.member_role),
+  );
+  const fromPerms = preferElevatedRole(myPermissions?.normalized_role, myPermissions?.role);
+  const resolved = preferElevatedRole(fromMembers, fromPerms);
+  if (resolved) return resolved;
+
+  const ownerUid = String(activeFamily?.owner_uid || activeFamily?.owner_id || "").trim();
+  if (uid && ownerUid && uid === ownerUid) return "OWNER";
+  if (myPermissions || matchedMembers.length) return "MEMBER";
+  return "";
+}
 
 const SETTINGS_TABS = ["profile", "family", "permissions", "security", "cloud"];
 
@@ -254,7 +290,20 @@ export function SettingsPanel({
 }) {
   const displayName = currentUser?.full_name || currentUser?.email || email || "—";
   const displayEmail = currentUser?.email || email || "—";
-  const role = myPermissions?.normalized_role || myPermissions?.role || "—";
+  const role = useMemo(
+    () =>
+      resolveSettingsGlobalRole({
+        myPermissions,
+        governanceMembers,
+        currentUser,
+        email,
+        activeFamily,
+      }) ||
+      myPermissions?.normalized_role ||
+      myPermissions?.role ||
+      "—",
+    [myPermissions, governanceMembers, currentUser, email, activeFamily],
+  );
   const relationship =
     sanitizeRelationshipLabel(
       myPermissions?.relationship_display_label || myPermissions?.relationship,

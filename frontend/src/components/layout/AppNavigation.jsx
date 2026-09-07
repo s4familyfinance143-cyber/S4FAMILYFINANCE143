@@ -160,8 +160,10 @@ export function DesktopSidebar({
                   </option>
                 ))}
               </select>
-            ) : (
+            ) : activeFamilyId ? (
               <div className="profile-role">{t("ownerFullAccess")}</div>
+            ) : (
+              <div className="profile-role">{t("noActiveFamilySelected") || "No family selected"}</div>
             )}
             <button type="button" className="sidebar-logout" onClick={() => onLogout?.()}>
               {t("logout")}

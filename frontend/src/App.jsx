@@ -456,6 +456,15 @@ function App() {
     invitee_email: "",
     send_email: false,
   });
+  /** When logged in but no family_id — inline Create / Join (not dead Family menu). */
+  const [noFamilySetupMode, setNoFamilySetupMode] = useState("choose"); // choose | create | join
+  const [noFamilyForm, setNoFamilyForm] = useState({
+    password: "",
+    fullName: "",
+    familyName: "",
+    inviteCode: "",
+    relation: "Husband",
+  });
   const [notifications, setNotifications] = useState([]);
   const [notificationSummary, setNotificationSummary] = useState(null);
   const [notificationDelivery, setNotificationDelivery] = useState(null);
@@ -9452,18 +9461,42 @@ function App() {
       window.clearTimeout(safetyTimer);
       setSessionBootstrapping(false);
       setIsFamilyLoading(false);
+      setFamiliesLoading(false);
     };
-    // Never leave the user stuck if network/Firestore hangs during restore
+    // Hard unlock — never leave "Preparing a secure session..." stuck
     safetyTimer = window.setTimeout(() => {
       if (cancelled || bootDone) return;
       softFail(
         "Session bootstrap",
-        new Error(t("sessionBootstrapTimeout") || "Timed out — check internet, then tap Refresh."),
+        new Error(t("sessionBootstrapTimeout") || "Timed out — check internet, then Refresh or Create/Join family."),
       );
       bootDone = true;
       setSessionBootstrapping(false);
       setIsFamilyLoading(false);
-    }, 12000);
+      setFamiliesLoading(false);
+      // Keep any local family id so dashboard can open offline
+      const localId = loadCloudFamilyId();
+      if (localId) {
+        setActiveFamilyId((cur) => cur || localId);
+        setCloudOnlyMode(true);
+        persistCloudOnlyMode(true);
+      }
+    }, 8000);
+
+    // Unlock UI immediately from localStorage before any Firestore wait
+    const cachedFamilyId = loadCloudFamilyId();
+    if (cachedFamilyId) {
+      setActiveFamilyId(cachedFamilyId);
+      setCloudOnlyMode(true);
+      persistCloudOnlyMode(true);
+      setFamilies((prev) =>
+        (prev || []).some((f) => f.id === cachedFamilyId)
+          ? prev
+          : [{ id: cachedFamilyId, name: t("cloudOnlyFamilyLabel") }, ...(prev || [])],
+      );
+      setIsFamilyLoading(false);
+      setSessionBootstrapping(false);
+    }
 
     const unsub = subscribeFirebaseAuth(async (user) => {
       setFirebaseUser(user);
@@ -9477,8 +9510,18 @@ function App() {
       }
 
       try {
-        await ensureUserProfile(user.uid, user);
-        await refreshFirebaseMeta(user.uid);
+        await Promise.race([
+          ensureUserProfile(user.uid, user),
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 3000);
+          }),
+        ]);
+        await Promise.race([
+          refreshFirebaseMeta(user.uid),
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 3000);
+          }),
+        ]);
       } catch {
         /* ignore profile/meta errors on subscribe */
       }
@@ -9494,15 +9537,19 @@ function App() {
       }
 
       if (!cancelled) {
-        setIsFamilyLoading(true);
         setCloudOnlyMode(true);
         persistCloudOnlyMode(true);
       }
 
       try {
         let familyId = loadCloudFamilyId();
-        // Always try cloud pull when online so wallets from other devices appear,
-        // even if family id is already cached locally.
+        // Prefer local id first so dashboard never waits on Firestore
+        if (familyId && !cancelled) {
+          setActiveFamilyId(familyId);
+          setIsFamilyLoading(false);
+          setSessionBootstrapping(false);
+        }
+
         if (!familyId) {
           try {
             familyId = await Promise.race([
@@ -9530,7 +9577,6 @@ function App() {
         if (!familyId) familyId = loadCloudFamilyId();
 
         if (familyId && !cancelled) {
-          // Unlock UI ASAP (flags cleared inside activateCloudSession)
           void activateCloudSession(user, familyId).catch((err) => {
             softFail("Session restore", err);
             markBootDone();
@@ -10637,15 +10683,234 @@ function App() {
               <div className="auth-spinner" aria-hidden="true" />
               <h2>{t("authLoadingTitle") || t("loading")}</h2>
               <p>{t("authLoadingHint") || t("loading")}</p>
+              <button
+                type="button"
+                className="btn"
+                style={{ marginTop: 12 }}
+                onClick={() => {
+                  setSessionBootstrapping(false);
+                  setIsFamilyLoading(false);
+                  setFamiliesLoading(false);
+                  const localId = loadCloudFamilyId();
+                  if (localId) {
+                    setActiveFamilyId(localId);
+                    setCloudOnlyMode(true);
+                    persistCloudOnlyMode(true);
+                  }
+                }}
+              >
+                {t("continueOffline") || t("refresh") || "Continue"}
+              </button>
             </div>
           </section>
         )}
 
         {!activeFamilyId && !isFamilyLoading && !familiesLoading && !sessionBootstrapping && (
           <section>
-            <div className="card">
+            <div className="card" style={{ maxWidth: 520 }}>
               <h2>{t("noActiveFamilySelected")}</h2>
-              <p>{t("createJoinFamilyFirst")}</p>
+              <p>{t("cloudOnlyNoDataCreate") || t("createJoinFamilyFirst")}</p>
+              <p className="hint" style={{ marginTop: 8 }}>
+                {firebaseUser?.email || currentUser?.email || email || ""}
+              </p>
+
+              {noFamilySetupMode === "choose" ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={cloudBusy || authLoading}
+                    onClick={() => {
+                      setNoFamilySetupMode("create");
+                      setNoFamilyForm((f) => ({
+                        ...f,
+                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
+                        familyName: f.familyName || "S4 FAMILY 143",
+                      }));
+                    }}
+                  >
+                    {t("btnCreate") || "Create family"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={cloudBusy || authLoading}
+                    onClick={() => {
+                      setNoFamilySetupMode("join");
+                      setNoFamilyForm((f) => ({
+                        ...f,
+                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
+                      }));
+                    }}
+                  >
+                    {t("btnJoin") || "Join invite"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={cloudBusy || authLoading}
+                    onClick={async () => {
+                      if (!firebaseUser?.uid) return;
+                      setCloudBusy(true);
+                      try {
+                        const fid = await Promise.race([
+                          resolveCloudFamilyId(firebaseUser.uid, firebaseUser),
+                          new Promise((resolve) => {
+                            window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 6000);
+                          }),
+                        ]);
+                        if (fid) {
+                          await activateCloudSession(firebaseUser, fid);
+                          setMessage(t("cloudOnlySignInSuccess") || "Family restored", "success");
+                        } else {
+                          setMessage(t("cloudOnlyNoDataCreate"), "warning");
+                        }
+                      } catch (err) {
+                        softFail("Family restore", err);
+                      } finally {
+                        setCloudBusy(false);
+                      }
+                    }}
+                  >
+                    {t("refresh") || "Retry restore"}
+                  </button>
+                  <button type="button" className="btn" onClick={() => logout()}>
+                    {t("logout") || "Logout"}
+                  </button>
+                </div>
+              ) : null}
+
+              {noFamilySetupMode === "create" ? (
+                <form
+                  className="signup-form"
+                  style={{ marginTop: 16 }}
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const mail = String(firebaseUser?.email || currentUser?.email || email || "").trim();
+                    if (!mail || !noFamilyForm.password || !noFamilyForm.familyName.trim()) {
+                      setMessage(t("familyGateFieldsRequired") || "Fill required fields", "error");
+                      return;
+                    }
+                    await handleCreateCloudFamily({
+                      email: mail,
+                      password: noFamilyForm.password,
+                      fullName:
+                        noFamilyForm.fullName.trim() ||
+                        currentUser?.full_name ||
+                        firebaseUser?.displayName ||
+                        mail,
+                      familyName: noFamilyForm.familyName.trim(),
+                      currency: "BDT",
+                      timezone: "Asia/Dhaka",
+                      ownerRelation: noFamilyForm.relation || "Husband",
+                    });
+                  }}
+                >
+                  <div className="field">
+                    <label>{t("fullName") || "Full name"}</label>
+                    <input
+                      value={noFamilyForm.fullName}
+                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, fullName: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>{t("familyName") || "Family name"}</label>
+                    <input
+                      value={noFamilyForm.familyName}
+                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, familyName: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>{t("password") || "Password"}</label>
+                    <input
+                      type="password"
+                      value={noFamilyForm.password}
+                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, password: e.target.value }))}
+                      required
+                      autoComplete="current-password"
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button type="submit" className="btn btn-primary" disabled={cloudBusy || authLoading}>
+                      {authLoading || cloudBusy
+                        ? t("creatingFamilyGate") || "Creating…"
+                        : t("btnCreateSubmit") || "Create family & become Owner"}
+                    </button>
+                    <button type="button" className="btn" onClick={() => setNoFamilySetupMode("choose")}>
+                      {t("back") || "Back"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {noFamilySetupMode === "join" ? (
+                <form
+                  className="signup-form"
+                  style={{ marginTop: 16 }}
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const mail = String(firebaseUser?.email || currentUser?.email || email || "").trim();
+                    if (!mail || !noFamilyForm.password || !noFamilyForm.inviteCode.trim()) {
+                      setMessage(t("joinGateFieldsRequired") || "Fill required fields", "error");
+                      return;
+                    }
+                    await handleCloudJoinFamily({
+                      email: mail,
+                      password: noFamilyForm.password,
+                      fullName:
+                        noFamilyForm.fullName.trim() ||
+                        currentUser?.full_name ||
+                        firebaseUser?.displayName ||
+                        mail,
+                      inviteCode: noFamilyForm.inviteCode.trim().toUpperCase(),
+                      relationshipType: noFamilyForm.relation || "Wife",
+                    });
+                  }}
+                >
+                  <div className="field">
+                    <label>{t("fullName") || "Full name"}</label>
+                    <input
+                      value={noFamilyForm.fullName}
+                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, fullName: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>{t("inviteCode") || "Invite code"}</label>
+                    <input
+                      value={noFamilyForm.inviteCode}
+                      onChange={(e) =>
+                        setNoFamilyForm((f) => ({ ...f, inviteCode: e.target.value.toUpperCase() }))
+                      }
+                      placeholder="S4-XXXXXX"
+                      required
+                      style={{ textTransform: "uppercase" }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>{t("password") || "Password"}</label>
+                    <input
+                      type="password"
+                      value={noFamilyForm.password}
+                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, password: e.target.value }))}
+                      required
+                      autoComplete="current-password"
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button type="submit" className="btn btn-primary" disabled={cloudBusy || authLoading}>
+                      {authLoading || cloudBusy
+                        ? t("joiningFamilyGate") || "Joining…"
+                        : t("btnJoin") || "Join invite"}
+                    </button>
+                    <button type="button" className="btn" onClick={() => setNoFamilySetupMode("choose")}>
+                      {t("back") || "Back"}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
             </div>
           </section>
         )}
@@ -11803,8 +12068,13 @@ function App() {
             setSettingsTab={setSettingsTab}
             settingsLoading={settingsLoading}
             settingsSaving={settingsSaving}
-            currentUser={currentUser}
-            email={email}
+            currentUser={{
+              ...(currentUser || {}),
+              uid: firebaseUser?.uid || currentUser?.uid,
+              firebase_uid: firebaseUser?.uid || currentUser?.firebase_uid,
+              email: currentUser?.email || firebaseUser?.email || email || "",
+            }}
+            email={email || firebaseUser?.email || ""}
             avatarUrl={avatarUrl(currentUser)}
             onUploadPhoto={uploadProfilePhoto}
             onRemovePhoto={removeProfilePhoto}
