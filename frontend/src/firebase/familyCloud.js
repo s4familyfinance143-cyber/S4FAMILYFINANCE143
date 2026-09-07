@@ -282,6 +282,7 @@ export async function publishFamilyInvite({
       code === "permission-denied" || /permission/i.test(msg)
         ? "permission-denied (family OWNER shell) — hard refresh, then Generate invite again"
         : msg,
+      { cause: shellErr },
     );
   }
 
@@ -315,6 +316,7 @@ export async function publishFamilyInvite({
       code === "permission-denied" || /permission/i.test(msg)
         ? "permission-denied (invite publish) — you must be family OWNER in Firebase"
         : msg,
+      { cause: invErr },
     );
   }
 

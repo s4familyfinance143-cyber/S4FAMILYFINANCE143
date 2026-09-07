@@ -2634,6 +2634,7 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       await after();
       throw new Error(
         `Invite could not publish to cloud (${row.cloud_publish_error}). Verify internet/Firebase, open Family once, then try Generate invite again.`,
+        { cause: err },
       );
     }
     // Persist publish flags on the invite row
