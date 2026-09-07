@@ -14,17 +14,17 @@ export function isFirebaseFirstMode() {
 }
 
 /**
- * Invoice-tracker style: block app until Firebase email is verified.
- * Default ON in Firebase-first mode. Override with VITE_REQUIRE_EMAIL_VERIFICATION=0.
+ * Optionally block app until Firebase email is verified.
+ * Default OFF — simple Login / Create / Join. Set VITE_REQUIRE_EMAIL_VERIFICATION=1 to enforce.
  */
 export function requireEmailVerification() {
   if (!isFirebaseConfigured()) return false;
   const raw = import.meta.env.VITE_REQUIRE_EMAIL_VERIFICATION;
   if (raw !== undefined && String(raw).trim() !== "") {
     const flag = String(raw).trim().toLowerCase();
-    return flag !== "0" && flag !== "false" && flag !== "no";
+    return flag === "1" || flag === "true" || flag === "yes";
   }
-  return isFirebaseFirstMode();
+  return false;
 }
 
 export function loadCloudOnlyMode() {

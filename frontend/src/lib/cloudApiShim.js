@@ -2609,29 +2609,32 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       body: code,
       type: "FAMILY",
     });
-    // Publish to Firestore so another account can join
+    // Publish to Firestore so another account can join — local-only codes are useless cross-device.
     try {
       const { publishFamilyInvite } = await import("../firebase/familyCloud");
       const uid = currentUser?.firebase_uid || currentUser?.uid || body.owner_uid;
       if (!uid) {
-        row.cloud_published = false;
-        row.cloud_publish_error = "missing_firebase_uid";
-      } else {
-        await publishFamilyInvite({
-          code,
-          familyId,
-          ownerUid: uid,
-          inviteeEmail: body.invitee_email || null,
-          expiresInDays: Number(body.expires_in_days || 7),
-          maxUses: Number(body.max_uses || 1),
-          email: currentUser?.email || null,
-          displayName: currentUser?.full_name || currentUser?.displayName || null,
-        });
-        row.cloud_published = true;
+        throw new Error("missing_firebase_uid");
       }
+      await publishFamilyInvite({
+        code,
+        familyId,
+        ownerUid: uid,
+        inviteeEmail: body.invitee_email || null,
+        expiresInDays: Number(body.expires_in_days || 7),
+        maxUses: Number(body.max_uses || 1),
+        email: currentUser?.email || null,
+        displayName: currentUser?.full_name || currentUser?.displayName || null,
+      });
+      row.cloud_published = true;
     } catch (err) {
       row.cloud_published = false;
       row.cloud_publish_error = err?.code || err?.message || "publish_failed";
+      await writeList(familyId, "family", "invites", [row, ...invites]);
+      await after();
+      throw new Error(
+        `Invite could not publish to cloud (${row.cloud_publish_error}). Verify internet/Firebase, open Family once, then try Generate invite again.`,
+      );
     }
     // Persist publish flags on the invite row
     await writeList(familyId, "family", "invites", [row, ...invites]);

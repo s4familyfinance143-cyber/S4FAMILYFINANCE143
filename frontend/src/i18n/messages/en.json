@@ -154,7 +154,7 @@
   "cloudOnlyBanner": "Secure Cloud Sync is on — your data is saved to your account.",
   "cloudOnlyFamilyLabel": "Cloud family",
   "cloudOnlyNoData": "No cloud backup found. Sync once from a PC with backend, then try again.",
-  "cloudOnlyNoDataCreate": "Login OK — but this account has no family linked in Firebase yet. On your phone open Settings → Cloud → Sync/Upload once (email must be verified), then login here again. Or use Create family / Join invite below.",
+  "cloudOnlyNoDataCreate": "No family on this account yet. Use Create family (same email + password) to finish linking your cloud family.",
   "cloudOnlySignInSuccess": "Signed in with Secure Cloud Sync",
   "cloudProviderTabCloud": "Cloud",
   "cloudProviderTabDrive": "Drive",

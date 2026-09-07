@@ -98,13 +98,12 @@ export async function ensureFamilyCloudShell({
   const memberExists = Boolean(memberSnap?.exists?.());
 
   // Member first so subsequent family meta updates pass familyMember/owner rules.
-  // If meta get was denied (not linked yet), do not assume empty family — use caller role.
+  // Brand-new family id (meta missing): first writer is always OWNER.
   if (!memberExists) {
     const roleUpper = String(role || "MEMBER").toUpperCase();
-    const assumeOwner =
-      metaExists
-        ? !metaData.owner_uid || String(metaData.owner_uid || "").trim() === uid
-        : roleUpper === "OWNER";
+    const assumeOwner = metaExists
+      ? !metaData.owner_uid || String(metaData.owner_uid || "").trim() === uid
+      : true;
     await setDoc(
       familyMemberRef(familyId, uid),
       {

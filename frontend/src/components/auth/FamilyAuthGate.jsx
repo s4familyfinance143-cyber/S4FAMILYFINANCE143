@@ -342,6 +342,7 @@ export function FamilyAuthGate({
   firebaseFirstMode = false,
   onCloudEmailSignIn,
   onCreateCloudFamily,
+  onCloudJoinFamily,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang];
@@ -475,6 +476,13 @@ export function FamilyAuthGate({
         if (result?.needsFamilySetup) {
           setView("createFamily");
           setModeMenuOpen(false);
+          setMessage(
+            t("cloudOnlyNoDataCreate") ||
+              (lang === "bn"
+                ? "এই অ্যাকাউন্টে পরিবার নেই — Create family অথবা Join invite ব্যবহার করুন।"
+                : "No family on this account yet — use Create family or Join invite."),
+            "warning",
+          );
         }
       } catch (error) {
         setMessage(formatFetchError(error, lang), "error");
@@ -582,6 +590,26 @@ export function FamilyAuthGate({
     e?.preventDefault?.();
     if (!fullName.trim() || !email.trim() || !password || !inviteCode.trim()) {
       setMessage(t("joinGateFieldsRequired"), "error");
+      return;
+    }
+    if (useCloudAuth && onCloudJoinFamily) {
+      setAuthLoading(true);
+      setStatus(t("joiningFamilyGate"));
+      try {
+        await onCloudJoinFamily({
+          email: email.trim(),
+          password,
+          fullName: fullName.trim(),
+          inviteCode: inviteCode.trim().toUpperCase(),
+          relationshipType: joinRelation,
+        });
+        setStatus("");
+      } catch (error) {
+        setMessage(formatFetchError(error, lang), "error");
+        setStatus("");
+      } finally {
+        setAuthLoading(false);
+      }
       return;
     }
     if (!requireMobileApiBase()) return;
@@ -872,14 +900,10 @@ export function FamilyAuthGate({
                     <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
                       {L.btnCreate}
                     </button>
-                    {!useCloudAuth ? (
-                      <>
-                        {" · "}
-                        <button type="button" className="link" disabled={authLoading} onClick={() => setMode("join")}>
-                          {L.btnJoin}
-                        </button>
-                      </>
-                    ) : null}
+                    {" · "}
+                    <button type="button" className="link" disabled={authLoading} onClick={() => setMode("join")}>
+                      {L.btnJoin}
+                    </button>
                   </div>
                 ) : null}
 
@@ -916,8 +940,7 @@ export function FamilyAuthGate({
                 <div className="card-title">{L.signupTitle}</div>
                 <div className="card-sub card-sub--compact">{L.signupSub}</div>
 
-                {!useCloudAuth ? (
-                  <div className="account-path-tabs" role="tablist" aria-label={L.signupTitle}>
+                <div className="account-path-tabs" role="tablist" aria-label={L.signupTitle}>
                     <button
                       type="button"
                       role="tab"
@@ -941,7 +964,6 @@ export function FamilyAuthGate({
                       <span className="tab-sub">{L.tabCreateSub}</span>
                     </button>
                   </div>
-                ) : null}
 
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
 
@@ -1183,7 +1205,7 @@ export function FamilyAuthGate({
                             <span className="input-icon">🔗</span>
                             <input
                               type="text"
-                              placeholder="S4F-XXXX"
+                              placeholder="S4-XXXXXX"
                               value={inviteCode}
                               disabled={authLoading}
                               style={{ textTransform: "uppercase", letterSpacing: 2 }}

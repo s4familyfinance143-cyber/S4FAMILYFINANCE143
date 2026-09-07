@@ -9,18 +9,20 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
+    // Email verify is optional for family use (simpler login / invite).
+    // Kept for optional future hardening; not required for create/join/sync.
     function emailOk() {
       return request.auth.token.email_verified == true;
     }
 
-    // Membership without requiring email verify — used for finance snapshot sync
     function familyMemberLoose(familyId) {
       return signedIn()
         && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
+    // Same as loose — do not block family ops on email verify.
     function familyMember(familyId) {
-      return familyMemberLoose(familyId) && emailOk();
+      return familyMemberLoose(familyId);
     }
 
     function familyOwner(familyId) {
@@ -37,13 +39,11 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role;
     }
 
-    // Keys allowed when Owner/Admin updates currency / timezone (settings.manage)
     function familySettingsKeysOnly() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['currency', 'default_currency', 'timezone', 'updated_at', 'name']);
     }
 
-    // First owner may set owner_uid when family meta has no owner yet
     function familyMetaBootstrapOwner(familyId) {
       return familyMemberLoose(familyId)
         && memberRole(familyId) == 'OWNER'
@@ -68,10 +68,8 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/families/$(familyId)).data.owner_uid;
     }
 
-    // Self-create as first OWNER when family has no owner yet
     function selfCreateFirstOwner(familyId) {
       return signedIn()
-        && emailOk()
         && request.auth.uid == memberId
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.role == 'OWNER'
@@ -94,10 +92,8 @@ service cloud.firestore {
         && inviteDoc(code).data.uses < inviteDoc(code).data.max_uses;
     }
 
-    // Join via invite — non-privileged role only
     function selfCreateViaInvite(familyId) {
       return signedIn()
-        && emailOk()
         && request.auth.uid == memberId
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.role in ['MEMBER', 'VIEWER', 'CHILD']
@@ -125,9 +121,6 @@ service cloud.firestore {
         .hasOnly(['uses', 'status', 'updated_at', 'last_joined_uid']);
     }
 
-    // Profile may set family_id only when already a member, clearing it, or
-    // bootstrapping a brand-new family (no owner yet). Blocks forging invites
-    // by writing a stolen family_id onto users/{uid}.
     function userFamilyIdWriteOk() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['family_id'])
         || request.resource.data.family_id == null
@@ -140,8 +133,6 @@ service cloud.firestore {
         || familyHasNoOwner(request.resource.data.family_id);
     }
 
-    // Create: no prior resource — only allow family_id when empty/null, already a member,
-    // or bootstrapping a family that has no owner yet.
     function userFamilyIdCreateOk() {
       return !('family_id' in request.resource.data)
         || request.resource.data.family_id == null
@@ -160,7 +151,6 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
-      // Finance backup/sync — owner only; email verify NOT required (multi-device sync)
       match /cloudSnapshots/{snapshotId} {
         allow read, write: if isOwner(userId);
 
@@ -170,10 +160,7 @@ service cloud.firestore {
       }
     }
 
-    // Shared family shell + snapshot (multi-account truth)
     match /families/{familyId} {
-      // get: members, or profile already linked to this family_id (heal path).
-      // list: never (no family browsing).
       allow get: if familyMemberLoose(familyId)
         || (
           signedIn()
@@ -181,11 +168,8 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id == familyId
         );
       allow list: if false;
-      allow create: if signedIn() && emailOk();
+      allow create: if signedIn();
 
-      // Owner: full meta updates
-      // Admin: currency + timezone (+ name) only
-      // Bootstrap: first OWNER may set owner_uid when empty
       allow update: if familyOwner(familyId)
         || (familyAdminOrOwner(familyId) && familySettingsKeysOnly())
         || familyMetaBootstrapOwner(familyId);
@@ -193,14 +177,11 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if familyMemberLoose(familyId)
           || (signedIn() && request.auth.uid == memberId)
-          // Collection-group recovery: find all families this uid belongs to
           || (signedIn() && resource.data.uid == request.auth.uid);
 
-        // Create self only: first OWNER, or MEMBER/VIEWER/CHILD with valid invite_code
         allow create: if selfCreateFirstOwner(familyId)
           || selfCreateViaInvite(familyId);
 
-        // Owner: full member updates. Admin: anything except role. Self: safe profile/FCM keys only.
         allow update: if familyOwner(familyId)
           || (familyAdminOrOwner(familyId)
               && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
@@ -213,7 +194,7 @@ service cloud.firestore {
                 .hasOnly(['fcm_token_latest', 'fcm_updated_at', 'updated_at']));
 
         allow delete: if familyOwner(familyId)
-          || (signedIn() && emailOk() && request.auth.uid == memberId);
+          || (signedIn() && request.auth.uid == memberId);
       }
 
       match /fcmTokens/{tokenId} {
@@ -225,7 +206,6 @@ service cloud.firestore {
           && resource.data.uid == request.auth.uid;
       }
 
-      // Shared finance snapshot — members can sync without email verify (product choice)
       match /cloudSnapshots/{snapshotId} {
         allow read, write: if familyMemberLoose(familyId);
 
@@ -235,20 +215,16 @@ service cloud.firestore {
       }
     }
 
-    // Global invite codes — get by known code OK; no collection listing
     match /familyInvites/{code} {
-      allow get: if signedIn() && emailOk();
+      allow get: if signedIn();
       allow list: if false;
 
-      // Only OWNER/ADMIN of that family may mint invite codes (no profile.family_id shortcut).
       allow create: if signedIn()
-        && emailOk()
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.keys().hasAll(['code', 'family_id', 'owner_uid', 'status'])
         && familyAdminOrOwner(request.resource.data.family_id);
 
-      // Owner revoke/edit, or joiner consume (uses/status only)
-      allow update: if signedIn() && emailOk() && (
+      allow update: if signedIn() && (
         resource.data.owner_uid == request.auth.uid
         || (
           inviteConsumeKeysOnly()
@@ -259,7 +235,7 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if signedIn() && emailOk()
+      allow delete: if signedIn()
         && resource.data.owner_uid == request.auth.uid;
     }
   }

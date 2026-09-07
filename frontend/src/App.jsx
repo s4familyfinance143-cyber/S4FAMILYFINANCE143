@@ -1375,13 +1375,13 @@ function App() {
                     : "Create family timed out — check internet/Firebase and try again.",
                 ),
               ),
-            20000,
+            35000,
           );
         }),
       ]);
       const { user, familyId, existing, verificationSent, verificationError } = created;
 
-      // Rule: unverified accounts stay pending — verify email, then Login (no dashboard yet)
+      // Optional verify gate only — default is enter app immediately after create
       if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
         if (familyId) persistCloudFamilyId(familyId);
         try {
@@ -1437,11 +1437,131 @@ function App() {
       }
     } catch (err) {
       const lang = appLanguage === "bn" ? "bn" : "en";
+      const raw = String(err?.message || "");
+      const timedOut =
+        /timed out|সময় শেষ|time out/i.test(raw) ||
+        /Create family timed out|ফ্যামিলি তৈরি সময় শেষ/i.test(raw);
+      const localFid = loadCloudFamilyId();
+      // Auth often succeeds before Firestore finishes — local family_id is already saved.
+      if (timedOut && localFid) {
+        persistCloudFamilyId(localFid);
+        try {
+          await firebaseSignOut();
+        } catch {
+          /* ignore */
+        }
+        setFirebaseUser(null);
+        setCurrentUser(null);
+        setCloudOnlyMode(false);
+        persistCloudOnlyMode(false);
+        setActiveFamilyId("");
+        setIsFamilyLoading(false);
+        setSessionBootstrapping(false);
+        setMessage(
+          t("cloudFamilyCreatedVerifyThenLogin") ||
+            "Account created. Verify your email, then Login. If Login says no family, tap Create family again with the same password.",
+          "warning",
+        );
+        return;
+      }
       setMessage(formatFirebaseAuthError(err, lang) || err.message || t("familyCreateFailed"), "error");
     } finally {
       setCloudBusy(false);
       setAuthLoading(false);
       setStatus((current) => (current === t("creatingFamilyGate") ? "" : current));
+    }
+  }
+
+  async function handleCloudJoinFamily({ email, password, fullName, inviteCode, relationshipType }) {
+    if (!FIREBASE_CONFIGURED) {
+      setMessage(t("firebaseNotConfigured"), "error");
+      return;
+    }
+    setCloudBusy(true);
+    setAuthLoading(true);
+    setStatus(t("joiningFamilyGate"));
+    try {
+      let user;
+      try {
+        const registered = await firebaseRegisterEmail(email, password, fullName);
+        user = registered.user;
+      } catch (err) {
+        const code = String(err?.code || "");
+        if (code.includes("email-already-in-use")) {
+          user = await firebaseSignInEmail(email, password);
+        } else {
+          throw err;
+        }
+      }
+
+      try {
+        await Promise.race([
+          ensureUserProfile(user.uid, user),
+          new Promise((resolve) => {
+            window.setTimeout(resolve, 4000);
+          }),
+        ]);
+      } catch {
+        /* optional */
+      }
+
+      const result = await Promise.race([
+        joinFamilyByInviteCode({
+          code: inviteCode,
+          uid: user.uid,
+          email: user.email || email,
+          displayName: fullName || user.displayName || "Member",
+          relationshipType: relationshipType || "Relative",
+        }),
+        new Promise((_, reject) => {
+          window.setTimeout(
+            () =>
+              reject(
+                new Error(
+                  appLanguage === "bn"
+                    ? "ইনভাইট জয়েন সময় শেষ — কোড ও ইন্টারনেট চেক করুন।"
+                    : "Join timed out — check invite code and internet.",
+                ),
+              ),
+            25000,
+          );
+        }),
+      ]);
+
+      const familyId = result?.familyId;
+      if (!familyId) {
+        throw new Error(t("joinFailedGate") || "Join failed");
+      }
+
+      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
+        persistCloudFamilyId(familyId);
+        persistCloudOnlyMode(true);
+        setCloudOnlyMode(true);
+        setActiveFamilyId(familyId);
+        setFirebaseUser(user);
+        setCurrentUser({
+          full_name: user.displayName || fullName || user.email || "Cloud User",
+          email: user.email || email || "",
+          is_email_verified: false,
+          is_active: true,
+          uid: user.uid,
+          firebase_uid: user.uid,
+        });
+        setIsFamilyLoading(false);
+        setSessionBootstrapping(false);
+        setMessage(t("verifyEmailBeforeApp") || t("verifyEmailTitle"), "warning");
+        return;
+      }
+
+      await activateCloudSession(user, familyId);
+      setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
+    } catch (err) {
+      const lang = appLanguage === "bn" ? "bn" : "en";
+      setMessage(formatFirebaseAuthError(err, lang) || err.message || t("joinFailedGate"), "error");
+    } finally {
+      setCloudBusy(false);
+      setAuthLoading(false);
+      setStatus((current) => (current === t("joiningFamilyGate") ? "" : current));
     }
   }
 
@@ -10105,6 +10225,7 @@ function App() {
           firebaseFirstMode={FIREBASE_FIRST_MODE}
           onCloudEmailSignIn={handleCloudEmailSignIn}
           onCreateCloudFamily={handleCreateCloudFamily}
+          onCloudJoinFamily={handleCloudJoinFamily}
         />
       </main>
     );

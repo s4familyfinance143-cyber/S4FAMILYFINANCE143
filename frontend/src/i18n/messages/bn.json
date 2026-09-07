@@ -154,7 +154,7 @@
   "cloudOnlyBanner": "সিকিউর ক্লাউড সিঙ্ক চালু — ডেটা আপনার অ্যাকাউন্টে সংরক্ষিত।",
   "cloudOnlyFamilyLabel": "ক্লাউড পরিবার",
   "cloudOnlyNoData": "ক্লাউড ব্যাকআপ নেই। আগে PC থেকে backend দিয়ে সিঙ্ক করুন।",
-  "cloudOnlyNoDataCreate": "লগইন হয়েছে — কিন্তু Firebase-এ এই অ্যাকাউন্টের সাথে এখনো পরিবার লিংক নেই। ফোনে Settings → Cloud → Sync/Upload একবার করুন (ইমেইল verify থাকতে হবে), তারপর এখানে আবার লগইন করুন। অথবা নিচে 'পরিবার তৈরি' / ইনভাইট যোগ দিন।",
+  "cloudOnlyNoDataCreate": "এই অ্যাকাউন্টে এখনো কোনো পরিবার নেই। Create family দিয়ে একই ইমেইল ও পাসওয়ার্ড দিয়ে পরিবার লিংক সম্পূর্ণ করুন।",
   "cloudOnlySignInSuccess": "সিকিউর ক্লাউড সিঙ্ক দিয়ে সাইন ইন হয়েছে",
   "cloudProviderTabCloud": "ক্লাউড",
   "cloudProviderTabDrive": "ড্রাইভ",

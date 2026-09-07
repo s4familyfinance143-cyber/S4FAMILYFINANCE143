@@ -3,10 +3,20 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { saveOfflineSnapshot } from "../lib/offlineCache";
 import { DEFAULT_CLOUD_CATEGORIES } from "../lib/cloudLocalFinance";
 import { seedCloudModuleCaches } from "../lib/cloudApiShim";
+import { persistCloudFamilyId } from "../lib/cloudSession";
 import { firebaseRegisterEmail, firebaseSignInEmail, firebaseDeleteCurrentUser, isFirebaseEmailVerified } from "./auth";
 import { ensureUserProfile, getCloudSnapshotMeta, getUserFamilyProfile, linkUserFamilyId, pushCloudSnapshot } from "./cloudSync";
 import { getFirestoreDb } from "./config";
 import { ensureFamilyCloudShell } from "./familyCloud";
+
+function withSoftTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    }),
+  ]);
+}
 
 function newFamilyId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -131,19 +141,15 @@ export async function createCloudFamilyAccount({
     }
   }
 
+  let familyId = "";
   try {
     try {
-      await Promise.race([
-        ensureUserProfile(user.uid, user),
-        new Promise((resolve) => {
-          window.setTimeout(resolve, 8000);
-        }),
-      ]);
+      await withSoftTimeout(ensureUserProfile(user.uid, user), 5000);
     } catch (err) {
       console.warn("[S4 Auth] ensureUserProfile during create skipped", err);
     }
 
-    const familyId = newFamilyId();
+    familyId = newFamilyId();
     await seedNewFamilyCache(familyId, {
       familyName,
       ownerName: fullName,
@@ -153,78 +159,88 @@ export async function createCloudFamilyAccount({
       ownerRelation,
       ownerUid: user.uid,
     });
+    // Persist before any slow Firestore call so UI timeout / Login can still find the family.
+    persistCloudFamilyId(familyId);
 
-    const db = getFirestoreDb();
-    if (db) {
-      try {
-        await Promise.race([
-          setDoc(
-            doc(db, "users", user.uid),
-            {
-              email: user.email || null,
-              display_name: user.displayName || fullName || null,
-              family_name: familyName,
-              default_currency: currency,
-              timezone,
-              owner_relation: ownerRelation,
-              cloud_mode: true,
-              updated_at: serverTimestamp(),
-            },
-            { merge: true },
-          ),
-          new Promise((_, reject) => {
-            window.setTimeout(() => reject(new Error("Firestore profile write timed out")), 10000);
-          }),
-        ]);
-      } catch (err) {
-        // Local family cache already seeded — continue into app; cloud profile can sync later.
-        console.warn("[S4 Auth] users/{uid} write timed out/failed", err);
+    const emailVerified = isFirebaseEmailVerified(user);
+    const profileExtra = {
+      email: user.email || String(email || "").trim().toLowerCase() || null,
+      display_name: user.displayName || fullName || null,
+      family_name: familyName,
+      default_currency: currency,
+      timezone,
+      owner_relation: ownerRelation,
+      cloud_mode: true,
+      email_verified: emailVerified,
+    };
+
+    // Always write users/{uid}.family_id — even before email verify.
+    // Rules allow this while families/{id} does not exist yet (familyHasNoOwner).
+    // Skipping this is what causes Login → "No family on this account yet".
+    try {
+      await Promise.race([
+        linkUserFamilyId(user.uid, familyId, profileExtra),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error("Saving family link timed out")), 12000);
+        }),
+      ]);
+    } catch (linkErr) {
+      console.warn("[S4 Auth] family_id link failed (local family kept):", linkErr?.message || linkErr);
+      const db = getFirestoreDb();
+      if (db) {
+        try {
+          await withSoftTimeout(
+            setDoc(
+              doc(db, "users", user.uid),
+              { ...profileExtra, updated_at: serverTimestamp() },
+              { merge: true },
+            ),
+            8000,
+          );
+        } catch (profileErr) {
+          console.warn("[S4 Auth] profile write failed:", profileErr?.message || profileErr);
+        }
       }
     }
 
-    if (isFirebaseEmailVerified(user)) {
-      try {
-        await Promise.race([
-          (async () => {
-            await ensureFamilyCloudShell({
-              familyId,
-              uid: user.uid,
-              email: user.email,
-              displayName: fullName,
-              familyName,
-              role: "OWNER",
-              relationshipType: ownerRelation,
-            });
-            try {
-              await linkUserFamilyId(user.uid, familyId, {
-                family_name: familyName,
-                default_currency: currency,
-                timezone,
-              });
-            } catch {
-              /* optional */
-            }
-            await pushCloudSnapshot({
-              uid: user.uid,
-              familyId,
-              deviceLabel,
-              email: user.email,
-              displayName: fullName,
-            });
-          })(),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 12000);
-          }),
-        ]);
-      } catch (err) {
-        console.warn("[S4 Auth] family shell/snapshot skipped", err);
-      }
+    // Create families/{id} + OWNER so Invite can publish. Soft-timeout must not hide total failure.
+    try {
+      await Promise.race([
+        ensureFamilyCloudShell({
+          familyId,
+          uid: user.uid,
+          email: user.email,
+          displayName: fullName,
+          familyName,
+          role: "OWNER",
+          relationshipType: ownerRelation,
+        }),
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error("Creating family in cloud timed out")), 15000);
+        }),
+      ]);
+    } catch (err) {
+      console.warn("[S4 Auth] family shell failed (will retry on invite/login):", err?.message || err);
+    }
+    try {
+      await withSoftTimeout(
+        pushCloudSnapshot({
+          uid: user.uid,
+          familyId,
+          deviceLabel,
+          email: user.email,
+          displayName: fullName,
+        }),
+        10000,
+      );
+    } catch (err) {
+      console.warn("[S4 Auth] snapshot skipped", err);
     }
 
     return { user, familyId, existing: false, verificationSent, verificationError };
   } catch (setupErr) {
-    // Roll back orphan Auth users created by this failed Create attempt.
-    if (newlyRegistered && user) {
+    // If local family already seeded, keep Auth — user can Create family / Login retry.
+    if (newlyRegistered && user && !familyId) {
       try {
         await firebaseDeleteCurrentUser(user);
         console.warn("[S4 Auth] rolled back newly registered Auth user after create failure");
