@@ -266,14 +266,24 @@ export async function publishFamilyInvite({
   if (!key || !familyId || !ownerUid) throw new Error("Invite code/family/owner required");
 
   // Membership + meta must exist or Firestore invite create is denied
-  await ensureFamilyCloudShell({
-    familyId,
-    uid: ownerUid,
-    email,
-    displayName,
-    familyName: familyName || familyId,
-    role: "OWNER",
-  });
+  try {
+    await ensureFamilyCloudShell({
+      familyId,
+      uid: ownerUid,
+      email,
+      displayName,
+      familyName: familyName || familyId,
+      role: "OWNER",
+    });
+  } catch (shellErr) {
+    const code = shellErr?.code || "";
+    const msg = shellErr?.message || String(shellErr);
+    throw new Error(
+      code === "permission-denied" || /permission/i.test(msg)
+        ? "permission-denied (family OWNER shell) — hard refresh, then Generate invite again"
+        : msg,
+    );
+  }
 
   try {
     const { linkUserFamilyId } = await import("./cloudSync");
@@ -285,18 +295,28 @@ export async function publishFamilyInvite({
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + Number(expiresInDays || 7));
 
-  await setDoc(inviteRef(key), {
-    code: key,
-    family_id: familyId,
-    owner_uid: ownerUid,
-    invitee_email: inviteeEmail || null,
-    max_uses: Number(maxUses || 1),
-    uses: 0,
-    status: "ACTIVE",
-    expires_at: expiresAt.toISOString(),
-    created_at: serverTimestamp(),
-    updated_at: serverTimestamp(),
-  });
+  try {
+    await setDoc(inviteRef(key), {
+      code: key,
+      family_id: familyId,
+      owner_uid: ownerUid,
+      invitee_email: inviteeEmail || null,
+      max_uses: Number(maxUses || 1),
+      uses: 0,
+      status: "ACTIVE",
+      expires_at: expiresAt.toISOString(),
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    });
+  } catch (invErr) {
+    const code = invErr?.code || "";
+    const msg = invErr?.message || String(invErr);
+    throw new Error(
+      code === "permission-denied" || /permission/i.test(msg)
+        ? "permission-denied (invite publish) — you must be family OWNER in Firebase"
+        : msg,
+    );
+  }
 
   return { code: key, family_id: familyId, expires_at: expiresAt.toISOString() };
 }

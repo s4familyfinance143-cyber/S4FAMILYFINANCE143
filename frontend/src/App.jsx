@@ -983,7 +983,7 @@ function App() {
             email: user.email || null,
             displayName: user.displayName || null,
             familyName: familyName || familyId,
-            role: "MEMBER",
+            role: "OWNER",
           }),
           new Promise((resolve) => {
             window.setTimeout(resolve, 5000);

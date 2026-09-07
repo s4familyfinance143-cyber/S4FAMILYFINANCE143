@@ -191,7 +191,15 @@ service cloud.firestore {
           || (signedIn()
               && request.auth.uid == memberId
               && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['fcm_token_latest', 'fcm_updated_at', 'updated_at']));
+                .hasOnly(['fcm_token_latest', 'fcm_updated_at', 'updated_at']))
+          // Heal: local session may have written MEMBER first — claim OWNER while family has no owner yet
+          || (
+            signedIn()
+            && request.auth.uid == memberId
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.role == 'OWNER'
+            && familyHasNoOwner(familyId)
+          );
 
         allow delete: if familyOwner(familyId)
           || (signedIn() && request.auth.uid == memberId);
@@ -219,10 +227,18 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
 
+      // Owner/Admin mint codes. Also allow first family member while owner_uid not set yet
+      // (fixes invite after MEMBER-first bootstrap left family without OWNER role).
       allow create: if signedIn()
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.keys().hasAll(['code', 'family_id', 'owner_uid', 'status'])
-        && familyAdminOrOwner(request.resource.data.family_id);
+        && (
+          familyAdminOrOwner(request.resource.data.family_id)
+          || (
+            familyMemberLoose(request.resource.data.family_id)
+            && familyHasNoOwner(request.resource.data.family_id)
+          )
+        );
 
       allow update: if signedIn() && (
         resource.data.owner_uid == request.auth.uid
