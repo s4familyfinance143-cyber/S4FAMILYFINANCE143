@@ -59,8 +59,7 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id == familyId;
     }
 
-    // Claim / keep OWNER when family has no owner, meta already points at this uid,
-    // or this signed-in user's profile is linked to the family (reclaim stuck OWNER).
+    // Claim / keep OWNER when family has no owner OR meta already points at this uid.
     function selfClaimOwnerRole(familyId) {
       return signedIn()
         && request.auth.uid == memberId
@@ -72,7 +71,6 @@ service cloud.firestore {
             exists(/databases/$(database)/documents/families/$(familyId))
             && familyOwnerUid(familyId) == request.auth.uid
           )
-          || profileLinkedToFamily(familyId)
         );
     }
 
@@ -91,13 +89,13 @@ service cloud.firestore {
     }
 
     // Linked member may refresh meta when they are (or should be) the family owner.
+    // Do NOT allow stealing owner_uid just because profile.family_id matches (joiners).
     function familyMetaOwnerHeal(familyId) {
       return familyMemberLoose(familyId)
         && request.resource.data.owner_uid == request.auth.uid
         && (
           familyHasNoOwner(familyId)
           || resource.data.owner_uid == request.auth.uid
-          || profileLinkedToFamily(familyId)
         );
     }
 
@@ -123,7 +121,11 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/familyInvites/$(code))
         && inviteDoc(code).data.status == 'ACTIVE'
         && inviteDoc(code).data.family_id == familyId
-        && inviteDoc(code).data.uses < inviteDoc(code).data.max_uses;
+        && (
+          !('max_uses' in inviteDoc(code).data)
+          || inviteDoc(code).data.max_uses == null
+          || inviteDoc(code).data.uses < inviteDoc(code).data.max_uses
+        );
     }
 
     function selfCreateViaInvite(familyId) {
@@ -211,15 +213,14 @@ service cloud.firestore {
           && (
             familyHasNoOwner(familyId)
             || familyOwnerUid(familyId) == request.auth.uid
-            || profileLinkedToFamily(familyId)
           )
         )
         || (
+          // Linked creator on a brand-new / ownerless family shell
           profileLinkedToFamily(familyId)
           && (
             familyHasNoOwner(familyId)
             || !exists(/databases/$(database)/documents/families/$(familyId))
-            || familyOwnerUid(familyId) == request.auth.uid
           )
         );
     }

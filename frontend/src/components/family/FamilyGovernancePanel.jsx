@@ -1250,7 +1250,11 @@ export function FamilyGovernancePanel({
                     await onJoinFamily?.(buildJoinInvitePayload(joinForm));
                     setJoinForm({ ...EMPTY_JOIN });
                   } catch (err) {
-                    flash(err?.message || t("joinFailedGate") || "Join failed", "error");
+                    // Parent App already toasts permission/join errors — avoid duplicate banners
+                    const msg = String(err?.message || "").trim();
+                    if (msg && !/permission|Join failed|Join permission/i.test(msg)) {
+                      flash(msg || t("joinFailedGate") || "Join failed", "error");
+                    }
                   } finally {
                     setJoining(false);
                   }

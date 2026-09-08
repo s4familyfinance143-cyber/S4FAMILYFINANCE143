@@ -969,7 +969,8 @@ function App() {
     await loadSyncStatus();
   }
 
-  async function activateCloudSession(user, familyId, familyName = "") {
+  async function activateCloudSession(user, familyId, familyName = "", options = {}) {
+    const bindRole = String(options.role || "MEMBER").toUpperCase() === "OWNER" ? "OWNER" : "MEMBER";
     persistCloudOnlyMode(true);
     setCloudOnlyMode(true);
     persistCloudFamilyId(familyId);
@@ -984,7 +985,7 @@ function App() {
             email: user.email || null,
             displayName: user.displayName || null,
             familyName: familyName || familyId,
-            role: "OWNER",
+            role: bindRole,
           }),
           new Promise((resolve) => {
             window.setTimeout(resolve, 5000);
@@ -1416,7 +1417,7 @@ function App() {
         return;
       }
 
-      const activatePromise = activateCloudSession(user, familyId, familyName);
+      const activatePromise = activateCloudSession(user, familyId, familyName, { role: "OWNER" });
       setAuthLoading(false);
       setStatus("");
       setCloudBusy(false);
@@ -1563,7 +1564,7 @@ function App() {
         return;
       }
 
-      await activateCloudSession(user, familyId);
+      await activateCloudSession(user, familyId, "", { role: "MEMBER" });
       setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
     } catch (err) {
       const lang = appLanguage === "bn" ? "bn" : "en";
@@ -5682,10 +5683,13 @@ function App() {
           relationshipType: joinForm.relationship_type || "Other",
         });
         const nextFamilyId = result.familyId;
-        selectActiveFamily(nextFamilyId);
+        await activateCloudSession(firebaseUser, nextFamilyId, "", { role: "MEMBER" });
         setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
-        await loadFamilyGovernance(nextFamilyId);
-        await pushCloudSnapshotIfReady(firebaseUser, nextFamilyId);
+        try {
+          await loadFamilyGovernance(nextFamilyId);
+        } catch {
+          /* optional */
+        }
         window.setTimeout(() => {
           void refreshAll();
         }, 0);

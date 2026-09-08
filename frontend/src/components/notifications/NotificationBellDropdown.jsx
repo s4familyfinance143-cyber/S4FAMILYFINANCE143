@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isNativeApp } from "../../lib/runtimeEnv";
 
 function shortTime(value) {
   if (!value) return "";
@@ -59,6 +60,7 @@ export function NotificationBellDropdown({
 
   const denied = permission === "denied";
   const needsGrant = permission === "default" || permission === "unsupported";
+  const showBrowserPushHint = !isNativeApp() && (denied || needsGrant || permissionHint);
 
   return (
     <div className="notify-bell-dropdown" ref={panelRef} role="dialog" aria-label={t("notifications")}>
@@ -74,7 +76,7 @@ export function NotificationBellDropdown({
         </div>
       </div>
 
-      {(denied || needsGrant || permissionHint) && (
+      {showBrowserPushHint && (
         <div className={`notify-bell-hint ${denied ? "is-warn" : ""}`}>
           {denied ? (
             <p>

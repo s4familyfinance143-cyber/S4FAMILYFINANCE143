@@ -174,19 +174,16 @@ export async function ensureFamilyCloudShell({
   const metaExistsNow = Boolean(metaSnap?.exists?.());
   const metaDataNow = metaExistsNow ? metaSnap.data() || {} : {};
   const existingOwnerUid = String(metaDataNow.owner_uid || "").trim();
-  // Prefer reclaiming owner for the caller when role is OWNER (invite mint path).
+  // Never steal ownership from another uid — only set when missing or already self.
   const shouldSetOwner =
-    !metaExistsNow ||
-    !existingOwnerUid ||
-    existingOwnerUid === uid ||
-    String(role || "").toUpperCase() === "OWNER";
+    !metaExistsNow || !existingOwnerUid || existingOwnerUid === uid;
 
   await setDoc(
     familyMetaRef(familyId),
     {
       id: familyId,
       name: familyName || metaDataNow.name || metaData.name || "Family",
-      ...(shouldSetOwner ? { owner_uid: uid } : {}),
+      ...(shouldSetOwner ? { owner_uid: existingOwnerUid || uid } : {}),
       created_at: metaExistsNow
         ? metaDataNow.created_at || serverTimestamp()
         : serverTimestamp(),
@@ -416,18 +413,24 @@ export async function joinFamilyByInviteCode({
   if (!uid) throw new Error("Firebase user required");
   const key = String(code || "")
     .trim()
-    .toUpperCase();
-  if (!key) throw new Error("Invite code required");
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/S4[-–—]?/i, "S4-");
+  if (!key || !/^S4-[A-Z0-9]{4,12}$/.test(key)) {
+    throw new Error("Invite code required");
+  }
 
   const invSnap = await getDoc(inviteRef(key));
   if (!invSnap.exists()) throw new Error("Invalid or expired invite code");
   const inv = invSnap.data() || {};
-  if (inv.status !== "ACTIVE") throw new Error("Invalid or expired invite code");
+  if (String(inv.status || "").toUpperCase() !== "ACTIVE") {
+    throw new Error("Invalid or expired invite code");
+  }
   if (inv.expires_at && new Date(inv.expires_at).getTime() < Date.now()) {
     throw new Error("Invite code expired");
   }
   const uses = Number(inv.uses || 0);
-  const maxUses = Number(inv.max_uses || 1);
+  const maxUses = Number(inv.max_uses || 1) || 1;
   if (uses >= maxUses) throw new Error("Invite code already used up");
 
   const familyId = inv.family_id;
@@ -454,7 +457,6 @@ export async function joinFamilyByInviteCode({
   const isOwner = Boolean(ownerUid && ownerUid === uid);
   const memberExists = Boolean(existingMember?.exists?.());
   const existingRole = String(existingMember?.data?.()?.role || "").toUpperCase();
-  // Never demote an existing OWNER/ADMIN via invite re-join
   const nextRole = isOwner
     ? "OWNER"
     : existingRole === "OWNER" || existingRole === "ADMIN"
@@ -470,34 +472,70 @@ export async function joinFamilyByInviteCode({
     existingMember?.data?.()?.relationship_display_label ||
     "";
 
-  // New joiners must create as MEMBER (rules: selfCreateViaInvite). Owner reclaim uses OWNER.
+  // New joiners must create as MEMBER (rules: selfCreateViaInvite).
   const writeRole = !memberExists && !isOwner ? "MEMBER" : nextRole;
 
-  await setDoc(
-    familyMemberRef(familyId, uid),
-    {
-      uid,
-      email: email || existingMember?.data?.()?.email || null,
-      display_name: displayName || existingMember?.data?.()?.display_name || null,
-      role: writeRole,
-      ...(existingRelation
-        ? {}
-        : relation
-          ? {
+  try {
+    // Minimal create first — extra relationship fields can fail older rules.
+    if (!memberExists) {
+      await setDoc(familyMemberRef(familyId, uid), {
+        uid,
+        email: email || null,
+        display_name: displayName || null,
+        role: writeRole,
+        status: "ACTIVE",
+        joined_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+        invite_code: key,
+      });
+      if (relation) {
+        try {
+          await setDoc(
+            familyMemberRef(familyId, uid),
+            {
               relationship_type: relation,
               relationship: relation,
               relationship_display_label: relation,
-            }
-          : {}),
-      status: "ACTIVE",
-      ...(memberExists ? {} : { joined_at: serverTimestamp() }),
-      updated_at: serverTimestamp(),
-      invite_code: key,
-    },
-    { merge: true },
-  );
+              updated_at: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch {
+          /* relationship optional */
+        }
+      }
+    } else {
+      await setDoc(
+        familyMemberRef(familyId, uid),
+        {
+          uid,
+          email: email || existingMember?.data?.()?.email || null,
+          display_name: displayName || existingMember?.data?.()?.display_name || null,
+          role: writeRole,
+          status: "ACTIVE",
+          updated_at: serverTimestamp(),
+          invite_code: key,
+          ...(!existingRelation && relation
+            ? {
+                relationship_type: relation,
+                relationship: relation,
+                relationship_display_label: relation,
+              }
+            : {}),
+        },
+        { merge: true },
+      );
+    }
+  } catch (err) {
+    const msg = err?.message || String(err);
+    throw new Error(
+      /permission/i.test(msg)
+        ? "Join permission-denied — use a fresh invite code from Husband Generate, and install latest app"
+        : msg,
+      { cause: err },
+    );
+  }
 
-  // If owner reclaimed via invite as MEMBER first, upgrade (rules allow selfClaimOwnerRole).
   if (isOwner && writeRole !== "OWNER") {
     try {
       await setDoc(
@@ -511,36 +549,54 @@ export async function joinFamilyByInviteCode({
   }
 
   const db = getFirestoreDb();
-  await setDoc(
-    doc(db, "users", uid),
-    {
-      family_id: familyId,
-      role: isOwner ? "OWNER" : writeRole,
-      joined_via_invite: key,
-      updated_at: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(db, "users", uid),
+      {
+        family_id: familyId,
+        role: isOwner ? "OWNER" : writeRole,
+        joined_via_invite: key,
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    throw new Error(
+      /permission/i.test(err?.message || "")
+        ? "Could not link family to your account (permission-denied)"
+        : err?.message || "Could not link family",
+      { cause: err },
+    );
+  }
 
   const nextUses = uses + 1;
-  await setDoc(
-    inviteRef(key),
-    {
-      uses: nextUses,
-      status: nextUses >= maxUses ? "USED" : "ACTIVE",
-      updated_at: serverTimestamp(),
-      last_joined_uid: uid,
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      inviteRef(key),
+      {
+        uses: nextUses,
+        status: nextUses >= maxUses ? "USED" : "ACTIVE",
+        updated_at: serverTimestamp(),
+        last_joined_uid: uid,
+      },
+      { merge: true },
+    );
+  } catch {
+    /* membership already written — consume optional */
+  }
 
-  const pull = await pullFamilyCloudSnapshot(familyId);
+  let pull;
+  try {
+    pull = await pullFamilyCloudSnapshot(familyId);
+  } catch {
+    pull = { restored: 0, message: "pull_skipped" };
+  }
   const finalRole = isOwner ? "OWNER" : writeRole;
   return {
     familyId,
     member: { uid, email, role: finalRole, relationship_type: relation || existingRelation || "" },
     invite: { ...inv, uses: nextUses },
-    restored: pull.restored,
+    restored: pull?.restored || 0,
   };
 }
 
