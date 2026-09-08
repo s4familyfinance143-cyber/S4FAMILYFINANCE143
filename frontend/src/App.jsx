@@ -1134,7 +1134,7 @@ function App() {
           localFamilyId: loadCloudFamilyId() || "",
         }),
         new Promise((resolve) => {
-          window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 8000);
+          window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 12000);
         }),
       ]);
       return String(familyId || loadCloudFamilyId() || "");
@@ -1142,6 +1142,48 @@ function App() {
       softFail("Family resolve", err);
       return loadCloudFamilyId() || "";
     }
+  }
+
+  /** Direct cloud profile/membership restore — used by Refresh when local family_id is empty. */
+  async function restoreFamilyFromCloud(userOverride = null) {
+    const user = userOverride || firebaseUser;
+    if (!user?.uid) {
+      throw new Error(
+        appLanguage === "bn"
+          ? "লগইন নেই — Logout করে Wife ইমেইল/পাসওয়ার্ড দিয়ে Login করুন"
+          : "Not signed in — Logout and Login with Wife email/password",
+      );
+    }
+    let fid = "";
+    try {
+      const { getUserFamilyProfile } = await import("./firebase/cloudSync");
+      const profile = await getUserFamilyProfile(user.uid);
+      fid = String(profile?.family_id || "").trim();
+    } catch (err) {
+      console.warn("[S4] getUserFamilyProfile failed", err);
+    }
+    if (!fid) {
+      try {
+        const { findFamilyIdsForUid } = await import("./firebase/familyCloud");
+        const ids = await findFamilyIdsForUid(user.uid);
+        fid = String(ids?.[0] || "").trim();
+      } catch (err) {
+        console.warn("[S4] findFamilyIdsForUid failed", err);
+      }
+    }
+    if (!fid) {
+      fid = await resolveCloudFamilyId(user.uid, user);
+    }
+    if (!fid) {
+      throw new Error(
+        appLanguage === "bn"
+          ? "ক্লাউডে এই অ্যাকাউন্টের পরিবার পাওয়া যায়নি। ইন্টারনেট চেক করে আবার Refresh চাপুন।"
+          : "No cloud family found for this account. Check internet and tap Refresh again.",
+      );
+    }
+    persistCloudFamilyId(fid);
+    await activateCloudSession(user, fid);
+    return fid;
   }
 
   function applyOfflineCacheToState(cache) {
@@ -9549,19 +9591,18 @@ function App() {
   }
 
   // Phone ↔ laptop account swap often leaves empty local family_id while Firestore still has it.
-  // Auto-restore once per uid when the "No active family" screen would otherwise appear.
+  // Retry until family restores — do not lock out after one failed attempt.
   useEffect(() => {
     const uid = firebaseUser?.uid;
     if (!uid || activeFamilyId || sessionBootstrapping || isFamilyLoading) return;
-    if (noFamilyAutoRestoreRef.current === uid) return;
+    if (noFamilyAutoRestoreRef.current === `ok:${uid}`) return;
     if (!isBrowserOnline()) return;
-    noFamilyAutoRestoreRef.current = uid;
     let cancelled = false;
     (async () => {
       try {
-        const fid = await resolveCloudFamilyId(uid, firebaseUser);
+        const fid = await restoreFamilyFromCloud(firebaseUser);
         if (cancelled || !fid) return;
-        await activateCloudSession(firebaseUser, fid);
+        noFamilyAutoRestoreRef.current = `ok:${uid}`;
         setMessage(
           appLanguage === "bn" ? "পরিবার ক্লাউড থেকে পুনরুদ্ধার হয়েছে" : "Family restored from cloud",
           "success",
@@ -10865,16 +10906,32 @@ function App() {
                     type="button"
                     className="btn btn-primary"
                     disabled={cloudBusy || authLoading}
-                    onClick={() => {
-                      setNoFamilySetupMode("create");
-                      setNoFamilyForm((f) => ({
-                        ...f,
-                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
-                        familyName: f.familyName || "S4 FAMILY 143",
-                      }));
+                    onClick={async () => {
+                      if (!firebaseUser?.uid) {
+                        setMessage(
+                          appLanguage === "bn"
+                            ? "আগে Logout → Login করুন"
+                            : "Logout and Login first",
+                          "error",
+                        );
+                        return;
+                      }
+                      setCloudBusy(true);
+                      try {
+                        await restoreFamilyFromCloud(firebaseUser);
+                        setMessage(t("cloudOnlySignInSuccess") || "Family restored", "success");
+                      } catch (err) {
+                        softFail("Family restore", err);
+                      } finally {
+                        setCloudBusy(false);
+                      }
                     }}
                   >
-                    {t("btnCreate") || "Create family"}
+                    {cloudBusy
+                      ? t("loading") || "…"
+                      : appLanguage === "bn"
+                        ? "ক্লাউড থেকে পরিবার লোড"
+                        : "Load family from cloud"}
                   </button>
                   <button
                     type="button"
@@ -10894,30 +10951,16 @@ function App() {
                     type="button"
                     className="btn"
                     disabled={cloudBusy || authLoading}
-                    onClick={async () => {
-                      if (!firebaseUser?.uid) return;
-                      setCloudBusy(true);
-                      try {
-                        const fid = await Promise.race([
-                          resolveCloudFamilyId(firebaseUser.uid, firebaseUser),
-                          new Promise((resolve) => {
-                            window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 6000);
-                          }),
-                        ]);
-                        if (fid) {
-                          await activateCloudSession(firebaseUser, fid);
-                          setMessage(t("cloudOnlySignInSuccess") || "Family restored", "success");
-                        } else {
-                          setMessage(t("cloudOnlyNoDataCreate"), "warning");
-                        }
-                      } catch (err) {
-                        softFail("Family restore", err);
-                      } finally {
-                        setCloudBusy(false);
-                      }
+                    onClick={() => {
+                      setNoFamilySetupMode("create");
+                      setNoFamilyForm((f) => ({
+                        ...f,
+                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
+                        familyName: f.familyName || "S4 FAMILY 143",
+                      }));
                     }}
                   >
-                    {t("refresh") || "Retry restore"}
+                    {t("btnCreate") || "Create family"}
                   </button>
                   <button type="button" className="btn" onClick={() => logout()}>
                     {t("logout") || "Logout"}
