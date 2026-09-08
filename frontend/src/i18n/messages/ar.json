@@ -1117,6 +1117,7 @@
   "verifyEmailCountdown": "تم إرسال رابط التأكيد. يمكنك إعادة الإرسال بعد {n}ث.",
   "verifyEmailDomainHint": "إذا فشل الرابط، أضف نطاق الموقع في Firebase Authorized domains.",
   "verifyEmailHint": "تحقق من الوارد والرسائل غير المرغوب فيها. بعد فتح الرابط، اضغط “تأكدت — تحديث”.",
+  "verifyEmailSpamNote": "قد تصل رسائل Firebase المجانية إلى البريد غير المرغوب فيه وتتأخر دقائق. إنشاء الحساب يرسل رابطًا واحدًا — انتظر فترة التهدئة قبل إعادة الإرسال.",
   "verifyEmailReadyToResend": "لم يصلك؟ يمكنك إعادة إرسال الرابط الآن.",
   "verifyEmailRefresh": "تم التحقق — تحديث",
   "verifyEmailResend": "إعادة إرسال الرابط",

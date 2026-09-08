@@ -1117,6 +1117,7 @@
   "verifyEmailCountdown": "تصدیقی لنک بھیج دیا گیا۔ آپ {n} سیکنڈ بعد دوبارہ بھیج سکتے ہیں۔",
   "verifyEmailDomainHint": "لنک کام نہ کرے تو Firebase Authorized domains میں اس سائٹ کا ڈومین شامل کریں۔",
   "verifyEmailHint": "ان باکس اور اسپام چیک کریں۔ لنک کھولنے کے بعد “تصدیق ہو گئی — تازہ کریں” دبائیں۔",
+  "verifyEmailSpamNote": "Firebase مفت میل اکثر Spam میں جاتی ہے اور چند منٹ لگ سکتے ہیں۔ اکاؤنٹ بناتے وقت ایک لنک پہلے ہی جاتا ہے — Resend سے پہلے cooldown ختم ہونے دیں۔",
   "verifyEmailReadyToResend": "نہیں ملا؟ اب لنک دوبارہ بھیج سکتے ہیں۔",
   "verifyEmailRefresh": "تصدیق ہو گئی — ریفریش",
   "verifyEmailResend": "لنک دوبارہ بھیجیں",

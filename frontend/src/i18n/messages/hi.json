@@ -1117,6 +1117,7 @@
   "verifyEmailCountdown": "सत्यापन लिंक भेजा गया। आप {n} सेकंड बाद फिर भेज सकते हैं।",
   "verifyEmailDomainHint": "लिंक काम न करे तो Firebase Authorized domains में इस साइट का डोमेन जोड़ें।",
   "verifyEmailHint": "इनबॉक्स और स्पैम जांचें। लिंक खोलने के बाद “सत्यापित — रीफ़्रेश” दबाएँ।",
+  "verifyEmailSpamNote": "Firebase मुफ़्त मेल अक्सर Spam में जाता है और कुछ मिनट लग सकते हैं। खाता बनाते समय एक लिंक पहले ही जाता है — Resend से पहले cooldown खत्म होने दें।",
   "verifyEmailReadyToResend": "नहीं मिला? अब लिंक फिर भेज सकते हैं।",
   "verifyEmailRefresh": "सत्यापित — रिफ्रेश",
   "verifyEmailResend": "लिंक फिर भेजें",
