@@ -154,7 +154,7 @@
   "cloudOnlyBanner": "Secure Cloud Sync is on — your data is saved to your account.",
   "cloudOnlyFamilyLabel": "Cloud family",
   "cloudOnlyNoData": "No cloud backup found. Sync once from a PC with backend, then try again.",
-  "cloudOnlyNoDataCreate": "No family on this account yet. Use Create family (same email + password) to finish linking your cloud family.",
+  "cloudOnlyNoDataCreate": "Family not loaded on this device yet. Tap Refresh first. Only use Create if this email is brand new — existing accounts must Login with the correct password.",
   "cloudOnlySignInSuccess": "Signed in with Secure Cloud Sync",
   "cloudProviderTabCloud": "Cloud",
   "cloudProviderTabDrive": "Drive",

@@ -39,8 +39,25 @@ function chunkPayload(jsonText) {
  * Push local IndexedDB snapshots to Firestore (user + shared family).
  */
 export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", email = null, displayName = null }) {
-  if (!uid) throw new Error("Firebase user required");
-  const payload = await buildBackupPayload(familyId, deviceLabel);
+  const { getFirebaseAuth } = await import("./config");
+  const authUid = String(getFirebaseAuth()?.currentUser?.uid || "").trim();
+  if (!authUid) {
+    throw new Error("Not signed in to Firebase — Sign out and Sign in again");
+  }
+  // Rules check request.auth.uid against the path — never write under a stale uid.
+  uid = authUid;
+
+  // Prefer cloud profile family_id over a stale local/IndexedDB hint.
+  let resolvedFamilyId = String(familyId || "").trim();
+  try {
+    const profile = await getUserFamilyProfile(uid);
+    const cloudFid = String(profile?.family_id || "").trim();
+    if (cloudFid) resolvedFamilyId = cloudFid;
+  } catch {
+    /* keep caller familyId */
+  }
+
+  const payload = await buildBackupPayload(resolvedFamilyId || familyId, deviceLabel);
   const rows = payload.rows || [];
   const jsonText = JSON.stringify(payload);
   const parts = chunkPayload(jsonText);
@@ -51,48 +68,66 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
   batch.set(metaRef, {
     updated_at: serverTimestamp(),
     exported_at: payload.exported_at,
-    family_id: familyId || null,
+    family_id: resolvedFamilyId || null,
     device: deviceLabel,
     part_count: parts.length,
     row_count: rows.length,
     bytes: jsonText.length,
   });
 
-  const existingParts = await getDocs(partsCollection(uid));
-  existingParts.forEach((snap) => {
-    batch.delete(snap.ref);
-  });
+  try {
+    const existingParts = await getDocs(partsCollection(uid));
+    existingParts.forEach((snap) => {
+      batch.delete(snap.ref);
+    });
+  } catch {
+    /* first push — no parts yet / list denied briefly */
+  }
 
   parts.forEach((text, index) => {
     const partRef = doc(partsCollection(uid), String(index));
     batch.set(partRef, { index, data: text });
   });
 
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (err) {
+    const msg = String(err?.message || err || "");
+    if (/permission-denied|insufficient permissions/i.test(msg)) {
+      throw new Error(
+        "Sync push permission-denied — Sign out → Sign in, confirm email verified, then try Sync again",
+        { cause: err },
+      );
+    }
+    throw err;
+  }
 
-  if (familyId) {
+  if (resolvedFamilyId) {
     try {
       await ensureFamilyCloudShell({
-        familyId,
+        familyId: resolvedFamilyId,
         uid,
         email,
         displayName,
-        familyName: familyId,
+        familyName: resolvedFamilyId,
         // Never pass OWNER here — only meta.owner_uid / first-member logic may elevate
         role: "MEMBER",
       });
       try {
-        await linkUserFamilyId(uid, familyId);
+        await linkUserFamilyId(uid, resolvedFamilyId);
       } catch {
         /* profile heal optional */
       }
-      await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
+      await pushFamilyCloudSnapshot({ familyId: resolvedFamilyId, deviceLabel, ownerUid: uid });
     } catch {
       /* family shell may already exist with different owner role — still try snapshot */
       try {
-        await pushFamilyCloudSnapshot({ familyId, deviceLabel, ownerUid: uid });
-      } catch {
-        /* ignore shared push failure; user snapshot already saved */
+        await pushFamilyCloudSnapshot({ familyId: resolvedFamilyId, deviceLabel, ownerUid: uid });
+      } catch (familyErr) {
+        console.warn(
+          "[S4] family snapshot push skipped",
+          familyErr?.code || familyErr?.message || familyErr,
+        );
       }
     }
   }
@@ -102,6 +137,7 @@ export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", em
     rowCount: rows.length,
     bytes: jsonText.length,
     exportedAt: payload.exported_at,
+    familyId: resolvedFamilyId || null,
   };
 }
 
@@ -238,16 +274,17 @@ export async function resolveAndBindUserFamily({
   localFamilyId = "",
 }) {
   if (!uid) return "";
-  let familyId = String(localFamilyId || "").trim();
 
-  if (!familyId) {
-    try {
-      const profile = await getUserFamilyProfile(uid);
-      familyId = String(profile?.family_id || "").trim();
-    } catch {
-      /* ignore */
-    }
+  // Cloud profile wins over stale localStorage family_id (common after invite heal).
+  let profileFamilyId = "";
+  try {
+    const profile = await getUserFamilyProfile(uid);
+    profileFamilyId = String(profile?.family_id || "").trim();
+  } catch {
+    /* ignore */
   }
+  const localHint = String(localFamilyId || "").trim();
+  let familyId = profileFamilyId || localHint;
 
   if (!familyId) {
     try {

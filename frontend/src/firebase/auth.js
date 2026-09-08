@@ -101,8 +101,8 @@ export function formatFirebaseAuthError(error, lang = "en") {
       ? "পাসওয়ার্ড ভুল। পুরনো পাসওয়ার্ড দিন, অথবা Authentication থেকে ইউজার ডিলিট করে নতুন অ্যাকাউন্ট তৈরি করুন।"
       : "Wrong password. Use the old password, or delete the Auth user and create a new account.",
     "auth/email-exists-wrong-password": bn
-      ? "এই ইমেইল Auth-এ আগে থেকেই আছে, কিন্তু পাসওয়ার্ড মিলছে না। Firebase Console → Authentication → Users → এই ইমেইল Delete করুন, তারপর আবার Create family করুন।"
-      : "This email already exists in Auth, but the password does not match. In Firebase Console → Authentication → Users, delete this email, then Create family again.",
+      ? "এই ইমেইল আগে থেকেই আছে — Create করবেন না। Back → Logout, তারপর Login এ সেই ইমেইলের সঠিক পাসওয়ার্ড দিন। (Wife অ্যাকাউন্টে Husband-এর পাসওয়ার্ড চলবে না।)"
+      : "This email already has an account — do not Create. Go Back → Logout, then Login with that email's correct password. (Wife account needs Wife's password, not Husband's.)",
   };
 
   if (code && byCode[code]) {

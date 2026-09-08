@@ -215,7 +215,7 @@ const DEFAULT_API_BASE = normalizeApiBase(
 );
 const API_BASE_STORAGE_KEY = "s4_api_base";
 const AUTO_SYNC_STORAGE_KEY = "s4_auto_sync";
-const AUTO_SYNC_INTERVAL_MS = 45000;
+const AUTO_SYNC_INTERVAL_MS = 15000;
 const DEFAULT_EMAIL = import.meta.env.VITE_DEFAULT_EMAIL || "";
 const DEFAULT_PASSWORD = "";
 const SYNC_DEVICE_ID = "web-dashboard";
@@ -469,6 +469,7 @@ function App() {
     inviteCode: "",
     relation: "Husband",
   });
+  const noFamilyAutoRestoreRef = useRef("");
   const [notifications, setNotifications] = useState([]);
   const [notificationSummary, setNotificationSummary] = useState(null);
   const [notificationDelivery, setNotificationDelivery] = useState(null);
@@ -876,9 +877,9 @@ function App() {
   async function pushCloudSnapshotIfReady(userOverride = null, familyIdOverride = null) {
     const user = userOverride || firebaseUser;
     const familyId = familyIdOverride || activeFamilyId;
-    if (!user?.uid || !familyId) return;
-    if (!canSyncCloudFinance(user)) return;
-    if (!isBrowserOnline()) return;
+    if (!user?.uid || !familyId) return { ok: false, skipped: true };
+    if (!canSyncCloudFinance(user)) return { ok: false, skipped: true };
+    if (!isBrowserOnline()) return { ok: false, offline: true };
     try {
       await pushCloudSnapshot({
         uid: user.uid,
@@ -887,8 +888,10 @@ function App() {
         email: user.email || null,
         displayName: user.displayName || null,
       });
+      return { ok: true };
     } catch (err) {
       softFail("Sync push", err);
+      return { ok: false, error: err };
     }
   }
 
@@ -2316,6 +2319,7 @@ function App() {
     }
     setFirebaseUser(null);
     setFirebaseMeta(null);
+    noFamilyAutoRestoreRef.current = "";
 
     setToken("");
     setRefreshToken("");
@@ -2502,13 +2506,23 @@ function App() {
 
   async function syncCloudAfterWrite() {
     if (!isCloudLocalMode()) return;
-    if (isBrowserOnline()) {
-      // Push local truth first (includes the write we just made), then pull-merge.
-      // Pull-before-push was wiping brand-new life/grocery rows when remote still had empty bags.
-      await pushCloudSnapshotIfReady();
-      await pullAndHydrateCloudLocal();
-      runCloudAutoBackup({ force: true });
+    if (!isBrowserOnline()) return;
+    // Push local truth first (includes the write we just made), then pull-merge.
+    let pushResult = await pushCloudSnapshotIfReady();
+    if (!pushResult?.ok && !pushResult?.skipped) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      pushResult = await pushCloudSnapshotIfReady();
     }
+    await pullAndHydrateCloudLocal();
+    if (!pushResult?.ok && !pushResult?.skipped && !pushResult?.offline) {
+      setMessage(
+        appLanguage === "bn"
+          ? "এই ফোনে সেভ হয়েছে, কিন্তু ক্লাউডে যায়নি — অন্য ডিভাইসে দেখা যাবে না। Sync → Push চাপুন।"
+          : "Saved on this device, but cloud sync failed — other devices won't see it. Tap Sync → Push.",
+        "warning",
+      );
+    }
+    runCloudAutoBackup({ force: true });
   }
 
   async function apiPost(path, body) {
@@ -9520,6 +9534,34 @@ function App() {
     }
   }
 
+  // Phone ↔ laptop account swap often leaves empty local family_id while Firestore still has it.
+  // Auto-restore once per uid when the "No active family" screen would otherwise appear.
+  useEffect(() => {
+    const uid = firebaseUser?.uid;
+    if (!uid || activeFamilyId || sessionBootstrapping || isFamilyLoading) return;
+    if (noFamilyAutoRestoreRef.current === uid) return;
+    if (!isBrowserOnline()) return;
+    noFamilyAutoRestoreRef.current = uid;
+    let cancelled = false;
+    (async () => {
+      try {
+        const fid = await resolveCloudFamilyId(uid, firebaseUser);
+        if (cancelled || !fid) return;
+        await activateCloudSession(firebaseUser, fid);
+        setMessage(
+          appLanguage === "bn" ? "পরিবার ক্লাউড থেকে পুনরুদ্ধার হয়েছে" : "Family restored from cloud",
+          "success",
+        );
+      } catch (err) {
+        if (!cancelled) softFail("Family auto-restore", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firebaseUser?.uid, activeFamilyId, sessionBootstrapping, isFamilyLoading]);
+
   useEffect(() => {
     if (!FIREBASE_CONFIGURED) {
       setSessionBootstrapping(false);
@@ -9617,25 +9659,29 @@ function App() {
       }
 
       try {
-        let familyId = loadCloudFamilyId();
-        // Prefer local id first so dashboard never waits on Firestore
+        // Always resolve from Firestore profile first — localStorage can be empty/stale
+        // after swapping accounts across phone ↔ laptop.
+        let familyId = "";
+        try {
+          familyId = await Promise.race([
+            resolveCloudFamilyId(user.uid, user),
+            new Promise((resolve) => {
+              window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 8000);
+            }),
+          ]);
+        } catch {
+          familyId = loadCloudFamilyId() || "";
+        }
+
         if (familyId && !cancelled) {
           setActiveFamilyId(familyId);
+          persistCloudFamilyId(familyId);
           setIsFamilyLoading(false);
           setSessionBootstrapping(false);
         }
 
         if (!familyId) {
-          try {
-            familyId = await Promise.race([
-              resolveCloudFamilyId(user.uid, user),
-              new Promise((resolve) => {
-                window.setTimeout(() => resolve(""), 4000);
-              }),
-            ]);
-          } catch {
-            familyId = "";
-          }
+          /* keep empty — no-family UI + auto-restore effect will retry */
         } else if (canSyncCloudFinance(user) && isBrowserOnline()) {
           try {
             const restored = await Promise.race([
@@ -10921,7 +10967,10 @@ function App() {
                     <button type="submit" className="btn btn-primary" disabled={cloudBusy || authLoading}>
                       {authLoading || cloudBusy
                         ? t("creatingFamilyGate") || "Creating…"
-                        : t("btnCreateSubmit") || "Create family & become Owner"}
+                        : t("btnCreateSubmit") ||
+                          (appLanguage === "bn"
+                            ? "পরিবার তৈরি করুন ও Owner হোন"
+                            : "Create family & become Owner")}
                     </button>
                     <button type="button" className="btn" onClick={() => setNoFamilySetupMode("choose")}>
                       {t("back") || "Back"}

@@ -154,7 +154,7 @@
   "cloudOnlyBanner": "সিকিউর ক্লাউড সিঙ্ক চালু — ডেটা আপনার অ্যাকাউন্টে সংরক্ষিত।",
   "cloudOnlyFamilyLabel": "ক্লাউড পরিবার",
   "cloudOnlyNoData": "ক্লাউড ব্যাকআপ নেই। আগে PC থেকে backend দিয়ে সিঙ্ক করুন।",
-  "cloudOnlyNoDataCreate": "এই অ্যাকাউন্টে এখনো কোনো পরিবার নেই। Create family দিয়ে একই ইমেইল ও পাসওয়ার্ড দিয়ে পরিবার লিংক সম্পূর্ণ করুন।",
+  "cloudOnlyNoDataCreate": "এই ডিভাইসে পরিবার লোড হয়নি। আগে Refresh চাপুন। অ্যাকাউন্ট আগে থেকে থাকলে Create নয় — Logout করে সঠিক পাসওয়ার্ড দিয়ে Login করুন (Wife-এর অ্যাকাউন্টে Husband-এর পাসওয়ার্ড চলবে না)।",
   "cloudOnlySignInSuccess": "সিকিউর ক্লাউড সিঙ্ক দিয়ে সাইন ইন হয়েছে",
   "cloudProviderTabCloud": "ক্লাউড",
   "cloudProviderTabDrive": "ড্রাইভ",

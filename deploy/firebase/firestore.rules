@@ -311,11 +311,12 @@ service cloud.firestore {
           && resource.data.uid == request.auth.uid;
       }
 
+      // Members OR profile-linked accounts may sync shared finance snapshots.
       match /cloudSnapshots/{snapshotId} {
-        allow read, write: if familyMemberLoose(familyId);
+        allow read, write: if familyMemberLoose(familyId) || profileLinkedToFamily(familyId);
 
         match /parts/{partId} {
-          allow read, write: if familyMemberLoose(familyId);
+          allow read, write: if familyMemberLoose(familyId) || profileLinkedToFamily(familyId);
         }
       }
     }

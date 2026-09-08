@@ -2088,18 +2088,14 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       source: "cloud_local",
     };
     const txs = await readList(familyId, "finance", "transactions");
-    await writeList(familyId, "finance", "transactions", [row, ...txs]);
+    const allTxs = [row, ...txs];
+    await writeList(familyId, "finance", "transactions", allTxs);
     const wallets = await readList(familyId, "finance", "wallets");
-    const nextWallets = wallets.map((w) => {
-      let bal = Number(w.balance ?? w.current_balance ?? 0);
-      if (kind === "INCOME" && w.id === row.account_id) bal += amount;
-      if (kind === "EXPENSE" && w.id === row.account_id) bal -= amount;
-      if (kind === "TRANSFER") {
-        if (w.id === row.from_account_id) bal -= amount;
-        if (w.id === row.to_account_id) bal += amount;
-      }
-      return { ...w, balance: bal, current_balance: bal, updated_at: now };
-    });
+    // Recompute from pre-tx wallet balances + full ledger (String-safe id match inside).
+    const nextWallets = recomputeWalletBalancesFromLedger(wallets, allTxs).map((w) => ({
+      ...w,
+      updated_at: now,
+    }));
     await writeList(familyId, "finance", "wallets", nextWallets);
     await after();
     return { handled: true, data: row };
@@ -2120,14 +2116,17 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
     );
     await writeList(familyId, "finance", "transactions", nextTx);
     const wallets = await readList(familyId, "finance", "wallets");
-    const fromId = target.from_account_id || target.account_id;
+    const fromId = String(target.from_account_id || target.account_id || "");
+    const toId = String(target.to_account_id || "");
+    const accountId = String(target.account_id || fromId);
     const nextWallets = wallets.map((w) => {
+      const wid = String(w.id || "");
       let bal = Number(w.balance ?? w.current_balance ?? 0);
-      if (kind.includes("INCOME") && w.id === target.account_id) bal -= amount;
-      else if (kind.includes("EXPENSE") && w.id === (target.account_id || fromId)) bal += amount;
+      if (kind.includes("INCOME") && wid === accountId) bal -= amount;
+      else if (kind.includes("EXPENSE") && wid === accountId) bal += amount;
       else if (kind.includes("TRANSFER")) {
-        if (w.id === fromId) bal += amount;
-        if (w.id === target.to_account_id) bal -= amount;
+        if (wid === fromId) bal += amount;
+        if (wid === toId) bal -= amount;
       }
       return { ...w, balance: bal, current_balance: bal, updated_at: now };
     });
