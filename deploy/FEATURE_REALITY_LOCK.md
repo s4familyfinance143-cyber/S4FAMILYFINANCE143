@@ -67,7 +67,7 @@
 
 ## Version lock
 
-All targets: **1.0.23**
+All targets: **1.0.33**
 
 | Target | Path | Role |
 |--------|------|------|
