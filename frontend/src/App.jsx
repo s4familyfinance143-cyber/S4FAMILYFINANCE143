@@ -807,12 +807,9 @@ function App() {
   }
 
   function setMessage(message, type = "success") {
-    setStatus(message);
+    // Single surface only — toast. Avoid duplicate top+bottom banners.
+    setStatus("");
     showToast(message, type);
-
-    setTimeout(() => {
-      setStatus((current) => (current === message ? "" : current));
-    }, 3000);
   }
 
   /** Surface auth/sync soft failures in UI (still logs to console). */

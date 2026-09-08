@@ -1178,5 +1178,8 @@
   "saveSilverRate": "Save SILVER",
   "noMetalRatesYet": "No rates yet",
   "noZakatRecords": "No zakat records found",
-  "nisabLabel": "Nisab:"
+  "nisabLabel": "Nisab:",
+  "btnJoin": "Join invite",
+  "btnCreate": "Create family",
+  "back": "Back"
 }

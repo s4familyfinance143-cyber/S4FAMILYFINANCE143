@@ -433,34 +433,53 @@ export async function joinFamilyByInviteCode({
   const familyId = inv.family_id;
   if (!familyId) throw new Error("Invite missing family");
 
-  const existingMember = await getDoc(familyMemberRef(familyId, uid));
-  const metaSnap = await getDoc(familyMetaRef(familyId));
-  const ownerUid = String(metaSnap.data()?.owner_uid || inv.owner_uid || "").trim();
+  // Joiner cannot read families/{id} until membership exists — never block on meta get.
+  let existingMember = null;
+  try {
+    existingMember = await getDoc(familyMemberRef(familyId, uid));
+  } catch {
+    existingMember = null;
+  }
+
+  let ownerUid = String(inv.owner_uid || "").trim();
+  try {
+    const metaSnap = await getDoc(familyMetaRef(familyId));
+    if (metaSnap?.exists?.()) {
+      ownerUid = String(metaSnap.data()?.owner_uid || ownerUid).trim();
+    }
+  } catch {
+    /* expected for first-time joiners */
+  }
+
   const isOwner = Boolean(ownerUid && ownerUid === uid);
-  const existingRole = String(existingMember.data()?.role || "").toUpperCase();
+  const memberExists = Boolean(existingMember?.exists?.());
+  const existingRole = String(existingMember?.data?.()?.role || "").toUpperCase();
   // Never demote an existing OWNER/ADMIN via invite re-join
   const nextRole = isOwner
     ? "OWNER"
     : existingRole === "OWNER" || existingRole === "ADMIN"
       ? existingRole
-      : existingMember.exists()
+      : memberExists
         ? existingRole || "MEMBER"
         : "MEMBER";
 
   const relation = String(relationshipType || "").trim();
   const existingRelation =
-    existingMember.data()?.relationship_type ||
-    existingMember.data()?.relationship ||
-    existingMember.data()?.relationship_display_label ||
+    existingMember?.data?.()?.relationship_type ||
+    existingMember?.data?.()?.relationship ||
+    existingMember?.data?.()?.relationship_display_label ||
     "";
+
+  // New joiners must create as MEMBER (rules: selfCreateViaInvite). Owner reclaim uses OWNER.
+  const writeRole = !memberExists && !isOwner ? "MEMBER" : nextRole;
 
   await setDoc(
     familyMemberRef(familyId, uid),
     {
       uid,
-      email: email || existingMember.data()?.email || null,
-      display_name: displayName || existingMember.data()?.display_name || null,
-      role: nextRole,
+      email: email || existingMember?.data?.()?.email || null,
+      display_name: displayName || existingMember?.data?.()?.display_name || null,
+      role: writeRole,
       ...(existingRelation
         ? {}
         : relation
@@ -471,19 +490,32 @@ export async function joinFamilyByInviteCode({
             }
           : {}),
       status: "ACTIVE",
-      ...(existingMember.exists() ? {} : { joined_at: serverTimestamp() }),
+      ...(memberExists ? {} : { joined_at: serverTimestamp() }),
       updated_at: serverTimestamp(),
       invite_code: key,
     },
     { merge: true },
   );
 
+  // If owner reclaimed via invite as MEMBER first, upgrade (rules allow selfClaimOwnerRole).
+  if (isOwner && writeRole !== "OWNER") {
+    try {
+      await setDoc(
+        familyMemberRef(familyId, uid),
+        { role: "OWNER", updated_at: serverTimestamp() },
+        { merge: true },
+      );
+    } catch {
+      /* keep MEMBER if reclaim blocked */
+    }
+  }
+
   const db = getFirestoreDb();
   await setDoc(
     doc(db, "users", uid),
     {
       family_id: familyId,
-      role: nextRole,
+      role: isOwner ? "OWNER" : writeRole,
       joined_via_invite: key,
       updated_at: serverTimestamp(),
     },
@@ -503,9 +535,10 @@ export async function joinFamilyByInviteCode({
   );
 
   const pull = await pullFamilyCloudSnapshot(familyId);
+  const finalRole = isOwner ? "OWNER" : writeRole;
   return {
     familyId,
-    member: { uid, email, role: nextRole, relationship_type: relation || existingRelation || "" },
+    member: { uid, email, role: finalRole, relationship_type: relation || existingRelation || "" },
     invite: { ...inv, uses: nextUses },
     restored: pull.restored,
   };

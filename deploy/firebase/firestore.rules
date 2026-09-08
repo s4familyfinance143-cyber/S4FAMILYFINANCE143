@@ -130,9 +130,15 @@ service cloud.firestore {
       return signedIn()
         && request.auth.uid == memberId
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.role in ['MEMBER', 'VIEWER', 'CHILD']
         && request.resource.data.keys().hasAll(['invite_code'])
-        && inviteValidForJoin(familyId, request.resource.data.invite_code);
+        && inviteValidForJoin(familyId, request.resource.data.invite_code)
+        && (
+          request.resource.data.role in ['MEMBER', 'VIEWER', 'CHILD']
+          || (
+            request.resource.data.role == 'OWNER'
+            && inviteDoc(request.resource.data.invite_code).data.owner_uid == request.auth.uid
+          )
+        );
     }
 
     function memberSelfSafeKeysOnly() {
@@ -146,7 +152,11 @@ service cloud.firestore {
           'status',
           'photo_url',
           'avatar_url',
-          'invite_code'
+          'invite_code',
+          'relationship_type',
+          'relationship',
+          'relationship_display_label',
+          'joined_at'
         ]);
     }
 
@@ -164,7 +174,17 @@ service cloud.firestore {
           && request.resource.data.family_id == resource.data.family_id
         )
         || familyMemberLoose(request.resource.data.family_id)
-        || familyHasNoOwner(request.resource.data.family_id);
+        || familyHasNoOwner(request.resource.data.family_id)
+        || (
+          // Joining via invite: allow linking profile after membership create in same flow
+          'joined_via_invite' in request.resource.data
+          && request.resource.data.joined_via_invite is string
+          && request.resource.data.joined_via_invite.size() >= 4
+          && exists(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite))
+          && get(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite)).data.family_id
+            == request.resource.data.family_id
+          && get(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite)).data.status == 'ACTIVE'
+        );
     }
 
     function userFamilyIdCreateOk() {
@@ -172,7 +192,16 @@ service cloud.firestore {
         || request.resource.data.family_id == null
         || request.resource.data.family_id == ''
         || familyMemberLoose(request.resource.data.family_id)
-        || familyHasNoOwner(request.resource.data.family_id);
+        || familyHasNoOwner(request.resource.data.family_id)
+        || (
+          'joined_via_invite' in request.resource.data
+          && request.resource.data.joined_via_invite is string
+          && request.resource.data.joined_via_invite.size() >= 4
+          && exists(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite))
+          && get(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite)).data.family_id
+            == request.resource.data.family_id
+          && get(/databases/$(database)/documents/familyInvites/$(request.resource.data.joined_via_invite)).data.status == 'ACTIVE'
+        );
     }
 
     function canMintInvite(familyId) {

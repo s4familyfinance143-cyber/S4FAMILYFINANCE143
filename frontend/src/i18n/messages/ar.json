@@ -1178,5 +1178,8 @@
   "saveSilverRate": "حفظ سعر الفضة",
   "noMetalRatesYet": "لا أسعار بعد",
   "noZakatRecords": "لا سجلات زكاة",
-  "nisabLabel": "النصاب:"
+  "nisabLabel": "النصاب:",
+  "btnJoin": "انضمام",
+  "btnCreate": "إنشاء عائلة",
+  "back": "رجوع"
 }

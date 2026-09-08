@@ -1178,5 +1178,8 @@
   "saveSilverRate": "चाँदी दर सेव",
   "noMetalRatesYet": "अभी कोई दर नहीं",
   "noZakatRecords": "कोई ज़कात रिकॉर्ड नहीं",
-  "nisabLabel": "निसाब:"
+  "nisabLabel": "निसाब:",
+  "btnJoin": "जॉइन",
+  "btnCreate": "परिवार बनाएं",
+  "back": "वापस"
 }
