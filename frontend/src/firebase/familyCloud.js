@@ -178,19 +178,31 @@ export async function ensureFamilyCloudShell({
   const shouldSetOwner =
     !metaExistsNow || !existingOwnerUid || existingOwnerUid === uid;
 
-  await setDoc(
-    familyMetaRef(familyId),
-    {
-      id: familyId,
-      name: familyName || metaDataNow.name || metaData.name || "Family",
-      ...(shouldSetOwner ? { owner_uid: existingOwnerUid || uid } : {}),
-      created_at: metaExistsNow
-        ? metaDataNow.created_at || serverTimestamp()
-        : serverTimestamp(),
-      updated_at: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  // Only OWNER (or first bootstrap) may write family meta. Members must not fail bind/login
+  // with "Missing or insufficient permissions" just because meta heal is denied.
+  try {
+    await setDoc(
+      familyMetaRef(familyId),
+      {
+        id: familyId,
+        name: familyName || metaDataNow.name || metaData.name || "Family",
+        ...(shouldSetOwner ? { owner_uid: existingOwnerUid || uid } : {}),
+        created_at: metaExistsNow
+          ? metaDataNow.created_at || serverTimestamp()
+          : serverTimestamp(),
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (metaErr) {
+    const msg = String(metaErr?.code || metaErr?.message || "");
+    if (/permission-denied|insufficient permissions/i.test(msg)) {
+      // Membership is enough for invite join / day-to-day sync.
+      console.warn("[S4] family meta heal skipped (not owner)", msg);
+      return;
+    }
+    throw metaErr;
+  }
 }
 
 /**
@@ -283,15 +295,7 @@ export async function publishFamilyInvite({
     throw new Error("Firestore not ready — check internet and try again");
   }
 
-  // Ensure profile points at this family so mint rules (profileLinked) can pass.
-  try {
-    const { linkUserFamilyId } = await import("./cloudSync");
-    await linkUserFamilyId(uid, familyId);
-  } catch {
-    /* optional */
-  }
-
-  // Ensure membership exists. Prefer OWNER heal, but MEMBER is enough to mint when profile-linked.
+  // Membership / shell first, then profile.family_id (rules require member or owner meta).
   try {
     await ensureFamilyCloudShell({
       familyId,
@@ -329,11 +333,18 @@ export async function publishFamilyInvite({
         });
       } catch (createErr) {
         throw new Error(
-          `permission-denied (family membership) — ${createErr?.message || memberErr?.message || shellErr?.message}`,
+          `permission-denied (family membership) — Publish latest firestore.rules, then sign out/in. ${createErr?.message || memberErr?.message || shellErr?.message}`,
           { cause: createErr },
         );
       }
     }
+  }
+
+  try {
+    const { linkUserFamilyId } = await import("./cloudSync");
+    await linkUserFamilyId(uid, familyId);
+  } catch {
+    /* optional after membership */
   }
 
   const expiresAt = new Date();

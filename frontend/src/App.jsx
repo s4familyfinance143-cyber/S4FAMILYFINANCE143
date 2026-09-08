@@ -992,7 +992,19 @@ function App() {
           }),
         ]);
       } catch (err) {
-        softFail("Family bind", err);
+        const raw = String(err?.message || err?.code || "");
+        if (/permission-denied|insufficient permissions/i.test(raw)) {
+          softFail(
+            "Family bind",
+            new Error(
+              appLanguage === "bn"
+                ? "Firebase permission — deploy/firebase/firestore.rules Console-এ Publish করুন, তারপর Sign out → Sign in। Invite Generate আবার চেষ্টা করুন।"
+                : "Firebase permission — Publish deploy/firebase/firestore.rules in Console, then Sign out → Sign in. Try Generate invite again.",
+            ),
+          );
+        } else {
+          softFail("Family bind", err);
+        }
       }
     }
     setFamilies([{ id: familyId, name: familyName || t("cloudOnlyFamilyLabel") }]);
