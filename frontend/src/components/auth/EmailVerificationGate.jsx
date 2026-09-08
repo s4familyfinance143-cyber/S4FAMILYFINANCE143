@@ -87,6 +87,10 @@ export function EmailVerificationGate({
           </p>
         ) : null}
         <p className="email-verify-hint">{t("verifyEmailHint")}</p>
+        <p className="email-verify-hint" style={{ marginTop: 4 }}>
+          {t("verifyEmailSpamNote") ||
+            "Firebase free mail can land in Spam and may take a few minutes. Create account already sends one link — Resend only after the cooldown."}
+        </p>
         <p className="email-verify-sent-note" role="status" aria-live="polite">
           {cooldownActive
             ? (t("verifyEmailCountdown") || "You can resend in {n}s").replace(

@@ -15,7 +15,7 @@ import { getFirebaseAuth, isFirebaseConfigured } from "./config";
 import { requestCustomVerificationEmail } from "./customVerificationEmail";
 
 const VERIFY_COOLDOWN_PREFIX = "s4_verify_email_sent_at:";
-export const VERIFY_RESEND_COOLDOWN_MS = 60_000;
+export const VERIFY_RESEND_COOLDOWN_MS = 120_000;
 
 export function markVerificationEmailSent(uid) {
   if (!uid) return;
@@ -62,8 +62,8 @@ export function formatFirebaseAuthError(error, lang = "en") {
 
   const byCode = {
     "auth/too-many-requests": bn
-      ? "অনেকবার চেষ্টা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।"
-      : "Too many attempts. Wait a few minutes, then try again.",
+      ? "Firebase অনেক ইমেইল পাঠানোর অনুরোধ আটকেছে (অ্যাকাউন্ট তৈরির সময়ও একটা লিংক যায়)। ১০–১৫ মিনিট অপেক্ষা করুন — Resend চাপবেন না। Gmail Inbox/Spam-এ আগের লিংক খুঁজুন, তারপর «যাচাই করেছি — রিফ্রেশ» চাপুন।"
+      : "Firebase rate-limited email sends (Create account already sends one link). Wait 10–15 minutes — do not Resend. Find the earlier link in Gmail Inbox/Spam, then tap «I verified — Refresh».",
     "auth/network-request-failed": bn
       ? "নেটওয়ার্ক সমস্যা — ইন্টারনেট চেক করে আবার চেষ্টা করুন।"
       : "Network error — check your connection and try again.",
@@ -283,21 +283,21 @@ export async function firebaseRegisterEmail(email, password, fullName = "") {
     }
   }
 
-  // 3) Verification email in background — never blocks Create family UI
+  // 3) Send verification ONCE and wait — no auto-retry (retry triggers auth/too-many-requests).
   let verificationSent = false;
   let verificationError = null;
-  void dispatchVerificationEmail(cred.user, { reason: "register" })
-    .then(() => {
-      verificationSent = true;
-    })
-    .catch((error) => {
-      verificationError = error;
-      console.error("[firebase] initial sendEmailVerification failed", error);
-      void dispatchVerificationEmail(cred.user, { reason: "register-retry" }).catch((retryErr) => {
-        verificationError = retryErr;
-        console.error("[firebase] initial sendEmailVerification retry failed", retryErr);
-      });
-    });
+  try {
+    await Promise.race([
+      dispatchVerificationEmail(cred.user, { reason: "register" }),
+      new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error("Verification email send timed out")), 12000);
+      }),
+    ]);
+    verificationSent = true;
+  } catch (error) {
+    verificationError = error;
+    console.error("[firebase] initial sendEmailVerification failed", error);
+  }
 
   // Account exists now with emailVerified=false until user clicks the mail link.
   return { user: cred.user, verificationSent, verificationError };

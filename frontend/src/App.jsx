@@ -1407,28 +1407,42 @@ function App() {
       ]);
       const { user, familyId, existing, verificationSent, verificationError } = created;
 
-      // Optional verify gate only — default is enter app immediately after create
+      // Keep session + show EmailVerificationGate (do NOT sign out — that forced a second Login
+      // and made users think verify only happens after login).
       if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
-        if (familyId) persistCloudFamilyId(familyId);
-        try {
-          await firebaseSignOut();
-        } catch {
-          /* ignore */
+        if (familyId) {
+          persistCloudFamilyId(familyId);
+          setActiveFamilyId(familyId);
         }
-        setFirebaseUser(null);
-        setCurrentUser(null);
-        setCloudOnlyMode(false);
-        persistCloudOnlyMode(false);
-        setActiveFamilyId("");
+        persistCloudOnlyMode(true);
+        setCloudOnlyMode(true);
+        setFirebaseUser(user);
+        setCurrentUser({
+          full_name: user.displayName || fullName || user.email || "Cloud User",
+          email: user.email || email || "",
+          is_email_verified: false,
+          is_active: true,
+          uid: user.uid,
+          firebase_uid: user.uid,
+        });
         setIsFamilyLoading(false);
         setSessionBootstrapping(false);
-        if (familyId) persistCloudFamilyId(familyId);
-        setMessage(
-          t("cloudFamilyCreatedVerifyThenLogin") ||
+        setAuthLoading(false);
+        setCloudBusy(false);
+        setStatus("");
+        if (verificationError) {
+          const lang = appLanguage === "bn" ? "bn" : "en";
+          setMessage(
+            `${t("cloudFamilyCreatedVerify") || "Family created — verify email."} ${formatFirebaseAuthError(verificationError, lang)}`,
+            "warning",
+          );
+        } else {
+          setMessage(
             t("cloudFamilyCreatedVerify") ||
-            "Account created. Verify your email, then Login.",
-          "success",
-        );
+              "Family created. Check inbox/spam for the verification link, then tap Refresh.",
+            "success",
+          );
+        }
         return;
       }
 
