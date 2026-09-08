@@ -52,7 +52,15 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/families/$(familyId)).data.owner_uid;
     }
 
-    // Claim / keep OWNER when family has no owner OR meta already points at this uid.
+    // User profile already points at this family (cloud-only single-family accounts).
+    function profileLinkedToFamily(familyId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.family_id == familyId;
+    }
+
+    // Claim / keep OWNER when family has no owner, meta already points at this uid,
+    // or this signed-in user's profile is linked to the family (reclaim stuck OWNER).
     function selfClaimOwnerRole(familyId) {
       return signedIn()
         && request.auth.uid == memberId
@@ -64,6 +72,7 @@ service cloud.firestore {
             exists(/databases/$(database)/documents/families/$(familyId))
             && familyOwnerUid(familyId) == request.auth.uid
           )
+          || profileLinkedToFamily(familyId)
         );
     }
 
@@ -88,6 +97,7 @@ service cloud.firestore {
         && (
           familyHasNoOwner(familyId)
           || resource.data.owner_uid == request.auth.uid
+          || profileLinkedToFamily(familyId)
         );
     }
 
@@ -99,6 +109,7 @@ service cloud.firestore {
         && (
           familyHasNoOwner(familyId)
           || familyOwnerUid(familyId) == request.auth.uid
+          || profileLinkedToFamily(familyId)
         );
     }
 
@@ -170,6 +181,15 @@ service cloud.firestore {
           familyMemberLoose(familyId)
           && (
             familyHasNoOwner(familyId)
+            || familyOwnerUid(familyId) == request.auth.uid
+            || profileLinkedToFamily(familyId)
+          )
+        )
+        || (
+          profileLinkedToFamily(familyId)
+          && (
+            familyHasNoOwner(familyId)
+            || !exists(/databases/$(database)/documents/families/$(familyId))
             || familyOwnerUid(familyId) == request.auth.uid
           )
         );

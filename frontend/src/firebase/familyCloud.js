@@ -73,9 +73,13 @@ export async function ensureFamilyCloudShell({
   role = "OWNER",
   relationshipType = "",
 }) {
-  if (!familyId || !uid) return;
+  if (!familyId || !uid) {
+    throw new Error("familyId and uid required for family cloud shell");
+  }
   const db = getFirestoreDb();
-  if (!db) return;
+  if (!db) {
+    throw new Error("Firestore not ready — check internet and sign in again");
+  }
 
   let memberSnap;
   let metaSnap;
@@ -110,7 +114,7 @@ export async function ensureFamilyCloudShell({
         uid,
         email: email || null,
         display_name: displayName || null,
-        role: assumeOwner ? "OWNER" : roleUpper || "MEMBER",
+        role: assumeOwner || String(role || "").toUpperCase() === "OWNER" ? "OWNER" : roleUpper || "MEMBER",
         ...(relation
           ? {
               relationship_type: relation,
@@ -135,12 +139,11 @@ export async function ensureFamilyCloudShell({
     const shouldBeOwner =
       isFirst ||
       (metaOwner && metaOwner === uid) ||
-      String(role || "").toUpperCase() === "OWNER";
+      String(role || "").toUpperCase() === "OWNER" ||
+      existingRole === "OWNER";
     const nextRole = shouldBeOwner
       ? "OWNER"
-      : existingRole === "OWNER"
-        ? "OWNER"
-        : existingRole || role || "MEMBER";
+      : existingRole || role || "MEMBER";
     await setDoc(
       familyMemberRef(familyId, uid),
       {
@@ -171,15 +174,19 @@ export async function ensureFamilyCloudShell({
   const metaExistsNow = Boolean(metaSnap?.exists?.());
   const metaDataNow = metaExistsNow ? metaSnap.data() || {} : {};
   const existingOwnerUid = String(metaDataNow.owner_uid || "").trim();
+  // Prefer reclaiming owner for the caller when role is OWNER (invite mint path).
   const shouldSetOwner =
-    !metaExistsNow || !existingOwnerUid || existingOwnerUid === uid;
+    !metaExistsNow ||
+    !existingOwnerUid ||
+    existingOwnerUid === uid ||
+    String(role || "").toUpperCase() === "OWNER";
 
   await setDoc(
     familyMetaRef(familyId),
     {
       id: familyId,
       name: familyName || metaDataNow.name || metaData.name || "Family",
-      ...(shouldSetOwner ? { owner_uid: existingOwnerUid || uid } : {}),
+      ...(shouldSetOwner ? { owner_uid: uid } : {}),
       created_at: metaExistsNow
         ? metaDataNow.created_at || serverTimestamp()
         : serverTimestamp(),
@@ -267,61 +274,118 @@ export async function publishFamilyInvite({
   const key = String(code || "")
     .trim()
     .toUpperCase();
-  if (!key || !familyId || !ownerUid) throw new Error("Invite code/family/owner required");
+  if (!key || !familyId) throw new Error("Invite code/family required");
 
-  // Membership + meta must exist or Firestore invite create is denied
+  const { getFirebaseAuth } = await import("./config");
+  const authUid = String(getFirebaseAuth()?.currentUser?.uid || "").trim();
+  const uid = authUid || String(ownerUid || "").trim();
+  if (!uid) {
+    throw new Error("missing_firebase_uid — sign out and sign in again");
+  }
+  if (!getFirestoreDb()) {
+    throw new Error("Firestore not ready — check internet and try again");
+  }
+
+  // Heal membership + OWNER meta before mint (stuck MEMBER / missing shell).
+  let shellError = null;
   try {
     await ensureFamilyCloudShell({
       familyId,
-      uid: ownerUid,
+      uid,
       email,
       displayName,
       familyName: familyName || familyId,
       role: "OWNER",
     });
   } catch (shellErr) {
-    const code = shellErr?.code || "";
-    const msg = shellErr?.message || String(shellErr);
-    throw new Error(
-      code === "permission-denied" || /permission/i.test(msg)
-        ? "permission-denied (family OWNER shell) — hard refresh, then Generate invite again"
-        : msg,
-      { cause: shellErr },
-    );
+    shellError = shellErr;
+    console.warn("[S4 Invite] OWNER shell heal failed", shellErr);
   }
 
   try {
     const { linkUserFamilyId } = await import("./cloudSync");
-    await linkUserFamilyId(ownerUid, familyId);
+    await linkUserFamilyId(uid, familyId);
   } catch {
     /* profile heal optional */
+  }
+
+  // Extra OWNER reclaim writes (rules allow when profile.family_id matches).
+  try {
+    await setDoc(
+      familyMemberRef(familyId, uid),
+      {
+        uid,
+        email: email || null,
+        display_name: displayName || null,
+        role: "OWNER",
+        status: "ACTIVE",
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("[S4 Invite] member OWNER reclaim failed", err);
+  }
+  try {
+    await setDoc(
+      familyMetaRef(familyId),
+      {
+        id: familyId,
+        name: familyName || familyId,
+        owner_uid: uid,
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.warn("[S4 Invite] meta owner reclaim failed", err);
   }
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + Number(expiresInDays || 7));
 
+  const invitePayload = {
+    code: key,
+    family_id: familyId,
+    owner_uid: uid,
+    invitee_email: inviteeEmail || null,
+    max_uses: Number(maxUses || 1),
+    uses: 0,
+    status: "ACTIVE",
+    expires_at: expiresAt.toISOString(),
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  };
+
+  async function writeInvite() {
+    await setDoc(inviteRef(key), invitePayload);
+  }
+
   try {
-    await setDoc(inviteRef(key), {
-      code: key,
-      family_id: familyId,
-      owner_uid: ownerUid,
-      invitee_email: inviteeEmail || null,
-      max_uses: Number(maxUses || 1),
-      uses: 0,
-      status: "ACTIVE",
-      expires_at: expiresAt.toISOString(),
-      created_at: serverTimestamp(),
-      updated_at: serverTimestamp(),
-    });
+    await writeInvite();
   } catch (invErr) {
-    const code = invErr?.code || "";
-    const msg = invErr?.message || String(invErr);
-    throw new Error(
-      code === "permission-denied" || /permission/i.test(msg)
-        ? "permission-denied (invite publish) — you must be family OWNER in Firebase"
-        : msg,
-      { cause: invErr },
-    );
+    // One more heal + retry for race / delayed rules propagation
+    try {
+      await ensureFamilyCloudShell({
+        familyId,
+        uid,
+        email,
+        displayName,
+        familyName: familyName || familyId,
+        role: "OWNER",
+      });
+      await writeInvite();
+    } catch (retryErr) {
+      const code = retryErr?.code || invErr?.code || "";
+      const msg = retryErr?.message || invErr?.message || String(retryErr || invErr);
+      const shellHint = shellError?.message ? ` | shell: ${shellError.message}` : "";
+      throw new Error(
+        code === "permission-denied" || /permission/i.test(msg)
+          ? `permission-denied (invite publish) — Firebase OWNER heal failed${shellHint}`
+          : msg,
+        { cause: retryErr },
+      );
+    }
   }
 
   return { code: key, family_id: familyId, expires_at: expiresAt.toISOString() };

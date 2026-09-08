@@ -5742,6 +5742,7 @@ function App() {
         max_uses: maxUses,
         invitee_email: (inviteForm.invitee_email || "").trim() || null,
         send_email: Boolean(inviteForm.send_email),
+        owner_uid: firebaseUser?.uid || currentUser?.firebase_uid || currentUser?.uid || null,
       });
 
       const code = String(data?.invite_code || data?.code || "").trim();
@@ -5790,10 +5791,10 @@ function App() {
       setInviteSpotlightOpen(false);
       const raw = String(err?.message || "");
       const tip =
-        /permission-denied|OWNER shell/i.test(raw)
+        /permission-denied|OWNER shell|invite publish/i.test(raw)
           ? (appLanguage === "bn"
-              ? "Invite Firebase-এ যায়নি। Ctrl+Shift+R করে আবার Generate করুন। কোড না এলে শেয়ার করবেন না।"
-              : "Invite did not reach Firebase. Hard refresh, Generate again — do not share until it succeeds.")
+              ? "Invite Firebase-এ যায়নি (OWNER permission)। অ্যাপ বন্ধ করে আবার খুলুন, ইন্টারনেট চেক করে Generate চাপুন। তবু না হলে নতুন APK ইনস্টল করুন।"
+              : "Invite did not reach Firebase (OWNER permission). Force-close the app, check internet, Generate again. If still failing, install the newest APK.")
           : raw || "Invite generation failed";
       setMessage(tip, "error");
     } finally {
