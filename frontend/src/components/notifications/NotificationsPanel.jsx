@@ -25,8 +25,28 @@ function extractInviteCode(item) {
   return match ? match[0].toUpperCase() : "";
 }
 
+function isInviteNotification(item) {
+  const type = String(item?.notification_type || item?.type || "").toUpperCase();
+  return type === "INVITE" || Boolean(extractInviteCode(item));
+}
+
+function isShareableInviteNotification(item) {
+  if (!isInviteNotification(item)) return true;
+  return item?.cloud_ok === true || item?.cloud_published === true;
+}
+
 function shortTime(value, digits, t) {
   if (!value) return t("noDate");
+  try {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, "0");
+      const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return digits(local);
+    }
+  } catch {
+    /* fall through */
+  }
   const cleaned = String(value).replace("T", " ").replace(/\.\d+.*/, "");
   return digits(cleaned);
 }
@@ -213,7 +233,7 @@ export function NotificationsPanel({
               <p className="settings-empty">{t("noNotificationsFound")}</p>
             ) : (
               <div className="notify-feed">
-                {notifications.map((item) => {
+                {notifications.filter(isShareableInviteNotification).map((item) => {
                   const inviteCode = extractInviteCode(item);
                   const isInvite =
                     String(item.notification_type || item.type || "").toUpperCase() === "INVITE" ||

@@ -2644,6 +2644,8 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       notification_type: "INVITE",
       severity: "INFO",
       invite_code: code,
+      cloud_ok: true,
+      cloud_published: true,
     };
     await appendNotification(familyId, inviteNotify);
 

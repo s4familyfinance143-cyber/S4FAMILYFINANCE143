@@ -3,6 +3,15 @@ import { isNativeApp } from "../../lib/runtimeEnv";
 
 function shortTime(value) {
   if (!value) return "";
+  try {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  } catch {
+    /* fall through */
+  }
   return String(value).replace("T", " ").replace(/\.\d+.*/, "").slice(0, 16);
 }
 
@@ -16,6 +25,14 @@ function extractInviteCode(item) {
 function isInviteNotification(item) {
   const type = String(item?.notification_type || item?.type || "").toUpperCase();
   return type === "INVITE" || Boolean(extractInviteCode(item));
+}
+
+/** Hide legacy/local-only invite codes that never reached Firebase. */
+function isShareableInviteNotification(item) {
+  if (!isInviteNotification(item)) return true;
+  if (item?.cloud_ok === true || item?.cloud_published === true) return true;
+  // Old rows without flag — do not show code (avoids expired/fake codes)
+  return false;
 }
 
 /**
@@ -38,7 +55,9 @@ export function NotificationBellDropdown({
 }) {
   const panelRef = useRef(null);
   const unread = notifications.filter((n) => !n.read && !n.is_read);
-  const rows = (unread.length ? unread : notifications).slice(0, 8);
+  const rows = (unread.length ? unread : notifications)
+    .filter(isShareableInviteNotification)
+    .slice(0, 8);
 
   useEffect(() => {
     if (!open) return undefined;

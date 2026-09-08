@@ -283,8 +283,15 @@ export async function publishFamilyInvite({
     throw new Error("Firestore not ready — check internet and try again");
   }
 
-  // Heal membership + OWNER meta before mint (stuck MEMBER / missing shell).
-  let shellError = null;
+  // Ensure profile points at this family so mint rules (profileLinked) can pass.
+  try {
+    const { linkUserFamilyId } = await import("./cloudSync");
+    await linkUserFamilyId(uid, familyId);
+  } catch {
+    /* optional */
+  }
+
+  // Ensure membership exists. Prefer OWNER heal, but MEMBER is enough to mint when profile-linked.
   try {
     await ensureFamilyCloudShell({
       familyId,
@@ -295,47 +302,38 @@ export async function publishFamilyInvite({
       role: "OWNER",
     });
   } catch (shellErr) {
-    shellError = shellErr;
-    console.warn("[S4 Invite] OWNER shell heal failed", shellErr);
-  }
-
-  try {
-    const { linkUserFamilyId } = await import("./cloudSync");
-    await linkUserFamilyId(uid, familyId);
-  } catch {
-    /* profile heal optional */
-  }
-
-  // Extra OWNER reclaim writes (rules allow when profile.family_id matches).
-  try {
-    await setDoc(
-      familyMemberRef(familyId, uid),
-      {
-        uid,
-        email: email || null,
-        display_name: displayName || null,
-        role: "OWNER",
-        status: "ACTIVE",
-        updated_at: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  } catch (err) {
-    console.warn("[S4 Invite] member OWNER reclaim failed", err);
-  }
-  try {
-    await setDoc(
-      familyMetaRef(familyId),
-      {
-        id: familyId,
-        name: familyName || familyId,
-        owner_uid: uid,
-        updated_at: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  } catch (err) {
-    console.warn("[S4 Invite] meta owner reclaim failed", err);
+    console.warn("[S4 Invite] OWNER shell heal failed, trying MEMBER shell", shellErr);
+    try {
+      await setDoc(
+        familyMemberRef(familyId, uid),
+        {
+          uid,
+          email: email || null,
+          display_name: displayName || null,
+          role: "MEMBER",
+          status: "ACTIVE",
+          updated_at: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (memberErr) {
+      try {
+        await setDoc(familyMemberRef(familyId, uid), {
+          uid,
+          email: email || null,
+          display_name: displayName || null,
+          role: "OWNER",
+          status: "ACTIVE",
+          joined_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+      } catch (createErr) {
+        throw new Error(
+          `permission-denied (family membership) — ${createErr?.message || memberErr?.message || shellErr?.message}`,
+          { cause: createErr },
+        );
+      }
+    }
   }
 
   const expiresAt = new Date();
@@ -354,31 +352,31 @@ export async function publishFamilyInvite({
     updated_at: serverTimestamp(),
   };
 
-  async function writeInvite() {
-    await setDoc(inviteRef(key), invitePayload);
-  }
-
   try {
-    await writeInvite();
+    await setDoc(inviteRef(key), invitePayload);
   } catch (invErr) {
-    // One more heal + retry for race / delayed rules propagation
+    // Retry once after forcing profile + member link
     try {
-      await ensureFamilyCloudShell({
-        familyId,
-        uid,
-        email,
-        displayName,
-        familyName: familyName || familyId,
-        role: "OWNER",
-      });
-      await writeInvite();
+      const { linkUserFamilyId } = await import("./cloudSync");
+      await linkUserFamilyId(uid, familyId);
+      await setDoc(
+        familyMemberRef(familyId, uid),
+        {
+          uid,
+          email: email || null,
+          display_name: displayName || null,
+          role: "MEMBER",
+          status: "ACTIVE",
+          updated_at: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      await setDoc(inviteRef(key), invitePayload);
     } catch (retryErr) {
-      const code = retryErr?.code || invErr?.code || "";
       const msg = retryErr?.message || invErr?.message || String(retryErr || invErr);
-      const shellHint = shellError?.message ? ` | shell: ${shellError.message}` : "";
       throw new Error(
-        code === "permission-denied" || /permission/i.test(msg)
-          ? `permission-denied (invite publish) — Firebase OWNER heal failed${shellHint}`
+        /permission/i.test(msg)
+          ? `permission-denied (invite publish) — ${msg}`
           : msg,
         { cause: retryErr },
       );

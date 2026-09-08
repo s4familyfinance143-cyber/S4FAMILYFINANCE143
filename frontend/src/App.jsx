@@ -5792,10 +5792,10 @@ function App() {
       setInviteSpotlightOpen(false);
       const raw = String(err?.message || "");
       const tip =
-        /permission-denied|OWNER shell|invite publish/i.test(raw)
+        /permission-denied|OWNER shell|invite publish|membership/i.test(raw)
           ? (appLanguage === "bn"
-              ? "Invite Firebase-এ যায়নি (OWNER permission)। অ্যাপ বন্ধ করে আবার খুলুন, ইন্টারনেট চেক করে Generate চাপুন। তবু না হলে নতুন APK ইনস্টল করুন।"
-              : "Invite did not reach Firebase (OWNER permission). Force-close the app, check internet, Generate again. If still failing, install the newest APK.")
+              ? "Invite Firebase-এ সেভ হয়নি — এই কোড শেয়ার করবেন না। ইন্টারনেট চেক করে আবার Generate চাপুন। সফল হলে বড় বক্সে কোড আসবে।"
+              : "Invite was not saved to Firebase — do not share. Check internet and Generate again. On success the code appears in the big box.")
           : raw || "Invite generation failed";
       setMessage(tip, "error");
     } finally {

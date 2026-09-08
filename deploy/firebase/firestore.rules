@@ -111,6 +111,14 @@ service cloud.firestore {
         );
     }
 
+    function selfCreateLinkedMember(familyId) {
+      return signedIn()
+        && request.auth.uid == memberId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role in ['MEMBER', 'OWNER']
+        && profileLinkedToFamily(familyId);
+    }
+
     function inviteDoc(code) {
       return get(/databases/$(database)/documents/familyInvites/$(code));
     }
@@ -213,10 +221,11 @@ service cloud.firestore {
           && (
             familyHasNoOwner(familyId)
             || familyOwnerUid(familyId) == request.auth.uid
+            // Linked account for this family may mint even if member role is still MEMBER
+            || profileLinkedToFamily(familyId)
           )
         )
         || (
-          // Linked creator on a brand-new / ownerless family shell
           profileLinkedToFamily(familyId)
           && (
             familyHasNoOwner(familyId)
@@ -265,7 +274,8 @@ service cloud.firestore {
           || (signedIn() && resource.data.uid == request.auth.uid);
 
         allow create: if selfCreateFirstOwner(familyId)
-          || selfCreateViaInvite(familyId);
+          || selfCreateViaInvite(familyId)
+          || selfCreateLinkedMember(familyId);
 
         allow update: if familyOwner(familyId)
           || (familyAdminOrOwner(familyId)
