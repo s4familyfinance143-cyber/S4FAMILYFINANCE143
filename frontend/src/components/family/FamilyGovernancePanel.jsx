@@ -261,8 +261,10 @@ export function FamilyGovernancePanel({
   apiDelete,
   activeFamilyId,
   cloudMode = false,
+  activeTab = null,
+  onTabChange,
 }) {
-  const [tab, setTab] = useState("members");
+  const [tab, setTab] = useState(activeTab || "members");
   const [copied, setCopied] = useState(false);
   const [decidingId, setDecidingId] = useState("");
   const [joinForm, setJoinForm] = useState({ ...EMPTY_JOIN });
@@ -535,13 +537,18 @@ export function FamilyGovernancePanel({
   );
 
   useEffect(() => {
+    if (activeTab) setTab(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!(generatedInvite?.invite_code || generatedInvite?.code)) return;
     setTab("invite");
+    onTabChange?.("invite");
     const id = window.setTimeout(() => {
       document.getElementById("latest-invite-code")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 120);
     return () => window.clearTimeout(id);
-  }, [generatedInvite?.invite_code, generatedInvite?.code]);
+  }, [generatedInvite?.invite_code, generatedInvite?.code, onTabChange]);
 
   const displayInviteCode = String(generatedInvite?.invite_code || generatedInvite?.code || "").trim();
 
@@ -585,7 +592,10 @@ export function FamilyGovernancePanel({
             role="tab"
             aria-selected={tab === key}
             className={tab === key ? "settings-tab active" : "settings-tab"}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              setTab(key);
+              onTabChange?.(key);
+            }}
           >
             {key === "members"
               ? t("members")

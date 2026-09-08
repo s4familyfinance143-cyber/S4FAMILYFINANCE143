@@ -2636,7 +2636,7 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
 
     await writeList(familyId, "family", "invites", [row, ...invites]);
     await appendAudit(familyId, { action: "invite.create", title: code });
-    await appendNotification(familyId, {
+    const inviteNotify = {
       title: "Invite code | আমন্ত্রণ কোড",
       body: `${code} | Share this code to join the family`,
       message: `${code} | এই কোড শেয়ার করে পরিবারে যোগ দিন`,
@@ -2644,8 +2644,33 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       notification_type: "INVITE",
       severity: "INFO",
       invite_code: code,
-    });
-    await after();
+    };
+    await appendNotification(familyId, inviteNotify);
+
+    // Return code to UI immediately — do not block on full cloud sync.
+    // Re-assert notify after sync if a pull wiped the local INVITE row.
+    void (async () => {
+      try {
+        await after();
+      } catch {
+        /* sync optional for display */
+      }
+      try {
+        const rows = await readList(familyId, "system", "notifications", []);
+        const stillThere = rows.some(
+          (n) =>
+            String(n?.invite_code || "").toUpperCase() === code ||
+            String(n?.body || "").includes(code) ||
+            String(n?.message || "").includes(code),
+        );
+        if (!stillThere) {
+          await appendNotification(familyId, inviteNotify);
+        }
+      } catch {
+        /* keep local notify best-effort */
+      }
+    })();
+
     return { handled: true, data: row };
   }
 

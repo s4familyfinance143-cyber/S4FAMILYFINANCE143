@@ -51,6 +51,7 @@ import { TagsPanel } from "./components/finance/TagsPanel";
 import { ArchitectureCutoverPanel } from "./components/finance/ArchitectureCutoverPanel";
 import { BudgetsPanel } from "./components/finance/BudgetsPanel";
 import { FamilyGovernancePanel } from "./components/family/FamilyGovernancePanel";
+import { InviteCodeSpotlight } from "./components/family/InviteCodeSpotlight";
 import { TasksCalendarPanel } from "./components/planner/TasksCalendarPanel";
 import {
   LIFE15,
@@ -450,6 +451,9 @@ function App() {
   const [inviteGenerating, setInviteGenerating] = useState(false);
   const [inviteRevoking, setInviteRevoking] = useState(false);
   const [generatedInvite, setGeneratedInvite] = useState(null);
+  const [inviteSpotlightOpen, setInviteSpotlightOpen] = useState(false);
+  const [inviteCodeCopied, setInviteCodeCopied] = useState(false);
+  const [familyPanelTab, setFamilyPanelTab] = useState("members");
   const [inviteForm, setInviteForm] = useState({
     expires_in_days: "7",
     max_uses: "1",
@@ -2344,6 +2348,8 @@ function App() {
     setCurrencySummary(null);
     setGovernanceMembers([]);
     setGeneratedInvite(null);
+    setInviteSpotlightOpen(false);
+    setFamilyPanelTab("members");
     setNotifications([]);
     setNotificationSummary(null);
     setNotificationDelivery(null);
@@ -2406,6 +2412,8 @@ function App() {
     setCurrencySummary(null);
     setGovernanceMembers([]);
     setGeneratedInvite(null);
+    setInviteSpotlightOpen(false);
+    setFamilyPanelTab("members");
     setNotifications([]);
     setNotificationSummary(null);
     setNotificationDelivery(null);
@@ -5736,35 +5744,50 @@ function App() {
         send_email: Boolean(inviteForm.send_email),
       });
 
-      setGeneratedInvite(data);
-      if (data?.cloud_published === false) {
+      const code = String(data?.invite_code || data?.code || "").trim();
+      if (!code || data?.cloud_published === false) {
         setGeneratedInvite(null);
+        setInviteSpotlightOpen(false);
         setMessage(
-          `${t("inviteLocalOnlyWarn")}${data.cloud_publish_error ? ` (${data.cloud_publish_error})` : ""}`,
+          `${t("inviteLocalOnlyWarn")}${data?.cloud_publish_error ? ` (${data.cloud_publish_error})` : ""}`,
           "warning",
         );
-      } else {
-        const code = data?.invite_code || data?.code || "";
-        setGeneratedInvite({
-          ...data,
-          invite_code: code,
-          code,
-        });
-        setActiveMenu("family");
-        setMessage(
-          appLanguage === "bn"
-            ? `আমন্ত্রণ কোড তৈরি: ${code} — এখনই কপি করে শেয়ার করুন`
-            : `Invite code ready: ${code} — copy and share now`,
-          "success",
+        return;
+      }
+
+      const inviteRow = {
+        ...data,
+        invite_code: code,
+        code,
+      };
+      setGeneratedInvite(inviteRow);
+      setFamilyPanelTab("invite");
+      setInviteSpotlightOpen(true);
+      setActiveMenu("family");
+      try {
+        localStorage.setItem(
+          `s4_last_invite_${activeFamilyId}`,
+          JSON.stringify({ ...inviteRow, saved_at: Date.now() }),
         );
-        try {
-          await loadNotifications();
-        } catch {
-          /* optional */
-        }
+      } catch {
+        /* ignore */
+      }
+      setToast({
+        message:
+          appLanguage === "bn"
+            ? `আমন্ত্রণ কোড: ${code} — নিচের বড় বক্স থেকে কপি করুন`
+            : `Invite code: ${code} — copy from the big box`,
+        type: "success",
+      });
+      window.setTimeout(() => setToast(null), 12000);
+      try {
+        await loadNotifications();
+      } catch {
+        /* optional — spotlight already shows the code */
       }
     } catch (err) {
       setGeneratedInvite(null);
+      setInviteSpotlightOpen(false);
       const raw = String(err?.message || "");
       const tip =
         /permission-denied|OWNER shell/i.test(raw)
@@ -5775,6 +5798,18 @@ function App() {
       setMessage(tip, "error");
     } finally {
       setInviteGenerating(false);
+    }
+  }
+
+  async function copySpotlightInviteCode() {
+    const code = String(generatedInvite?.invite_code || generatedInvite?.code || "").trim();
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setInviteCodeCopied(true);
+      window.setTimeout(() => setInviteCodeCopied(false), 1600);
+    } catch {
+      setInviteCodeCopied(false);
     }
   }
 
@@ -5835,6 +5870,7 @@ function App() {
     try {
       await apiPost(`/invites/${inviteId}/revoke`, {});
       setGeneratedInvite(null);
+      setInviteSpotlightOpen(false);
       setMessage(t("inviteRevoked") || "Invite revoked", "success");
     } catch (err) {
       setMessage(err.message || "Invite revoke failed", "error");
@@ -10465,6 +10501,16 @@ function App() {
         <div className={`toast toast-${toast.type}`}>{toast.message}</div>
       )}
 
+      <InviteCodeSpotlight
+        open={inviteSpotlightOpen}
+        code={String(generatedInvite?.invite_code || generatedInvite?.code || "").trim()}
+        onClose={() => setInviteSpotlightOpen(false)}
+        onCopy={copySpotlightInviteCode}
+        copied={inviteCodeCopied}
+        t={t}
+        language={appLanguage}
+      />
+
       {historyModal.open && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ width: "min(900px, 95vw)", maxHeight: "85vh", overflowY: "auto", background: "#0b1f45", border: "1px solid #23497d", borderRadius: 24, padding: 24, color: "#ffffff" }}>
@@ -11624,6 +11670,8 @@ function App() {
             inviteGenerating={inviteGenerating}
             inviteRevoking={inviteRevoking}
             generatedInvite={generatedInvite}
+            activeTab={familyPanelTab}
+            onTabChange={setFamilyPanelTab}
             onRefresh={async () => {
               await loadFamilyGovernance();
               await loadSettingsData();
