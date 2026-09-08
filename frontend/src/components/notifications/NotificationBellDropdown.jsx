@@ -5,6 +5,18 @@ function shortTime(value) {
   return String(value).replace("T", " ").replace(/\.\d+.*/, "").slice(0, 16);
 }
 
+function extractInviteCode(item) {
+  if (item?.invite_code) return String(item.invite_code).trim();
+  const blob = `${item?.body || ""} ${item?.message || ""} ${item?.title || ""}`;
+  const match = blob.match(/S4-[A-Z0-9]{4,12}/i);
+  return match ? match[0].toUpperCase() : "";
+}
+
+function isInviteNotification(item) {
+  const type = String(item?.notification_type || item?.type || "").toUpperCase();
+  return type === "INVITE" || Boolean(extractInviteCode(item));
+}
+
 /**
  * Compact in-app notification dropdown for the header bell.
  * Always available even when browser push is blocked.
@@ -93,15 +105,25 @@ export function NotificationBellDropdown({
         ) : (
           rows.map((item) => {
             const isUnread = !item.read && !item.is_read;
+            const inviteCode = extractInviteCode(item);
+            const invite = isInviteNotification(item);
             return (
               <button
                 key={item.id}
                 type="button"
-                className={`notify-bell-item ${isUnread ? "is-unread" : ""}`}
+                className={`notify-bell-item ${isUnread ? "is-unread" : ""} ${invite ? "is-invite" : ""}`}
                 onClick={() => onMarkRead?.(item.id)}
               >
-                <span className="notify-bell-item-title">{item.title || item.notification_type || "Alert"}</span>
-                <span className="notify-bell-item-body">{item.body || item.message || ""}</span>
+                <span className="notify-bell-item-title">
+                  {invite
+                    ? t("latestInviteCode") || "Invite code"
+                    : item.title || item.notification_type || "Alert"}
+                </span>
+                {inviteCode ? (
+                  <span className="notify-bell-invite-code">{inviteCode}</span>
+                ) : (
+                  <span className="notify-bell-item-body">{item.body || item.message || ""}</span>
+                )}
                 <span className="notify-bell-item-meta">{shortTime(item.created_at)}</span>
               </button>
             );

@@ -5738,12 +5738,30 @@ function App() {
 
       setGeneratedInvite(data);
       if (data?.cloud_published === false) {
+        setGeneratedInvite(null);
         setMessage(
           `${t("inviteLocalOnlyWarn")}${data.cloud_publish_error ? ` (${data.cloud_publish_error})` : ""}`,
           "warning",
         );
       } else {
-        setMessage(t("inviteGenerated"), "success");
+        const code = data?.invite_code || data?.code || "";
+        setGeneratedInvite({
+          ...data,
+          invite_code: code,
+          code,
+        });
+        setActiveMenu("family");
+        setMessage(
+          appLanguage === "bn"
+            ? `আমন্ত্রণ কোড তৈরি: ${code} — এখনই কপি করে শেয়ার করুন`
+            : `Invite code ready: ${code} — copy and share now`,
+          "success",
+        );
+        try {
+          await loadNotifications();
+        } catch {
+          /* optional */
+        }
       }
     } catch (err) {
       setGeneratedInvite(null);

@@ -373,7 +373,7 @@ export function FamilyGovernancePanel({
   }, [loadTransfers]);
 
   async function copyInviteCode() {
-    const code = generatedInvite?.invite_code;
+    const code = String(generatedInvite?.invite_code || generatedInvite?.code || "").trim();
     if (!code) return;
     try {
       await navigator.clipboard.writeText(code);
@@ -533,6 +533,18 @@ export function FamilyGovernancePanel({
   const pendingTransfers = transfers.filter((row) =>
     ["PENDING", "PENDING_ADMIN", "PENDING_ACCEPT"].includes(String(row.status || "").toUpperCase())
   );
+
+  useEffect(() => {
+    if (!(generatedInvite?.invite_code || generatedInvite?.code)) return;
+    setTab("invite");
+    const id = window.setTimeout(() => {
+      document.getElementById("latest-invite-code")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 120);
+    return () => window.clearTimeout(id);
+  }, [generatedInvite?.invite_code, generatedInvite?.code]);
+
+  const displayInviteCode = String(generatedInvite?.invite_code || generatedInvite?.code || "").trim();
+
   const transferCandidates = governanceMembers.filter((m) => {
     const mid = memberIdOf(m);
     const roleValue = String(m.role || m.member_role || "").toUpperCase();
@@ -1075,13 +1087,17 @@ export function FamilyGovernancePanel({
             </div>
           </div>
 
-          {generatedInvite ? (
-            <div className="settings-block">
+          {displayInviteCode ? (
+            <div className="settings-block invite-success-block" id="latest-invite-code">
               <h4>{t("latestInviteCode")}</h4>
-              <div className="invite-code-card">
+              <p className="budget-hero-sub" style={{ marginBottom: 8 }}>
+                {t("inviteShareNowHint") ||
+                  "Cloud publish OK — copy this code and share now (WhatsApp / SMS). Do not wait for notifications."}
+              </p>
+              <div className="invite-code-card invite-code-card--success">
                 <div className="invite-code-main">
                   <span className="invite-code-label">{t("latestInviteCode")}</span>
-                  <strong className="invite-code-value">{generatedInvite.invite_code}</strong>
+                  <strong className="invite-code-value">{displayInviteCode}</strong>
                   {generatedInvite.invite_link ? (
                     <p className="budget-hero-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>
                       Link: {generatedInvite.invite_link}
@@ -1097,9 +1113,7 @@ export function FamilyGovernancePanel({
                     <TypeChip type="SAVINGS">
                       {t("maxUses")}: {digits(generatedInvite.max_uses)}
                     </TypeChip>
-                    {generatedInvite.invite_channel ? (
-                      <TypeChip type="INCOME">{generatedInvite.invite_channel}</TypeChip>
-                    ) : null}
+                    <TypeChip type="INCOME">CLOUD OK</TypeChip>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1121,7 +1135,10 @@ export function FamilyGovernancePanel({
             </div>
           ) : (
             <div className="settings-block">
-              <p className="settings-empty">{t("generateInvite")}</p>
+              <p className="settings-empty">
+                {t("inviteCodeEmptyHint") ||
+                  "Generate invite — the live code will appear here immediately after success."}
+              </p>
             </div>
           )}
         </div>

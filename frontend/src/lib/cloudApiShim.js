@@ -2601,15 +2601,10 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
       created_at: new Date().toISOString(),
       created_by: currentUser?.email || "owner",
       source: "cloud_local",
+      cloud_published: false,
     };
-    await writeList(familyId, "family", "invites", [row, ...invites]);
-    await appendAudit(familyId, { action: "invite.create", title: code });
-    await appendNotification(familyId, {
-      title: "Invite created",
-      body: code,
-      type: "FAMILY",
-    });
-    // Publish to Firestore so another account can join — local-only codes are useless cross-device.
+
+    // Publish to Firestore FIRST — do not notify / show a joinable code until cloud accepts it.
     try {
       const { publishFamilyInvite } = await import("../firebase/familyCloud");
       const uid = currentUser?.firebase_uid || currentUser?.uid || body.owner_uid;
@@ -2630,6 +2625,7 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
     } catch (err) {
       row.cloud_published = false;
       row.cloud_publish_error = err?.code || err?.message || "publish_failed";
+      row.status = "FAILED";
       await writeList(familyId, "family", "invites", [row, ...invites]);
       await after();
       throw new Error(
@@ -2637,8 +2633,18 @@ export async function cloudApiPost({ familyId, path, body, currentUser, onAfterW
         { cause: err },
       );
     }
-    // Persist publish flags on the invite row
+
     await writeList(familyId, "family", "invites", [row, ...invites]);
+    await appendAudit(familyId, { action: "invite.create", title: code });
+    await appendNotification(familyId, {
+      title: "Invite code | আমন্ত্রণ কোড",
+      body: `${code} | Share this code to join the family`,
+      message: `${code} | এই কোড শেয়ার করে পরিবারে যোগ দিন`,
+      type: "INVITE",
+      notification_type: "INVITE",
+      severity: "INFO",
+      invite_code: code,
+    });
     await after();
     return { handled: true, data: row };
   }

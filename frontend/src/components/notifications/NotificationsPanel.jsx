@@ -14,7 +14,16 @@ const TITLE_BN = {
   DOCUMENT_EXPIRY: "ডকুমেন্ট মেয়াদ",
   SAVINGS_LOW_PROGRESS: "সঞ্চয় অগ্রগতি কম",
   SAVINGS_TARGET_DONE: "সঞ্চয় লক্ষ্য পূরণ",
+  INVITE: "আমন্ত্রণ কোড",
+  FAMILY: "পরিবার",
 };
+
+function extractInviteCode(item) {
+  if (item?.invite_code) return String(item.invite_code).trim();
+  const blob = `${item?.body || ""} ${item?.message || ""} ${item?.title || ""}`;
+  const match = blob.match(/S4-[A-Z0-9]{4,12}/i);
+  return match ? match[0].toUpperCase() : "";
+}
 
 function shortTime(value, digits, t) {
   if (!value) return t("noDate");
@@ -204,11 +213,18 @@ export function NotificationsPanel({
               <p className="settings-empty">{t("noNotificationsFound")}</p>
             ) : (
               <div className="notify-feed">
-                {notifications.map((item) => (
-                  <div className={`notify-card ${item.is_read ? "is-read" : "is-unread"}`} key={item.id}>
+                {notifications.map((item) => {
+                  const inviteCode = extractInviteCode(item);
+                  const isInvite =
+                    String(item.notification_type || item.type || "").toUpperCase() === "INVITE" ||
+                    Boolean(inviteCode);
+                  return (
+                  <div className={`notify-card ${item.is_read ? "is-read" : "is-unread"} ${isInvite ? "is-invite" : ""}`} key={item.id}>
                     <div className="notify-card-main">
                       <div className="audit-feed-tags">
-                        <span className="settings-badge role">{item.notification_type || "ALERT"}</span>
+                        <span className="settings-badge role">
+                          {isInvite ? "INVITE" : item.notification_type || "ALERT"}
+                        </span>
                         <span className={`settings-badge ${severityClass(item.severity)}`}>
                           {item.severity || "INFO"}
                         </span>
@@ -216,11 +232,36 @@ export function NotificationsPanel({
                           {item.is_read ? t("statusRead") : t("statusUnread")}
                         </span>
                       </div>
-                      <strong>{notificationTitle(item, appLanguage)}</strong>
-                      <p>{pickLocalized(item.message, appLanguage)}</p>
+                      <strong>{isInvite ? (t("latestInviteCode") || notificationTitle(item, appLanguage)) : notificationTitle(item, appLanguage)}</strong>
+                      {inviteCode ? (
+                        <>
+                          <p className="notify-invite-code">{inviteCode}</p>
+                          <p className="notify-invite-hint">
+                            {t("inviteNotifyHint") ||
+                              "Share only the newest code from Family → Invite. Older notification codes may already be expired."}
+                          </p>
+                        </>
+                      ) : (
+                        <p>{pickLocalized(item.message || item.body, appLanguage)}</p>
+                      )}
                       <time>{shortTime(item.created_at, digits, t)}</time>
                     </div>
                     <div className="notify-card-actions">
+                      {inviteCode ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(inviteCode);
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                        >
+                          Copy
+                        </button>
+                      ) : null}
                       {!item.is_read ? (
                         <button type="button" className="btn" onClick={() => onMarkRead(item.id)}>
                           {t("read")}
@@ -231,7 +272,8 @@ export function NotificationsPanel({
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -555,6 +555,29 @@ section > h2 {
   background: rgba(29, 158, 117, 0.06);
 }
 
+.notify-bell-item.is-invite {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #059669 10%, var(--surface)),
+    color-mix(in srgb, #0284c7 6%, var(--surface))
+  );
+  border-left: 3px solid #059669;
+}
+
+.notify-bell-invite-code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #065f46;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px dashed color-mix(in srgb, #059669 40%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .notify-bell-item-title {
   font-size: 13px;
   font-weight: 700;
@@ -3465,6 +3488,23 @@ body.mobile-drawer-open .mobile-drawer-backdrop {
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--line));
   background: color-mix(in srgb, var(--primary) 6%, var(--surface));
 }
+.invite-code-card--success {
+  border-color: color-mix(in srgb, #059669 45%, var(--line));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #059669 12%, var(--surface)),
+    color-mix(in srgb, #0ea5e9 6%, var(--surface))
+  );
+  box-shadow: 0 8px 24px rgba(5, 150, 105, 0.12);
+}
+.invite-success-block {
+  scroll-margin-top: 88px;
+}
+.invite-code-card--success .invite-code-value {
+  font-size: clamp(1.5rem, 4vw, 1.85rem);
+  letter-spacing: 0.12em;
+  color: #065f46;
+}
 .invite-code-main {
   min-width: 0;
   flex: 1;
@@ -4201,6 +4241,37 @@ td.amount.minus {
 }
 .notify-card.is-read {
   opacity: 0.88;
+}
+.notify-card.is-invite {
+  border-color: color-mix(in srgb, #059669 40%, var(--line));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #059669 10%, var(--surface)),
+    color-mix(in srgb, #0284c7 5%, var(--surface))
+  );
+}
+.notify-card.is-invite.is-unread {
+  box-shadow: inset 3px 0 0 #059669;
+}
+.notify-invite-code {
+  display: inline-block !important;
+  margin: 6px 0 10px !important;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 1.25rem !important;
+  font-weight: 820 !important;
+  letter-spacing: 0.12em;
+  color: #065f46 !important;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px dashed color-mix(in srgb, #059669 45%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+.notify-invite-hint {
+  margin: 0 0 8px !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  color: #9a3412 !important;
 }
 .notify-card-main {
   min-width: 0;
