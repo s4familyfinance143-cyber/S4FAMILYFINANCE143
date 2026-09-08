@@ -132,7 +132,10 @@ export async function ensureFamilyCloudShell({
       "";
     const existingRole = String(memberSnap.data()?.role || "").toUpperCase();
     const metaOwner = String(metaData.owner_uid || "").trim();
-    const shouldBeOwner = isFirst || (metaOwner && metaOwner === uid);
+    const shouldBeOwner =
+      isFirst ||
+      (metaOwner && metaOwner === uid) ||
+      String(role || "").toUpperCase() === "OWNER";
     const nextRole = shouldBeOwner
       ? "OWNER"
       : existingRole === "OWNER"
@@ -141,6 +144,7 @@ export async function ensureFamilyCloudShell({
     await setDoc(
       familyMemberRef(familyId, uid),
       {
+        uid,
         email: email || memberSnap.data()?.email || null,
         display_name: displayName || memberSnap.data()?.display_name || null,
         role: nextRole,

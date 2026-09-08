@@ -9,8 +9,6 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
-    // Email verify is optional for family use (simpler login / invite).
-    // Kept for optional future hardening; not required for create/join/sync.
     function emailOk() {
       return request.auth.token.email_verified == true;
     }
@@ -20,7 +18,6 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
     }
 
-    // Same as loose — do not block family ops on email verify.
     function familyMember(familyId) {
       return familyMemberLoose(familyId);
     }
@@ -44,19 +41,6 @@ service cloud.firestore {
         .hasOnly(['currency', 'default_currency', 'timezone', 'updated_at', 'name']);
     }
 
-    function familyMetaBootstrapOwner(familyId) {
-      return familyMemberLoose(familyId)
-        && memberRole(familyId) == 'OWNER'
-        && (
-          !('owner_uid' in resource.data)
-          || resource.data.owner_uid == null
-          || resource.data.owner_uid == ''
-        )
-        && request.resource.data.owner_uid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['owner_uid', 'name', 'id', 'created_at', 'updated_at', 'currency', 'default_currency', 'timezone']);
-    }
-
     function familyHasNoOwner(familyId) {
       return !exists(/databases/$(database)/documents/families/$(familyId))
         || !('owner_uid' in get(/databases/$(database)/documents/families/$(familyId)).data)
@@ -66,6 +50,45 @@ service cloud.firestore {
 
     function familyOwnerUid(familyId) {
       return get(/databases/$(database)/documents/families/$(familyId)).data.owner_uid;
+    }
+
+    // Claim / keep OWNER when family has no owner OR meta already points at this uid.
+    function selfClaimOwnerRole(familyId) {
+      return signedIn()
+        && request.auth.uid == memberId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == 'OWNER'
+        && (
+          familyHasNoOwner(familyId)
+          || (
+            exists(/databases/$(database)/documents/families/$(familyId))
+            && familyOwnerUid(familyId) == request.auth.uid
+          )
+        );
+    }
+
+    function familyMetaBootstrapOwner(familyId) {
+      return familyMemberLoose(familyId)
+        && memberRole(familyId) == 'OWNER'
+        && (
+          !('owner_uid' in resource.data)
+          || resource.data.owner_uid == null
+          || resource.data.owner_uid == ''
+          || resource.data.owner_uid == request.auth.uid
+        )
+        && request.resource.data.owner_uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['owner_uid', 'name', 'id', 'created_at', 'updated_at', 'currency', 'default_currency', 'timezone']);
+    }
+
+    // Linked member may refresh meta when they are (or should be) the family owner.
+    function familyMetaOwnerHeal(familyId) {
+      return familyMemberLoose(familyId)
+        && request.resource.data.owner_uid == request.auth.uid
+        && (
+          familyHasNoOwner(familyId)
+          || resource.data.owner_uid == request.auth.uid
+        );
     }
 
     function selfCreateFirstOwner(familyId) {
@@ -141,6 +164,17 @@ service cloud.firestore {
         || familyHasNoOwner(request.resource.data.family_id);
     }
 
+    function canMintInvite(familyId) {
+      return familyAdminOrOwner(familyId)
+        || (
+          familyMemberLoose(familyId)
+          && (
+            familyHasNoOwner(familyId)
+            || familyOwnerUid(familyId) == request.auth.uid
+          )
+        );
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && userFamilyIdCreateOk();
@@ -172,7 +206,8 @@ service cloud.firestore {
 
       allow update: if familyOwner(familyId)
         || (familyAdminOrOwner(familyId) && familySettingsKeysOnly())
-        || familyMetaBootstrapOwner(familyId);
+        || familyMetaBootstrapOwner(familyId)
+        || familyMetaOwnerHeal(familyId);
 
       match /members/{memberId} {
         allow read: if familyMemberLoose(familyId)
@@ -192,14 +227,7 @@ service cloud.firestore {
               && request.auth.uid == memberId
               && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['fcm_token_latest', 'fcm_updated_at', 'updated_at']))
-          // Heal: local session may have written MEMBER first — claim OWNER while family has no owner yet
-          || (
-            signedIn()
-            && request.auth.uid == memberId
-            && request.resource.data.uid == request.auth.uid
-            && request.resource.data.role == 'OWNER'
-            && familyHasNoOwner(familyId)
-          );
+          || selfClaimOwnerRole(familyId);
 
         allow delete: if familyOwner(familyId)
           || (signedIn() && request.auth.uid == memberId);
@@ -227,18 +255,10 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
 
-      // Owner/Admin mint codes. Also allow first family member while owner_uid not set yet
-      // (fixes invite after MEMBER-first bootstrap left family without OWNER role).
       allow create: if signedIn()
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.keys().hasAll(['code', 'family_id', 'owner_uid', 'status'])
-        && (
-          familyAdminOrOwner(request.resource.data.family_id)
-          || (
-            familyMemberLoose(request.resource.data.family_id)
-            && familyHasNoOwner(request.resource.data.family_id)
-          )
-        );
+        && canMintInvite(request.resource.data.family_id);
 
       allow update: if signedIn() && (
         resource.data.owner_uid == request.auth.uid

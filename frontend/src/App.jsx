@@ -5747,7 +5747,14 @@ function App() {
       }
     } catch (err) {
       setGeneratedInvite(null);
-      setMessage(err.message || "Invite generation failed", "error");
+      const raw = String(err?.message || "");
+      const tip =
+        /permission-denied|OWNER shell/i.test(raw)
+          ? (appLanguage === "bn"
+              ? "Invite Firebase-এ যায়নি। Ctrl+Shift+R করে আবার Generate করুন। কোড না এলে শেয়ার করবেন না।"
+              : "Invite did not reach Firebase. Hard refresh, Generate again — do not share until it succeeds.")
+          : raw || "Invite generation failed";
+      setMessage(tip, "error");
     } finally {
       setInviteGenerating(false);
     }
