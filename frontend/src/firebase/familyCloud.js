@@ -434,7 +434,7 @@ export async function joinFamilyByInviteCode({
   if (!familyId) throw new Error("Invite missing family");
 
   // Joiner cannot read families/{id} until membership exists — never block on meta get.
-  let existingMember = null;
+  let existingMember;
   try {
     existingMember = await getDoc(familyMemberRef(familyId, uid));
   } catch {
