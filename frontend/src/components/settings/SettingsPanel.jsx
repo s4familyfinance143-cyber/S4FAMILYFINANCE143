@@ -257,6 +257,12 @@ export function SettingsPanel({
   requestPasswordReset,
   resendVerification,
   emailStatus,
+  onRequestDeleteAccountOtp,
+  onConfirmDeleteAccount,
+  deleteAccountStep = "idle",
+  deleteAccountOtp = "",
+  setDeleteAccountOtp,
+  deleteAccountBusy = false,
   onRefresh,
   apiBase = "",
   onApiBaseChange,
@@ -1136,6 +1142,65 @@ export function SettingsPanel({
                 </div>
                 <p>{t("emailDeliveryHelp")}</p>
               </div>
+            </div>
+
+            <div className="security-row security-row-danger" role="listitem">
+              <div className="security-row-copy">
+                <div className="security-row-title">
+                  <h4>{t("deleteAccountTitle")}</h4>
+                  <span className="security-status-badge warn">{t("deleteAccountBadge")}</span>
+                </div>
+                <p>{t("deleteAccountHelp")}</p>
+                {deleteAccountStep === "otp" ? (
+                  <div className="security-delete-otp" style={{ marginTop: 10 }}>
+                    <label htmlFor="delete-account-otp" className="hint">
+                      {t("deleteAccountOtpLabel")}
+                    </label>
+                    <input
+                      id="delete-account-otp"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={8}
+                      value={deleteAccountOtp}
+                      onChange={(e) => setDeleteAccountOtp?.(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                      placeholder="000000"
+                      style={{ display: "block", marginTop: 6, maxWidth: 160 }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {deleteAccountStep === "otp" ? (
+                <div className="security-row-actions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary security-row-action"
+                    disabled={deleteAccountBusy || String(deleteAccountOtp || "").length < 4}
+                    onClick={() => void onConfirmDeleteAccount?.()}
+                  >
+                    {deleteAccountBusy ? t("deleting") : t("deleteAccountConfirm")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn security-row-action"
+                    disabled={deleteAccountBusy}
+                    onClick={() => void onRequestDeleteAccountOtp?.()}
+                  >
+                    {t("resendOtp") || "Resend OTP"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn security-row-action"
+                  disabled={deleteAccountBusy || securityAction === "delete-account"}
+                  onClick={() => void onRequestDeleteAccountOtp?.()}
+                >
+                  {deleteAccountBusy || securityAction === "delete-account"
+                    ? t("sending")
+                    : t("deleteAccount")}
+                </button>
+              )}
             </div>
           </div>
         </div>

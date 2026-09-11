@@ -85,6 +85,28 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     APP_PUBLIC_URL: str = "http://127.0.0.1:5173"
 
+    # 6-digit OTP (signup + login)
+    OTP_LENGTH: int = 6
+    OTP_TTL_SECONDS: int = 600
+    OTP_MAX_ATTEMPTS: int = 5
+
+    # Mobile channel: WhatsApp preferred when configured, else SMS
+    WHATSAPP_PROVIDER: str | None = None  # meta | twilio
+    WHATSAPP_TOKEN: str | None = None
+    WHATSAPP_PHONE_NUMBER_ID: str | None = None
+    WHATSAPP_TEMPLATE_NAME: str = "otp_verify"
+    WHATSAPP_TEMPLATE_LANG: str = "en"
+    TWILIO_ACCOUNT_SID: str | None = None
+    TWILIO_AUTH_TOKEN: str | None = None
+    TWILIO_WHATSAPP_FROM: str | None = None  # e.g. whatsapp:+14155238886
+    TWILIO_SMS_FROM: str | None = None
+
+    SMS_PROVIDER: str | None = None  # http | twilio
+    SMS_API_URL: str | None = None
+    SMS_API_KEY: str | None = None
+    SMS_SENDER_ID: str | None = None
+    SMS_HTTP_METHOD: str = "POST"
+
     SENTRY_DSN: str | None = None
     SENTRY_ENVIRONMENT: str | None = None
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
@@ -98,7 +120,10 @@ class Settings(BaseSettings):
     S3_BUCKET: str | None = None
     S3_ACCESS_KEY: str | None = None
     S3_SECRET_KEY: str | None = None
-    DOCUMENT_VAULT_BACKEND: str = "auto"  # auto | local | s3
+    DOCUMENT_VAULT_BACKEND: str = "auto"  # auto | local | s3 | gdrive
+    GDRIVE_SERVICE_ACCOUNT_JSON: str | None = None  # path or raw JSON
+    GDRIVE_ROOT_FOLDER_ID: str | None = None
+    GDRIVE_FAMILY_SOFT_CAP_MB: int = 500  # ops guidance / future enforcement
 
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",

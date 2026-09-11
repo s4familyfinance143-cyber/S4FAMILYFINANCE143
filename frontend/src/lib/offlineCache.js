@@ -82,6 +82,16 @@ export async function exportAllOfflineSnapshots(familyId = null) {
   return rows.filter((row) => String(row?.familyId || "") === want);
 }
 
+/** True when IndexedDB has at least one offline snapshot (optionally for one family). */
+export async function hasLocalOfflineData(familyId = null) {
+  try {
+    const rows = await exportAllOfflineSnapshots(familyId);
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 const MERGEABLE_LIST_MODULES = new Set([
   "finance",
   "family",

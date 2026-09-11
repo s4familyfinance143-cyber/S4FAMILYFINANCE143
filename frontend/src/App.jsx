@@ -19,7 +19,7 @@ import {
   listPendingOutbox,
   mergePullIntoGroceryState,
 } from "./lib/offlineSync";
-import { loadOfflineSnapshot, saveOfflineSnapshot } from "./lib/offlineCache";
+import { loadOfflineSnapshot, saveOfflineSnapshot, hasLocalOfflineData } from "./lib/offlineCache";
 import { defaultPermissionsForRole, applyPermissionOverrides } from "./lib/familyRoles";
 import {
   cacheReportExport,
@@ -373,6 +373,9 @@ function App() {
   const [settingsTab, setSettingsTab] = useState("profile");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [securityAction, setSecurityAction] = useState("");
+  const [deleteAccountStep, setDeleteAccountStep] = useState("idle");
+  const [deleteAccountOtp, setDeleteAccountOtp] = useState("");
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null);
   const [permissionForms, setPermissionForms] = useState({});
   const [permissionSavingMemberId, setPermissionSavingMemberId] = useState("");
@@ -390,6 +393,7 @@ function App() {
   const [showBackupOnboarding, setShowBackupOnboarding] = useState(false);
   const cloudAutoSyncRef = useRef(cloudAutoSync);
   const cloudAutoBackupRunningRef = useRef(false);
+  const driveConnectSyncOnceRef = useRef(false);
 
   const [dashboard, setDashboard] = useState(null);
   const [wallets, setWallets] = useState([]);
@@ -1098,16 +1102,6 @@ function App() {
 
   async function handleOnboardingDriveConnect() {
     await handleDriveConnect();
-    if (getStoredDriveToken()) {
-      const next = saveCloudAutoSyncSettings({
-        ...cloudAutoSyncRef.current,
-        enabled: true,
-        drive: true,
-        firebase: true,
-      });
-      setCloudAutoSync(next);
-      cloudAutoSyncRef.current = next;
-    }
   }
 
   async function handleOnboardingPickFolder() {
@@ -1734,13 +1728,91 @@ function App() {
     }
   }
 
+  function enableDriveAutoSyncDefaults() {
+    const next = saveCloudAutoSyncSettings({
+      ...cloudAutoSyncRef.current,
+      enabled: true,
+      drive: true,
+      intervalMinutes: cloudAutoSyncRef.current?.intervalMinutes || 15,
+    });
+    setCloudAutoSync(next);
+    cloudAutoSyncRef.current = next;
+  }
+
+  async function applyDriveBackupRestore(driveToken, fileId) {
+    const blob = await downloadDriveBackup(driveToken, fileId);
+    const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
+    if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
+    if (token && (activeFamilyId || result.familyId)) await loadDashboard();
+    return result;
+  }
+
+  async function uploadDriveBackupNow(driveToken) {
+    const familyId = activeFamilyId || loadCloudFamilyId() || null;
+    const { blob, fileName } = await buildBackupBlob(familyId, SYNC_DEVICE_ID);
+    await uploadBackupToDrive(driveToken, fileName, blob);
+    return fileName;
+  }
+
+  /**
+   * After Connect (or session with existing Drive token):
+   * - empty local + Drive backup → auto restore
+   * - local data + Drive backup → confirm overwrite (Connect only)
+   * - local data + no Drive file → auto upload
+   * Always enables Drive auto-backup settings.
+   */
+  async function maybeSyncDriveAfterConnect({ quiet = false, allowConflictPrompt = !quiet } = {}) {
+    if (!DRIVE_CONFIGURED || !getStoredDriveToken()) return { ok: false, reason: "not_connected" };
+    enableDriveAutoSyncDefaults();
+
+    const driveToken = await getDriveAccessToken();
+    const files = await listDriveBackups(driveToken, 1);
+    setDriveFiles(files);
+    setDriveConnected(true);
+
+    const localHasData = await hasLocalOfflineData(activeFamilyId || loadCloudFamilyId() || null);
+    const latest = files[0] || null;
+
+    if (latest && !localHasData) {
+      const result = await applyDriveBackupRestore(driveToken, latest.id);
+      if (!quiet) setMessage(`${t("driveAutoRestored")} (${result.restored})`, "success");
+      return { ok: true, action: "auto_restore", restored: result.restored };
+    }
+
+    if (latest && localHasData) {
+      if (!allowConflictPrompt) {
+        return { ok: true, action: "skipped_conflict" };
+      }
+      const overwrite = window.confirm(t("driveRestoreConflictConfirm"));
+      if (overwrite) {
+        const result = await applyDriveBackupRestore(driveToken, latest.id);
+        if (!quiet) setMessage(`${t("driveRestoreSuccess")} (${result.restored})`, "success");
+        return { ok: true, action: "confirm_restore", restored: result.restored };
+      }
+      const fileName = await uploadDriveBackupNow(driveToken);
+      await refreshDriveFileList();
+      if (!quiet) setMessage(`${t("driveUploadSuccess")} (${fileName})`, "success");
+      return { ok: true, action: "kept_local_uploaded", fileName };
+    }
+
+    if (!latest && localHasData) {
+      const fileName = await uploadDriveBackupNow(driveToken);
+      await refreshDriveFileList();
+      if (!quiet) setMessage(`${t("driveAutoBackupStarted")} (${fileName})`, "success");
+      return { ok: true, action: "auto_upload", fileName };
+    }
+
+    if (!quiet) setMessage(t("driveConnected"), "success");
+    return { ok: true, action: "connected_empty" };
+  }
+
   async function handleDriveConnect() {
     setCloudBusy(true);
     try {
       await connectGoogleDrive({ prompt: "consent" });
       setDriveConnected(true);
-      await refreshDriveFileList();
-      setMessage(t("driveConnected"), "success");
+      driveConnectSyncOnceRef.current = true;
+      await maybeSyncDriveAfterConnect({ quiet: false });
     } catch (err) {
       setMessage(err.message || t("driveBackupFailed"), "error");
     } finally {
@@ -1752,16 +1824,17 @@ function App() {
     clearStoredDriveToken();
     setDriveConnected(false);
     setDriveFiles([]);
+    driveConnectSyncOnceRef.current = false;
     setMessage(t("driveDisconnect"), "success");
   }
 
   async function handleDriveUpload() {
     setCloudBusy(true);
     try {
-      const token = await getDriveAccessToken();
-      const { blob, fileName } = await buildBackupBlob(activeFamilyId, SYNC_DEVICE_ID);
-      await uploadBackupToDrive(token, fileName, blob);
+      const tokenDrive = await getDriveAccessToken();
+      const fileName = await uploadDriveBackupNow(tokenDrive);
       await refreshDriveFileList();
+      enableDriveAutoSyncDefaults();
       setMessage(`${t("driveUploadSuccess")} (${fileName})`, "success");
     } catch (err) {
       setMessage(err.message || t("driveBackupFailed"), "error");
@@ -1777,11 +1850,8 @@ function App() {
       const driveToken = await getDriveAccessToken();
       const files = await listDriveBackups(driveToken, 1);
       if (!files.length) throw new Error(t("driveNoFiles"));
-      const blob = await downloadDriveBackup(driveToken, files[0].id);
-      const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
-      if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
+      const result = await applyDriveBackupRestore(driveToken, files[0].id);
       setMessage(`${t("driveRestoreSuccess")} (${result.restored})`, "success");
-      if (token && (activeFamilyId || result.familyId)) await loadDashboard();
     } catch (err) {
       setMessage(err.message || t("driveBackupFailed"), "error");
     } finally {
@@ -3400,24 +3470,55 @@ function App() {
       });
 
       const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.detail || "Password reset request failed");
-      }
-
-      const delivery = data.email_delivery;
-      if (delivery?.sent) {
-        setMessage(data.message || t("emailSent"), "success");
-      } else {
-        setMessage(
-          `${data.message || t("emailNotSent")}${delivery?.reason ? ` (${delivery.reason})` : ""}`,
-          delivery ? "warning" : "success"
-        );
-      }
+      if (!res.ok) throw new Error(data.detail || t("passwordResetFailed") || "Password reset failed");
+      setMessage(t("emailSent") || data.message || "Password reset email sent", "success");
     } catch (err) {
-      setMessage(err.message || "Password reset request failed", "error");
+      setMessage(err.message || t("passwordResetFailed") || "Password reset failed", "error");
     } finally {
       setSecurityAction("");
+    }
+  }
+
+  async function requestDeleteAccountOtp() {
+    if (cloudOnlyMode && !token) {
+      setMessage(t("loginRequired") || "Sign in with the app account to delete.", "error");
+      return;
+    }
+    if (deleteAccountStep !== "otp") {
+      if (!window.confirm(t("deleteAccountConfirmPrompt"))) return;
+    }
+    setDeleteAccountBusy(true);
+    setSecurityAction("delete-account");
+    try {
+      const data = await apiPost("/auth/me/delete/request-otp", {});
+      setDeleteAccountStep("otp");
+      setDeleteAccountOtp("");
+      setMessage(data?.message || t("emailSent") || "OTP sent", "success");
+    } catch (err) {
+      setMessage(err.message || "Could not send OTP", "error");
+    } finally {
+      setDeleteAccountBusy(false);
+      setSecurityAction("");
+    }
+  }
+
+  async function confirmDeleteAccount() {
+    const code = String(deleteAccountOtp || "").trim();
+    if (code.length < 4) {
+      setMessage(t("deleteAccountOtpLabel"), "error");
+      return;
+    }
+    setDeleteAccountBusy(true);
+    try {
+      const data = await apiPost("/auth/me/delete/confirm", { otp: code });
+      setMessage(data?.message || t("deleteAccountSuccess"), "success");
+      setDeleteAccountStep("idle");
+      setDeleteAccountOtp("");
+      await logout();
+    } catch (err) {
+      setMessage(err.message || t("deleteAccount") || "Delete failed", "error");
+    } finally {
+      setDeleteAccountBusy(false);
     }
   }
 
@@ -9994,6 +10095,28 @@ function App() {
     cloudAutoSyncRef.current = cloudAutoSync;
   }, [cloudAutoSync]);
 
+  // If Drive token still valid this session, sync once after family is known.
+  useEffect(() => {
+    if (!DRIVE_CONFIGURED || !getStoredDriveToken()) return undefined;
+    if (driveConnectSyncOnceRef.current) return undefined;
+    if (cloudBusy) return undefined;
+    driveConnectSyncOnceRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (cancelled) return;
+        setDriveConnected(true);
+        await maybeSyncDriveAfterConnect({ quiet: true, allowConflictPrompt: false });
+      } catch {
+        driveConnectSyncOnceRef.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFamilyId, token, firebaseUser?.uid]);
+
   useEffect(() => {
     const settingsTabKey = parseSettingsTab(activeMenu);
     if (settingsTabKey && ["profile", "family", "permissions", "security", "cloud"].includes(settingsTabKey)) {
@@ -12298,6 +12421,12 @@ function App() {
             requestPasswordReset={requestPasswordReset}
             resendVerification={resendVerification}
             emailStatus={emailStatus}
+            onRequestDeleteAccountOtp={requestDeleteAccountOtp}
+            onConfirmDeleteAccount={confirmDeleteAccount}
+            deleteAccountStep={deleteAccountStep}
+            deleteAccountOtp={deleteAccountOtp}
+            setDeleteAccountOtp={setDeleteAccountOtp}
+            deleteAccountBusy={deleteAccountBusy}
             onRefresh={() => {
               loadSettingsData();
               if (settingsTab === "permissions" || parseSettingsTab(activeMenu) === "permissions") {

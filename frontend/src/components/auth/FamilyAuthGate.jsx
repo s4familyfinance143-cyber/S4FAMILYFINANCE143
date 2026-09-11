@@ -205,6 +205,7 @@ const MODE_META = {
   createFamily: { ico: "👑", key: "btnCreate" },
   join: { ico: "🔗", key: "btnJoin" },
   forgot: { ico: "🔓", key: "btnPassword" },
+  verifyOtp: { ico: "🔢", key: "btnLogin" },
 };
 
 function passwordStrength(pw) {
@@ -347,7 +348,7 @@ export function FamilyAuthGate({
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang];
   const useCloudAuth = Boolean(firebaseFirstMode);
-  const [view, setView] = useState("login"); // login | createFamily | join | forgot
+  const [view, setView] = useState("login"); // login | createFamily | join | forgot | verifyOtp
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -360,6 +361,10 @@ export function FamilyAuthGate({
   const [currency, setCurrency] = useState("BDT");
   const [timezone, setTimezone] = useState("Asia/Dhaka");
   const [inviteCode, setInviteCode] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [loginMethod, setLoginMethod] = useState("password");
+  const [pendingAfterVerify, setPendingAfterVerify] = useState(null);
+  const [otpHint, setOtpHint] = useState("");
   const [joinRelation, setJoinRelation] = useState("Wife");
   const [relationshipSerial, setRelationshipSerial] = useState("");
   const [serialLabel, setSerialLabel] = useState("");
@@ -417,40 +422,229 @@ export function FamilyAuthGate({
     });
     let loginData = await parseJson(loginRes);
 
+    if (loginRes.ok) {
+      return {
+        access: loginData.access_token || loginData.data?.access_token,
+        refresh: loginData.refresh_token || loginData.data?.refresh_token || "",
+      };
+    }
+
+    const loginDetail = apiError(loginData, "");
+    if (String(loginDetail).toLowerCase().includes("verification")) {
+      setPendingAfterVerify(view === "join" ? "join" : "createFamily");
+      setView("verifyOtp");
+      setOtpHint(lang === "bn" ? "আগে OTP দিয়ে অ্যাকাউন্ট ভেরিফাই করুন" : "Verify your account with OTP first");
+      return { needsOtp: true };
+    }
+
+    if (!fullName.trim()) {
+      throw new Error(apiError(loginData, t("emailPasswordRequired")));
+    }
+    if (!phone.trim()) {
+      throw new Error(lang === "bn" ? "মোবাইল নম্বর প্রয়োজন (*)" : "Phone number is required (*)");
+    }
+
+    const regRes = await fetch(`${apiBase}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password,
+      }),
+    });
+    const regData = await parseJson(regRes);
+    if (regRes.status === 201 && (regData.verification_required || Array.isArray(regData.delivered_via))) {
+      const via = Array.isArray(regData.delivered_via) ? regData.delivered_via.join(", ") : "";
+      setOtpHint(
+        lang === "bn"
+          ? `৬-অঙ্কের OTP পাঠানো হয়েছে${via ? ` (${via})` : ""} — ইমেইল ও মোবাইল চেক করুন`
+          : `6-digit OTP sent${via ? ` via ${via}` : ""} — check email and mobile`,
+      );
+      setPendingAfterVerify(view === "join" ? "join" : "createFamily");
+      setView("verifyOtp");
+      setOtpCode("");
+      return { needsOtp: true };
+    }
+    if (!regRes.ok && regRes.status !== 409) {
+      throw new Error(apiError(regData, "Register failed"));
+    }
+
+    loginRes = await fetch(`${apiBase}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    loginData = await parseJson(loginRes);
     if (!loginRes.ok) {
-      if (!fullName.trim()) {
-        throw new Error(apiError(loginData, t("emailPasswordRequired")));
+      const detail = apiError(loginData, "Login failed");
+      if (String(detail).toLowerCase().includes("verification")) {
+        setPendingAfterVerify(view === "join" ? "join" : "createFamily");
+        setView("verifyOtp");
+        return { needsOtp: true };
       }
-      const regRes = await fetch(`${apiBase}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: fullName.trim(),
-          email: email.trim(),
-          phone: phone.trim() || null,
-          password,
-        }),
-      });
-      const regData = await parseJson(regRes);
-      if (!regRes.ok && regRes.status !== 409) {
-        throw new Error(apiError(regData, "Register failed"));
-      }
-      loginRes = await fetch(`${apiBase}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email: email.trim(), password }),
-      });
-      loginData = await parseJson(loginRes);
-      if (!loginRes.ok) {
-        throw new Error(apiError(loginData, "Login failed"));
-      }
+      throw new Error(detail);
     }
 
     return {
       access: loginData.access_token || loginData.data?.access_token,
       refresh: loginData.refresh_token || loginData.data?.refresh_token || "",
     };
+  }
+
+  async function completeFamilyAfterAuth(access, refresh) {
+    if (pendingAfterVerify === "join") {
+      const body = buildJoinInvitePayload({
+        invite_code: inviteCode.trim().toUpperCase(),
+        relationship_type: joinRelation,
+        relationship_serial: relationshipSerial,
+        serial_label: serialLabel,
+        linked_member_id: linkedMemberId,
+        relationship_note: relationshipNote,
+      });
+      const res = await fetch(`${apiBase}/invites/join`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${access}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await parseJson(res);
+      if (!res.ok) throw new Error(apiError(data, t("joinFailedGate")));
+      onAuthenticated(access, refresh);
+      setMessage(t("joinRequestedGate"), "success");
+      setPendingAfterVerify(null);
+      setView("login");
+      return;
+    }
+
+    if (pendingAfterVerify === "createFamily" || familyName.trim()) {
+      const res = await fetch(`${apiBase}/families`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${access}`,
+        },
+        body: JSON.stringify({
+          name: familyName.trim(),
+          default_currency: currency.trim() || "BDT",
+          timezone: timezone.trim() || "Asia/Dhaka",
+          relationship_type: ownerRelation,
+        }),
+      });
+      const data = await parseJson(res);
+      if (!res.ok) throw new Error(apiError(data, t("familyCreateFailed")));
+      onAuthenticated(access, refresh);
+      setMessage(t("familyCreatedGate"), "success");
+      setPendingAfterVerify(null);
+      setView("login");
+      return;
+    }
+
+    onAuthenticated(access, refresh);
+    setMessage(t("loginSuccessful"), "success");
+    setPendingAfterVerify(null);
+    setView("login");
+  }
+
+  async function handleVerifyOtp(e) {
+    e?.preventDefault?.();
+    if (!email.trim() || !otpCode.trim()) {
+      setMessage(lang === "bn" ? "ইমেইল ও OTP দিন" : "Enter email and OTP", "error");
+      return;
+    }
+    setAuthLoading(true);
+    setStatus(lang === "bn" ? "OTP যাচাই হচ্ছে…" : "Verifying OTP…");
+    try {
+      const useLoginOtp = pendingAfterVerify === "login";
+      const res = await fetch(`${apiBase}${useLoginOtp ? "/auth/login/verify-otp" : "/auth/verify-otp"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: email.trim(), otp: otpCode.trim() }),
+      });
+      const data = await parseJson(res);
+      if (!res.ok) throw new Error(apiError(data, "OTP verify failed"));
+      const access = data.access_token || data.data?.access_token;
+      const refresh = data.refresh_token || data.data?.refresh_token || "";
+      if (!access) throw new Error("OTP verify failed — no token");
+      if (pendingAfterVerify === "createFamily" || pendingAfterVerify === "join") {
+        await completeFamilyAfterAuth(access, refresh);
+      } else {
+        onAuthenticated(access, refresh);
+        setMessage(t("loginSuccessful"), "success");
+        setPendingAfterVerify(null);
+        setView("login");
+      }
+      setOtpCode("");
+      setStatus("");
+    } catch (error) {
+      setMessage(formatFetchError(error, lang), "error");
+      setStatus("");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleResendOtp() {
+    if (!email.trim()) return;
+    setAuthLoading(true);
+    try {
+      const useLogin = pendingAfterVerify === "login";
+      const res = await fetch(`${apiBase}${useLogin ? "/auth/login/request-otp" : "/auth/resend-otp"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await parseJson(res);
+      if (!res.ok) throw new Error(apiError(data, "Resend failed"));
+      const via = Array.isArray(data.delivered_via) ? data.delivered_via.join(", ") : "";
+      setMessage(
+        lang === "bn" ? `OTP আবার পাঠানো হয়েছে${via ? ` (${via})` : ""}` : `OTP resent${via ? ` via ${via}` : ""}`,
+        "success",
+      );
+    } catch (error) {
+      setMessage(formatFetchError(error, lang), "error");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLoginOtpRequest(e) {
+    e?.preventDefault?.();
+    if (!email.trim()) {
+      setMessage(t("emailPasswordRequired"), "error");
+      return;
+    }
+    setAuthLoading(true);
+    setStatus(lang === "bn" ? "OTP পাঠানো হচ্ছে…" : "Sending OTP…");
+    try {
+      const res = await fetch(`${apiBase}/auth/login/request-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await parseJson(res);
+      if (!res.ok) throw new Error(apiError(data, "OTP request failed"));
+      setPendingAfterVerify("login");
+      setView("verifyOtp");
+      setOtpCode("");
+      const via = Array.isArray(data.delivered_via) ? data.delivered_via.join(", ") : "";
+      setOtpHint(
+        lang === "bn"
+          ? `লগইন OTP পাঠানো হয়েছে${via ? ` (${via})` : ""}`
+          : `Login OTP sent${via ? ` via ${via}` : ""}`,
+      );
+      setStatus("");
+    } catch (error) {
+      setMessage(formatFetchError(error, lang), "error");
+      setStatus("");
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
   function requireMobileApiBase() {
@@ -527,7 +721,7 @@ export function FamilyAuthGate({
 
   async function handleCreateFamily(e) {
     e?.preventDefault?.();
-    if (!fullName.trim() || !email.trim() || !password || !familyName.trim()) {
+    if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !familyName.trim()) {
       setMessage(t("familyGateFieldsRequired"), "error");
       return;
     }
@@ -558,6 +752,14 @@ export function FamilyAuthGate({
     setStatus(t("creatingFamilyGate"));
     try {
       const session = await ensureSession();
+      if (session?.needsOtp) {
+        setStatus("");
+        setMessage(
+          lang === "bn" ? "OTP পাঠানো হয়েছে — কোড দিন" : "OTP sent — enter the code",
+          "success",
+        );
+        return;
+      }
       const res = await fetch(`${apiBase}/families`, {
         method: "POST",
         headers: {
@@ -588,7 +790,7 @@ export function FamilyAuthGate({
 
   async function handleJoinFamily(e) {
     e?.preventDefault?.();
-    if (!fullName.trim() || !email.trim() || !password || !inviteCode.trim()) {
+    if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !inviteCode.trim()) {
       setMessage(t("joinGateFieldsRequired"), "error");
       return;
     }
@@ -617,6 +819,14 @@ export function FamilyAuthGate({
     setStatus(t("joiningFamilyGate"));
     try {
       const session = await ensureSession();
+      if (session?.needsOtp) {
+        setStatus("");
+        setMessage(
+          lang === "bn" ? "OTP পাঠানো হয়েছে — কোড দিন" : "OTP sent — enter the code",
+          "success",
+        );
+        return;
+      }
       const body = buildJoinInvitePayload({
         invite_code: inviteCode.trim().toUpperCase(),
         relationship_type: joinRelation,
@@ -734,7 +944,7 @@ export function FamilyAuthGate({
       <div className="shell">
         <div className="formside">
           <div className="stagearea">
-            {view === "login" || view === "forgot" ? (
+            {view === "login" || view === "forgot" || view === "verifyOtp" ? (
               <div className="card">
                 <div className="top-row">
                   <select
@@ -806,9 +1016,29 @@ export function FamilyAuthGate({
                 ) : null}
 
                 {view === "login" ? (
-                  <form onSubmit={handleLogin}>
+                  <form onSubmit={loginMethod === "otp" ? handleLoginOtpRequest : handleLogin}>
+                    <div className="row-between" style={{ marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className={`link${loginMethod === "password" ? "" : ""}`}
+                        disabled={authLoading}
+                        onClick={() => setLoginMethod("password")}
+                        style={{ fontWeight: loginMethod === "password" ? 700 : 400 }}
+                      >
+                        {lang === "bn" ? "পাসওয়ার্ড" : "Password"}
+                      </button>
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={authLoading}
+                        onClick={() => setLoginMethod("otp")}
+                        style={{ fontWeight: loginMethod === "otp" ? 700 : 400 }}
+                      >
+                        OTP
+                      </button>
+                    </div>
                     <div className="field">
-                      <label>{L.lblEmail}</label>
+                      <label>{L.lblEmail} *</label>
                       <div className="input-wrap">
                         <span className="input-icon">✉️</span>
                         <input
@@ -822,29 +1052,37 @@ export function FamilyAuthGate({
                         />
                       </div>
                     </div>
-                    <div className="field">
-                      <label>{L.lblPassword}</label>
-                      <div className="input-wrap">
-                        <span className="input-icon">🔒</span>
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="••••••••••••"
-                          value={password}
-                          disabled={authLoading}
-                          autoComplete="current-password"
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                        />
-                        <button
-                          type="button"
-                          className="toggle-eye"
-                          disabled={authLoading}
-                          onClick={() => setShowPassword((v) => !v)}
-                        >
-                          {showPassword ? L.hide : L.show}
-                        </button>
+                    {loginMethod === "password" ? (
+                      <div className="field">
+                        <label>{L.lblPassword} *</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">🔒</span>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••••••"
+                            value={password}
+                            disabled={authLoading}
+                            autoComplete="current-password"
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="toggle-eye"
+                            disabled={authLoading}
+                            onClick={() => setShowPassword((v) => !v)}
+                          >
+                            {showPassword ? L.hide : L.show}
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="info-box">
+                        {lang === "bn"
+                          ? "OTP ইমেইল ও WhatsApp/SMS-এ যাবে (৬ সংখ্যা)।"
+                          : "OTP goes to email and WhatsApp/SMS (6 digits)."}
+                      </div>
+                    )}
                     <div className="row-between">
                       <label className="remember">
                         <input
@@ -860,10 +1098,77 @@ export function FamilyAuthGate({
                       </button>
                     </div>
                     <button type="submit" className="btn-primary" disabled={authLoading}>
-                      {authLoading ? t("signingIn") : L.btnLoginSubmit}
+                      {authLoading
+                        ? t("signingIn")
+                        : loginMethod === "otp"
+                          ? lang === "bn"
+                            ? "OTP পাঠান"
+                            : "Send OTP"
+                          : L.btnLoginSubmit}
                     </button>
                     <div className="rate-note">{L.rateNote}</div>
                   </form>
+                ) : view === "verifyOtp" ? (
+                  <>
+                    <div className="info-box">
+                      {otpHint ||
+                        (lang === "bn"
+                          ? "ইমেইল ও মোবাইলে পাঠানো ৬-অঙ্কের OTP দিন। ভেরিফাই ছাড়া লগইন হবে না।"
+                          : "Enter the 6-digit OTP sent to email and mobile. No login without verification.")}
+                    </div>
+                    <form onSubmit={handleVerifyOtp}>
+                      <div className="field">
+                        <label>{L.lblEmail} *</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">✉️</span>
+                          <input type="email" value={email} disabled={authLoading} onChange={(e) => setEmail(e.target.value)} required />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label>OTP *</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">🔢</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]{6}"
+                            maxLength={6}
+                            placeholder="••••••"
+                            value={otpCode}
+                            disabled={authLoading}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" className="btn-primary" disabled={authLoading}>
+                        {authLoading
+                          ? lang === "bn"
+                            ? "যাচাই হচ্ছে…"
+                            : "Verifying…"
+                          : lang === "bn"
+                            ? "OTP নিশ্চিত করুন"
+                            : "Confirm OTP"}
+                      </button>
+                      <div className="footer-note" style={{ marginTop: 12 }}>
+                        <button type="button" className="link" disabled={authLoading} onClick={handleResendOtp}>
+                          {lang === "bn" ? "OTP আবার পাঠান" : "Resend OTP"}
+                        </button>
+                        {" · "}
+                        <button
+                          type="button"
+                          className="link"
+                          disabled={authLoading}
+                          onClick={() => {
+                            setView(pendingAfterVerify === "join" ? "join" : pendingAfterVerify === "createFamily" ? "createFamily" : "login");
+                            setOtpCode("");
+                          }}
+                        >
+                          {L.backToLogin}
+                        </button>
+                      </div>
+                    </form>
+                  </>
                 ) : (
                   <>
                     <div className="info-box">{L.resetInfo}</div>
@@ -907,7 +1212,7 @@ export function FamilyAuthGate({
                   </div>
                 ) : null}
 
-                {view !== "login" && view !== "forgot" ? (
+                {view !== "login" && view !== "forgot" && view !== "verifyOtp" ? (
                 <StepIndicator active={stepActive} labels={L} />
                 ) : null}
                 {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}
@@ -1010,10 +1315,10 @@ export function FamilyAuthGate({
                           </div>
                         </div>
                         <div className="field">
-                          <label>{L.lblPhone}</label>
+                          <label>{L.lblPhone} *</label>
                           <div className="input-wrap">
                             <span className="input-icon">📱</span>
-                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
+                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} required />
                           </div>
                         </div>
                         <div className="field">
@@ -1167,10 +1472,10 @@ export function FamilyAuthGate({
                           </div>
                         </div>
                         <div className="field">
-                          <label>{L.lblPhone}</label>
+                          <label>{L.lblPhone} *</label>
                           <div className="input-wrap">
                             <span className="input-icon">📱</span>
-                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} />
+                            <input type="tel" value={phone} disabled={authLoading} onChange={(e) => setPhone(e.target.value)} required />
                           </div>
                         </div>
                         <div className="field">

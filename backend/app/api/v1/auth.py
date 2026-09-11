@@ -11,21 +11,27 @@ from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.core.security import create_access_token, hash_password, verify_password
 from app.core.auth_cookies import clear_refresh_cookie, read_refresh_token, set_refresh_cookie
-from app.core.field_encryption import encrypt_field
+from app.core.field_encryption import decrypt_field, encrypt_field
 from app.models.user import User
 from app.models.family_member import FamilyMember
 from app.schemas.auth import (
     AuthTokenResponse,
+    DeleteAccountConfirmRequest,
     EmailStatusResponse,
     EmailVerifyRequest,
     EmailVerifyResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    LoginOtpRequest,
     LogoutRequest,
     MessageResponse,
+    OtpRequestResponse,
+    OtpVerifyRequest,
     RefreshTokenRequest,
+    RegisterPendingResponse,
     ResendEmailVerificationRequest,
     ResendEmailVerificationResponse,
+    ResendOtpRequest,
     ResetPasswordRequest,
     UserLoginRequest,
     UserRegisterRequest,
@@ -56,8 +62,12 @@ from app.services.email_service import (
     send_password_reset_email,
     smtp_status,
 )
+from app.services.otp_delivery import can_deliver_otp, send_otp_to_channels
+from app.services.otp_service import issue_otp, verify_otp
+from app.services.sms_service import mobile_channel_status, normalize_bd_phone
 from app.core.rate_limit import (
     AUTH_LOGIN_LIMIT,
+    AUTH_OTP_LIMIT,
     AUTH_PASSWORD_EMAIL_LIMIT,
     AUTH_REGISTER_LIMIT,
     limiter,
@@ -137,7 +147,45 @@ def to_user_response(user: User) -> UserResponse:
     return base.model_copy(update={"avatar_url": avatar_url_for(user.id), "phone": phone})
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def user_fully_verified(user: User) -> bool:
+    return bool(user.is_email_verified) and bool(getattr(user, "is_phone_verified", False))
+
+
+def issue_auth_tokens(db: Session, user: User, request: Request, response: Response) -> AuthTokenResponse:
+    AuthSecurityService.record_successful_login(user, ip_address=get_client_ip(request))
+    try:
+        from app.services.architecture_bridge import ensure_user_preference
+
+        ensure_user_preference(db, user)
+    except Exception:
+        pass
+
+    device_label = get_device_label(request)
+    bundle = AuthSecurityService.create_refresh_session(
+        db,
+        user_id=user.id,
+        user_agent=get_user_agent(request),
+        ip_address=get_client_ip(request),
+        device_label=device_label,
+    )
+    family_id, role = primary_family_claims(db, user.id)
+    access_token = create_access_token(
+        subject=user.id,
+        user_id=user.id,
+        family_id=family_id,
+        role=role,
+    )
+    db.commit()
+    db.refresh(user)
+    set_refresh_cookie(response, bundle.refresh_token)
+    return AuthTokenResponse(
+        access_token=access_token,
+        refresh_token=bundle.refresh_token,
+        user=to_user_response(user),
+    )
+
+
+@router.post("/register", response_model=RegisterPendingResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(AUTH_REGISTER_LIMIT)
 def register_user(
     payload: UserRegisterRequest,
@@ -147,6 +195,12 @@ def register_user(
 ):
     email = normalize_email(payload.email)
     full_name = payload.full_name.strip()
+    phone_raw = str(payload.phone or "").strip()
+    if not phone_raw:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Phone is required")
+    phone_norm = normalize_bd_phone(phone_raw)
+    if not phone_norm or len(phone_norm) < 11:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid phone number")
 
     password_errors = AuthSecurityService.validate_password_strength(
         payload.password,
@@ -159,37 +213,192 @@ def register_user(
             detail={"password_errors": password_errors},
         )
 
+    can_send, can_reason = can_deliver_otp()
+    if not can_send:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=can_reason)
+
     existing_email = db.query(User).filter(User.email == email).first()
     if existing_email:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    if payload.phone:
-        from app.core.field_encryption import encrypt_field
-
-        phone_enc = encrypt_field(payload.phone)
-        existing_phone = db.query(User).filter(User.phone == phone_enc).first()
-        if existing_phone:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone already registered")
+    phone_enc = encrypt_field(phone_norm)
+    existing_phone = db.query(User).filter(User.phone == phone_enc).first()
+    if existing_phone:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phone already registered")
 
     user = User(
         full_name=full_name,
         email=email,
-        phone=phone_enc if payload.phone else None,
+        phone=phone_enc,
         password_hash=hash_password(payload.password),
         preferred_language="bn",
         is_active=True,
-        # Local/dev: allow login without SMTP verification. Production still requires verify.
-        is_email_verified=not settings.IS_PRODUCTION,
+        is_email_verified=False,
+        is_phone_verified=False,
     )
-
-    if not user.is_email_verified:
-        AuthSecurityService.issue_email_verification_token(user)
-
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    return to_user_response(user)
+    issued = issue_otp(purpose="signup", email=email)
+    delivery = send_otp_to_channels(email=email, phone=phone_norm, otp=issued.code)
+    if not delivery.ok:
+        db.delete(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=delivery.error or "Failed to send verification OTP",
+        )
+
+    return RegisterPendingResponse(
+        message="Account created. Enter the 6-digit OTP sent to your email and mobile.",
+        email=email,
+        verification_required=True,
+        delivered_via=delivery.delivered_via,
+        otp_ttl_seconds=issued.ttl_seconds,
+        debug_otp=_dev_exposed_auth_token(issued.code),
+    )
+
+
+@router.post("/verify-otp", response_model=AuthTokenResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def verify_signup_otp(
+    payload: OtpVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
+
+    result = verify_otp(purpose="signup", email=email, code=str(payload.otp).strip())
+    if not result.ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.reason)
+
+    user.is_email_verified = True
+    user.is_phone_verified = True
+    user.email_verified_at = utc_now()
+    user.email_verification_token_hash = None
+    user.email_verification_expires_at = None
+    db.commit()
+    db.refresh(user)
+    return issue_auth_tokens(db, user, request, response)
+
+
+@router.post("/resend-otp", response_model=OtpRequestResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def resend_signup_otp(
+    payload: ResendOtpRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    safe = OtpRequestResponse(message="If this account needs verification, a new OTP was sent.")
+    if not user or not user.is_active:
+        return safe
+    if user_fully_verified(user):
+        return OtpRequestResponse(message="Account already verified")
+
+    can_send, can_reason = can_deliver_otp()
+    if not can_send:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=can_reason)
+
+    from app.core.field_encryption import decrypt_field
+
+    phone = decrypt_field(user.phone) if user.phone else ""
+    if not phone:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone missing on account")
+
+    issued = issue_otp(purpose="signup", email=email)
+    delivery = send_otp_to_channels(email=email, phone=phone, otp=issued.code)
+    if not delivery.ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=delivery.error or "Failed to send OTP",
+        )
+    return OtpRequestResponse(
+        message="OTP resent to email and mobile.",
+        delivered_via=delivery.delivered_via,
+        otp_ttl_seconds=issued.ttl_seconds,
+        debug_otp=_dev_exposed_auth_token(issued.code),
+    )
+
+
+@router.post("/login/request-otp", response_model=OtpRequestResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def login_request_otp(
+    payload: LoginOtpRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    safe = OtpRequestResponse(message="If this account exists, an OTP was sent.")
+    if not user or not user.is_active:
+        return safe
+    if not user_fully_verified(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your account with signup OTP first",
+        )
+
+    can_send, can_reason = can_deliver_otp()
+    if not can_send:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=can_reason)
+
+    from app.core.field_encryption import decrypt_field
+
+    phone = decrypt_field(user.phone) if user.phone else ""
+    if not phone:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone missing on account")
+
+    issued = issue_otp(purpose="login", email=email)
+    delivery = send_otp_to_channels(email=email, phone=phone, otp=issued.code)
+    if not delivery.ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=delivery.error or "Failed to send OTP",
+        )
+    return OtpRequestResponse(
+        message="OTP sent to email and mobile.",
+        delivered_via=delivery.delivered_via,
+        otp_ttl_seconds=issued.ttl_seconds,
+        debug_otp=_dev_exposed_auth_token(issued.code),
+    )
+
+
+@router.post("/login/verify-otp", response_model=AuthTokenResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def login_verify_otp(
+    payload: OtpVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
+    if AuthSecurityService.is_user_locked(user):
+        raise HTTPException(status_code=423, detail="Account temporarily locked. Try again later.")
+    if not user_fully_verified(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email/phone verification required before login",
+        )
+
+    result = verify_otp(purpose="login", email=email, code=str(payload.otp).strip())
+    if not result.ok:
+        AuthSecurityService.record_failed_login(user)
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.reason)
+
+    return issue_auth_tokens(db, user, request, response)
 
 
 @router.post("/verify-email", response_model=EmailVerifyResponse)
@@ -217,11 +426,12 @@ def verify_email(
 @router.get("/email-status", response_model=EmailStatusResponse)
 def auth_email_status():
     status_info = smtp_status()
-    can_send = bool(status_info["configured"] and settings.AUTH_EMAIL_ENABLED)
+    mobile = mobile_channel_status()
+    can_send, note_fail = can_deliver_otp()
     note = (
-        "SMTP ready — auth emails will be sent for real."
+        "OTP ready — email + WhatsApp/SMS will be used."
         if can_send
-        else "SMTP not configured. Set SMTP_HOST + SMTP_FROM_EMAIL in backend .env (no fake send)."
+        else note_fail
     )
     return EmailStatusResponse(
         smtp=status_info,
@@ -229,6 +439,7 @@ def auth_email_status():
         notification_email_enabled=bool(settings.NOTIFICATION_EMAIL_ENABLED),
         can_send=can_send,
         note=note,
+        mobile=mobile,
     )
 
 
@@ -335,47 +546,13 @@ def login_user(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
 
-    if not user.is_email_verified:
+    if not user_fully_verified(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email verification required before login",
+            detail="Email/phone verification required before login",
         )
 
-    AuthSecurityService.record_successful_login(user, ip_address=get_client_ip(request))
-
-    try:
-        from app.services.architecture_bridge import ensure_user_preference
-
-        ensure_user_preference(db, user)
-    except Exception:
-        pass
-
-    device_label = get_device_label(request)
-    bundle = AuthSecurityService.create_refresh_session(
-        db,
-        user_id=user.id,
-        user_agent=get_user_agent(request),
-        ip_address=get_client_ip(request),
-        device_label=device_label,
-    )
-
-    family_id, role = primary_family_claims(db, user.id)
-    access_token = create_access_token(
-        subject=user.id,
-        user_id=user.id,
-        family_id=family_id,
-        role=role,
-    )
-
-    db.commit()
-    db.refresh(user)
-
-    set_refresh_cookie(response, bundle.refresh_token)
-    return AuthTokenResponse(
-        access_token=access_token,
-        refresh_token=bundle.refresh_token,  # also returned for mobile SecureStore
-        user=to_user_response(user),
-    )
+    return issue_auth_tokens(db, user, request, response)
 
 
 @router.post("/refresh", response_model=AuthTokenResponse)
@@ -554,3 +731,71 @@ async def upload_my_avatar(
 def remove_my_avatar(current_user: User = Depends(get_current_user)):
     delete_avatar(current_user.id)
     return to_user_response(current_user)
+
+
+@router.post("/me/delete/request-otp", response_model=OtpRequestResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def request_delete_account_otp(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Send OTP to the signed-in user's email before permanent account disable."""
+    if not current_user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account already inactive")
+
+    can_send, can_reason = can_deliver_otp()
+    if not can_send:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=can_reason)
+
+    email = normalize_email(current_user.email)
+    phone = ""
+    try:
+        phone = decrypt_field(current_user.phone) if current_user.phone else ""
+    except Exception:
+        phone = ""
+
+    issued = issue_otp(purpose="delete_account", email=email)
+    delivery = send_otp_to_channels(email=email, phone=phone or "", otp=issued.code)
+    if not delivery.ok:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=delivery.error or "Failed to send delete confirmation OTP",
+        )
+
+    return OtpRequestResponse(
+        message="OTP sent. Enter it to permanently disable your account.",
+        delivered_via=delivery.delivered_via,
+        otp_ttl_seconds=issued.ttl_seconds,
+        debug_otp=_dev_exposed_auth_token(issued.code),
+    )
+
+
+@router.post("/me/delete/confirm", response_model=MessageResponse)
+@limiter.limit(AUTH_OTP_LIMIT)
+def confirm_delete_account(
+    request: Request,
+    response: Response,
+    payload: DeleteAccountConfirmRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Verify OTP then deactivate + anonymize the signed-in user."""
+    if not current_user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account already inactive")
+
+    email = normalize_email(current_user.email)
+    result = verify_otp(purpose="delete_account", email=email, code=str(payload.otp).strip())
+    if not result.ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.reason)
+
+    # Re-load attached user for update
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account already inactive")
+
+    from app.services.account_deletion_service import deactivate_and_anonymize_user
+
+    info = deactivate_and_anonymize_user(db, user)
+    clear_refresh_cookie(response)
+    return MessageResponse(message=info["message"])

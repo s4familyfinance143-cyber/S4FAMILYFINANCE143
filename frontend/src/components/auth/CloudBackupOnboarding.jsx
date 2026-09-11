@@ -1,7 +1,7 @@
 import "./cloud-backup-onboarding.css";
 
 /**
- * First-login optional backup setup: Google Drive + local folder (skip allowed).
+ * First-login optional backup setup: Google Drive (own account) + local folder.
  */
 export function CloudBackupOnboarding({
   t,
@@ -28,18 +28,9 @@ export function CloudBackupOnboarding({
 
         <div className="cloud-onboard-row cloud-onboard-row--ok">
           <div className="cloud-onboard-row-head">
-            <span className="cloud-onboard-ico" aria-hidden="true">☁</span>
-            <div>
-              <strong>{L.firebaseTitle}</strong>
-              <p>{L.firebaseHint}</p>
-            </div>
-          </div>
-          <span className="cloud-onboard-badge">{L.active}</span>
-        </div>
-
-        <div className="cloud-onboard-row">
-          <div className="cloud-onboard-row-head">
-            <span className="cloud-onboard-ico" aria-hidden="true">📁</span>
+            <span className="cloud-onboard-ico" aria-hidden="true">
+              📁
+            </span>
             <div>
               <strong>{L.driveTitle}</strong>
               <p>{L.driveHint}</p>
@@ -58,7 +49,9 @@ export function CloudBackupOnboarding({
 
         <div className="cloud-onboard-row">
           <div className="cloud-onboard-row-head">
-            <span className="cloud-onboard-ico" aria-hidden="true">💾</span>
+            <span className="cloud-onboard-ico" aria-hidden="true">
+              💾
+            </span>
             <div>
               <strong>{L.localTitle}</strong>
               <p>{localFolderSupported ? L.localHint : L.localHintMobile}</p>
@@ -74,7 +67,13 @@ export function CloudBackupOnboarding({
             <>
               <p className="cloud-onboard-note">{L.localLater}</p>
               {onLocalDownload ? (
-                <button type="button" className="btn btn-outline" disabled={cloudBusy} onClick={onLocalDownload} style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={cloudBusy}
+                  onClick={onLocalDownload}
+                  style={{ marginTop: 8 }}
+                >
                   {L.localDownload}
                 </button>
               ) : null}
@@ -98,17 +97,15 @@ export function CloudBackupOnboarding({
 const UI = {
   bn: {
     eyebrow: "প্রথম লগইন",
-    title: "ব্যাকআপ সেটআপ (ঐচ্ছিক)",
-    subtitle: "Firebase-এ আপনার ডেটা ইতিমধ্যে online save হচ্ছে। চাইলে Google Drive বা local folder যোগ করুন — না চাইলে Skip করুন।",
-    firebaseTitle: "Firebase Cloud",
-    firebaseHint: "অ্যাকাউন্ট login থাকলে automatic online backup",
-    active: "চালু",
-    driveTitle: "Google Drive",
-    driveHint: "Extra backup — Gmail Drive-এ copy",
+    title: "নিজের Google Drive সেটআপ",
+    subtitle:
+      "ডাটা আপনার নিজের Google Drive-এ সেভ হবে। একই Google অ্যাকাউন্ট দিয়ে অন্য ডিভাইসে কানেক্ট করলে ব্যাকআপ থেকে ফিরে আসবে।",
+    driveTitle: "Google Drive (নিজের অ্যাকাউন্ট)",
+    driveHint: "কোম্পানি ফোল্ডার নয় — শুধু আপনার Drive",
     driveConnect: "Drive যোগ করুন",
     connected: "যুক্ত",
     localTitle: "Local Folder",
-    localHint: "PC/ব্রাউজারে folder select করে backup",
+    localHint: "PC/ব্রাউজারে folder select করে extra backup",
     localHintMobile: "ফোনে folder picker সীমিত — PC Settings থেকেও করা যাবে",
     localPick: "Folder বেছে নিন",
     localDownload: "Backup file download (ফোন)",
@@ -118,17 +115,15 @@ const UI = {
   },
   en: {
     eyebrow: "First sign-in",
-    title: "Backup setup (optional)",
-    subtitle: "Firebase already saves your data online. Add Google Drive or a local folder if you want — or skip for now.",
-    firebaseTitle: "Firebase Cloud",
-    firebaseHint: "Automatic online backup while you are signed in",
-    active: "Active",
-    driveTitle: "Google Drive",
-    driveHint: "Extra backup copy in your Google Drive",
+    title: "Connect your Google Drive",
+    subtitle:
+      "Your backup is saved in your own Google Drive. Connect the same Google account on another device to bring your data back.",
+    driveTitle: "Google Drive (your account)",
+    driveHint: "Not a company folder — only your Drive",
     driveConnect: "Connect Drive",
     connected: "Connected",
     localTitle: "Local folder",
-    localHint: "Pick a folder on this device for backup files",
+    localHint: "Optional extra backup folder on this device",
     localHintMobile: "Folder picker is limited on phone — you can also set this later on PC in Settings",
     localPick: "Choose folder",
     localDownload: "Download backup file (phone)",

@@ -29,31 +29,36 @@ Use your own Google account. Backup files are stored in your Drive under the app
 2. Application type: **Web application**
 3. Name: `S4 Web Drive`
 4. **Authorized JavaScript origins** (add all you use):
+   - `https://app.s4businessthinking.com`
    - `http://localhost:5173`
    - `http://127.0.0.1:5173`
 5. **Authorized redirect URIs**: leave empty (GIS token flow uses popup, no redirect)
-6. Copy the **Client ID** into `frontend/.env`:
+6. Copy the **Client ID** into `frontend/.env` and production compose env:
 
 ```env
 VITE_GOOGLE_CLIENT_ID=123456789-xxxx.apps.googleusercontent.com
 ```
 
-7. Restart: `npm run dev`
+7. Restart local: `npm run dev` — or rebuild the frontend Docker image so Vite embeds the ID.
+
+Full production checklist: `deploy/PER_USER_GOOGLE_DRIVE.md`.
 
 ## 4. Use in the app
 
-1. Log in to S4 (local backend)
-2. **Settings → Cloud**
-3. **Google Drive** section → **Connect Google Drive**
-4. **Upload backup to Drive** — creates/updates JSON backup in your Drive
-5. New device: **Connect** → **Restore latest from Drive**
+1. Log in to S4
+2. **Settings → Cloud** → **Google Drive** → **Connect Google Drive**
+3. After connect:
+   - Empty device + existing Drive backup → auto restore
+   - Local data already present → confirm before overwrite
+   - Local data, no Drive file yet → auto upload
+4. Auto backup stays enabled for Drive (interval in Cloud settings)
 
 ## Notes
 
 - `drive.file` scope only sees files created by this app (not your whole Drive)
-- Tokens are stored in `localStorage` on this browser
-- Drive backup is separate from Firebase; you can use one or both
-- For production hosting, add your domain to OAuth authorized origins
+- Access tokens live in `sessionStorage` (reconnect after a full browser session ends)
+- This is **per-user** Drive backup — not the company service-account document vault
+- Drive backup can run alongside Firebase/API cloud sync
 
 ## Troubleshooting
 

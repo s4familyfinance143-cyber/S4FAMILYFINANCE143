@@ -112,7 +112,7 @@ export function CloudBackupPanel({
   useEffect(() => {
     if (!driveConfigured) {
       console.info(
-        "[S4 Cloud] Google Drive not configured — set VITE_GOOGLE_CLIENT_ID in frontend/.env (see deploy/FIREBASE_SETUP.md)"
+        "[S4 Cloud] Google Drive not configured — set VITE_GOOGLE_CLIENT_ID in frontend/.env (see deploy/PER_USER_GOOGLE_DRIVE.md)"
       );
     }
     if (!firebaseConfigured) {

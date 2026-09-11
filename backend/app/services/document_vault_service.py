@@ -3,6 +3,7 @@
 Backends:
 - local disk (default): backend/storage/document_vault
 - S3/MinIO when S3_* env is fully set (or DOCUMENT_VAULT_BACKEND=s3)
+- Google Drive (company SA) when DOCUMENT_VAULT_BACKEND=gdrive + GDRIVE_* env
 
 Never pretends cloud storage is enabled without real credentials.
 """
@@ -17,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from app.core.config import settings
+from app.services import gdrive_storage
 
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 ALLOWED_MIME_EXACT = {
@@ -29,6 +31,7 @@ ALLOWED_MIME_EXACT = {
     "image/webp",
 }
 S3_PATH_PREFIX = "s3:"
+GDRIVE_PATH_PREFIX = gdrive_storage.GDRIVE_PATH_PREFIX
 
 
 def vault_root() -> Path:
@@ -63,50 +66,66 @@ def is_s3_configured() -> bool:
     )
 
 
+def is_gdrive_configured() -> bool:
+    return gdrive_storage.is_gdrive_configured() and gdrive_storage._gdrive_libs_available()
+
+
 def _boto3_available() -> bool:
     try:
         import boto3  # noqa: F401
+
         return True
     except ImportError:
         return False
 
 
 def active_storage_backend() -> str:
-    forced = (getattr(settings, "DOCUMENT_VAULT_BACKEND", None) or os.getenv("DOCUMENT_VAULT_BACKEND") or "auto").strip().lower()
+    forced = (
+        getattr(settings, "DOCUMENT_VAULT_BACKEND", None) or os.getenv("DOCUMENT_VAULT_BACKEND") or "auto"
+    ).strip().lower()
     if forced == "local":
         return "local"
+    if forced == "gdrive":
+        return "gdrive" if is_gdrive_configured() else "local"
     if forced == "s3":
-        return "s3" if is_s3_configured() else "local"
-    return "s3" if is_s3_configured() else "local"
+        return "s3" if is_s3_configured() and _boto3_available() else "local"
+    if is_gdrive_configured():
+        return "gdrive"
+    if is_s3_configured() and _boto3_available():
+        return "s3"
+    return "local"
 
 
 def object_storage_status() -> dict:
     endpoint = (settings.S3_ENDPOINT_URL or "").strip() or None
     bucket = (settings.S3_BUCKET or "").strip() or None
-    configured = is_s3_configured()
+    s3_ok = is_s3_configured() and _boto3_available()
+    gdrive = gdrive_storage.gdrive_status()
     backend = active_storage_backend()
-    note = (
-        f"Document vault using {backend}"
-        if backend == "local"
-        else f"Document vault using S3/MinIO bucket={bucket}"
-    )
-    if not configured:
-        note = (
-            "S3/MinIO not configured. Set S3_ENDPOINT_URL, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY "
-            "(and pip install boto3). Local encrypted disk vault remains active."
-        )
-    elif configured and not _boto3_available():
-        note = "S3 env set but boto3 not installed. pip install boto3"
-        configured = False
-        backend = "local"
+
+    if backend == "gdrive":
+        note = f"Document vault using Google Drive (root folder configured={gdrive.get('root_folder_id_set')})"
+    elif backend == "s3":
+        note = f"Document vault using S3/MinIO bucket={bucket}"
+    else:
+        note = "Document vault using local encrypted disk"
+
+    if (getattr(settings, "DOCUMENT_VAULT_BACKEND", "") or "").strip().lower() == "gdrive" and not gdrive[
+        "gdrive_configured"
+    ]:
+        note = gdrive["note"]
+
     return {
         "backend": backend,
-        "s3_configured": configured and backend == "s3",
+        "s3_configured": s3_ok and backend == "s3",
+        "gdrive_configured": bool(gdrive.get("gdrive_configured")) and backend == "gdrive",
         "endpoint_url": endpoint,
         "bucket": bucket,
         "access_key_set": bool((settings.S3_ACCESS_KEY or "").strip()),
         "boto3_available": _boto3_available(),
+        "gdrive": gdrive,
         "local_root": str(vault_root()),
+        "family_soft_cap_mb": int(getattr(settings, "GDRIVE_FAMILY_SOFT_CAP_MB", 500) or 500),
         "note": note,
     }
 
@@ -132,7 +151,7 @@ def _s3_client():
 def ensure_s3_bucket() -> dict:
     """Create bucket if missing (MinIO/local). Honest fail if not configured."""
     status = object_storage_status()
-    if not status["s3_configured"] and not is_s3_configured():
+    if not is_s3_configured():
         return {"ok": False, "reason": status["note"], **status}
     if not _boto3_available():
         return {"ok": False, "reason": "boto3 not installed", **status}
@@ -171,7 +190,6 @@ def _encrypt_payload(data: bytes) -> tuple[bytes, bool]:
         aes = AESGCM(key)
         nonce = os.urandom(12)
         ct = aes.encrypt(nonce, data, None)
-        # magic + version + nonce + ciphertext
         return b"S4A1" + nonce + ct, True
     except Exception:
         fernet = _fernet()
@@ -210,7 +228,15 @@ def store_document_file(*, family_id: str, item_id: str, filename: str, content_
     stored_name = f"{item_id}_{uuid.uuid4().hex}.bin"
     backend = active_storage_backend()
 
-    if backend == "s3":
+    if backend == "gdrive":
+        file_id = gdrive_storage.upload_bytes(
+            family_id=family_id,
+            stored_name=stored_name,
+            data=payload,
+            mime="application/octet-stream",
+        )
+        file_path = gdrive_storage.path_for_file_id(file_id)
+    elif backend == "s3":
         key = f"{family_id}/{stored_name}"
         client = _s3_client()
         client.put_object(
@@ -244,7 +270,10 @@ def store_document_file(*, family_id: str, item_id: str, filename: str, content_
 
 
 def load_document_file(relative_path: str, expected_sha256: str | None = None) -> bytes:
-    if relative_path.startswith(S3_PATH_PREFIX):
+    gdrive_id = gdrive_storage.file_id_from_path(relative_path)
+    if gdrive_id:
+        payload = gdrive_storage.download_bytes(gdrive_id)
+    elif relative_path.startswith(S3_PATH_PREFIX):
         key = relative_path[len(S3_PATH_PREFIX) :]
         client = _s3_client()
         obj = client.get_object(Bucket=settings.S3_BUCKET.strip(), Key=key)
@@ -266,6 +295,10 @@ def load_document_file(relative_path: str, expected_sha256: str | None = None) -
 def delete_document_file(relative_path: str | None) -> None:
     if not relative_path:
         return
+    gdrive_id = gdrive_storage.file_id_from_path(relative_path)
+    if gdrive_id:
+        gdrive_storage.delete_file(gdrive_id)
+        return
     if relative_path.startswith(S3_PATH_PREFIX):
         if not is_s3_configured():
             return
@@ -281,7 +314,7 @@ def delete_document_file(relative_path: str | None) -> None:
 
 
 def generate_presigned_get_url(relative_path: str, expires_in: int = 3600) -> str | None:
-    """Architecture: S3 presigned URL — never expose permanent public object URLs."""
+    """S3 presigned URL only. Google Drive stays app-proxied (encrypted)."""
     if not relative_path or not relative_path.startswith(S3_PATH_PREFIX):
         return None
     if not is_s3_configured():
@@ -295,8 +328,10 @@ def generate_presigned_get_url(relative_path: str, expires_in: int = 3600) -> st
     )
 
 
-def generate_presigned_put_url(*, family_id: str, filename: str, content_type: str | None = None, expires_in: int = 900) -> dict | None:
-    """Presigned upload URL for direct-to-S3 puts (architecture File Access)."""
+def generate_presigned_put_url(
+    *, family_id: str, filename: str, content_type: str | None = None, expires_in: int = 900
+) -> dict | None:
+    """Presigned upload URL for direct-to-S3 puts."""
     if not is_s3_configured():
         return None
     safe_name = Path(filename).name

@@ -132,7 +132,20 @@ service cloud.firestore {
         && (
           !('max_uses' in inviteDoc(code).data)
           || inviteDoc(code).data.max_uses == null
-          || inviteDoc(code).data.uses < inviteDoc(code).data.max_uses
+          || (
+            // Coerce so int/string max_uses from older clients still work
+            (
+              inviteDoc(code).data.uses is int
+                ? inviteDoc(code).data.uses
+                : int(inviteDoc(code).data.uses)
+            )
+            <
+            (
+              inviteDoc(code).data.max_uses is int
+                ? inviteDoc(code).data.max_uses
+                : int(inviteDoc(code).data.max_uses)
+            )
+          )
         );
     }
 
@@ -140,7 +153,8 @@ service cloud.firestore {
       return signedIn()
         && request.auth.uid == memberId
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasAll(['invite_code'])
+        && 'invite_code' in request.resource.data
+        && request.resource.data.invite_code is string
         && inviteValidForJoin(familyId, request.resource.data.invite_code)
         && (
           request.resource.data.role in ['MEMBER', 'VIEWER', 'CHILD']

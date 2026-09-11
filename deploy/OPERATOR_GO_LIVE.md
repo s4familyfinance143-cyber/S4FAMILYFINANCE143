@@ -1,8 +1,20 @@
 # Operator go-live checklist — S4 Family Finance 143
 
-Code/CI can ship without these. **Live `app.s4family.app` needs this list completed by you.**
+Code/CI can ship without these. **Live `app.s4businessthinking.com` needs this list completed by you.**
 
 Related: `deploy/BUILD_ORDER_GAPS_CLOSED.md` · `deploy/SECURITY_AUDIT_REPORT.md` · `deploy/BETA_TESTING_PLAN.md`
+
+## Shared VPS note (sales site + app)
+
+If `s4businessthinking.com` marketing site already uses host nginx on `:80`/`:443`, do **not** publish the Docker edge on public 80/443.
+
+1. DNS `A` record: `app` → VPS IP (`104.223.14.202`).
+2. Deploy with overlay:
+   ```bash
+   SHARED_HOST_NGINX=1 bash deploy/scripts/vps_go_live_deploy.sh
+   ```
+3. Install host proxy: `deploy/nginx/host_app_s4businessthinking.conf.example`
+4. TLS: `certbot --nginx -d app.s4businessthinking.com`
 
 ## 0) Before production (Step 18)
 
@@ -20,7 +32,12 @@ Related: `deploy/BUILD_ORDER_GAPS_CLOSED.md` · `deploy/SECURITY_AUDIT_REPORT.md
 5. Deploy:
 
 ```bash
+# Dedicated VPS (owns :80/:443):
 bash deploy/scripts/vps_go_live_deploy.sh
+
+# Shared with marketing site:
+SHARED_HOST_NGINX=1 bash deploy/scripts/vps_go_live_deploy.sh
+
 # optional monitoring:
 cd deploy/docker
 docker compose --env-file .env.production \
@@ -34,9 +51,9 @@ Or GHCR path: `deploy/scripts/remote_ghcr_deploy.sh production`.
 
 | Hostname | Type | Points to |
 |----------|------|-----------|
-| `app.s4family.app` | A/AAAA | VPS public IP |
-| `staging.s4family.app` | A/AAAA | Staging VPS (or same) |
-| `grafana.s4family.app` | A/AAAA | VPS public IP |
+| `app.s4businessthinking.com` | A/AAAA | VPS public IP |
+| `s4businessthinking.com` / `www` | A/AAAA | same VPS (sales site — leave as-is) |
+| `grafana.s4businessthinking.com` | A/AAAA | optional |
 
 ## 3) TLS (SSL)
 

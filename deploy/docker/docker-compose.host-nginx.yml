@@ -1,0 +1,16 @@
+# Overlay when marketing site already owns host :80/:443 (same VPS).
+# Binds Family Finance only on localhost so host nginx can reverse-proxy
+# app.s4businessthinking.com → 127.0.0.1:8088
+#
+# Usage (from deploy/docker):
+#   docker compose --env-file .env.production \
+#     -f docker-compose.production.yml \
+#     -f docker-compose.host-nginx.yml \
+#     up -d --build
+#
+# Host snippet: deploy/nginx/host_app_s4businessthinking.conf.example
+
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:8088:80"

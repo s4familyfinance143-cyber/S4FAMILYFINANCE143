@@ -122,6 +122,23 @@ def send_password_reset_email(*, to_email: str, token: str) -> EmailSendResult:
     return send_email(to_email=to_email, subject=subject, text_body=text, html_body=html)
 
 
+def send_otp_email(*, to_email: str, otp: str) -> EmailSendResult:
+    if not settings.AUTH_EMAIL_ENABLED:
+        return EmailSendResult(False, "Auth email disabled", to_email=to_email, subject="OTP")
+    subject = "S4 Family Finance — your verification code"
+    text = (
+        "Your S4 Family Finance verification code is:\n\n"
+        f"{otp}\n\n"
+        "This code expires in a few minutes. Do not share it."
+    )
+    html = (
+        "<p>Your <strong>S4 Family Finance</strong> verification code:</p>"
+        f"<p style='font-size:28px;letter-spacing:6px;font-weight:700'>{otp}</p>"
+        "<p>This code expires soon. Do not share it.</p>"
+    )
+    return send_email(to_email=to_email, subject=subject, text_body=text, html_body=html)
+
+
 def send_email_verification_email(*, to_email: str, token: str) -> EmailSendResult:
     if not settings.AUTH_EMAIL_ENABLED:
         return EmailSendResult(False, "Auth email disabled", to_email=to_email, subject="Email verification")

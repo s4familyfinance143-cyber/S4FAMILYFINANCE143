@@ -4,7 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 class UserRegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=160)
     email: EmailStr
-    phone: str | None = Field(default=None, max_length=40)
+    phone: str = Field(min_length=8, max_length=40)
     password: str = Field(min_length=8, max_length=128)
 
 
@@ -21,6 +21,7 @@ class UserResponse(BaseModel):
     preferred_language: str
     is_active: bool
     is_email_verified: bool
+    is_phone_verified: bool = False
     avatar_url: str | None = None
 
     model_config = {"from_attributes": True}
@@ -89,3 +90,38 @@ class EmailStatusResponse(BaseModel):
     notification_email_enabled: bool
     can_send: bool
     note: str
+    mobile: dict | None = None
+
+
+class RegisterPendingResponse(BaseModel):
+    message: str
+    email: EmailStr
+    verification_required: bool = True
+    delivered_via: list[str] = []
+    otp_ttl_seconds: int | None = None
+    # Dev-only: never set in production
+    debug_otp: str | None = None
+
+
+class OtpVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(min_length=4, max_length=8)
+
+
+class ResendOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class OtpRequestResponse(BaseModel):
+    message: str
+    delivered_via: list[str] = []
+    otp_ttl_seconds: int | None = None
+    debug_otp: str | None = None
+
+
+class LoginOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class DeleteAccountConfirmRequest(BaseModel):
+    otp: str = Field(min_length=4, max_length=8)

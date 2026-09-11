@@ -50,5 +50,6 @@ limiter = Limiter(
 AUTH_LOGIN_LIMIT = "5/minute"
 AUTH_REGISTER_LIMIT = "3/hour" if settings.IS_PRODUCTION else "30/hour"
 AUTH_PASSWORD_EMAIL_LIMIT = "5/minute"
+AUTH_OTP_LIMIT = "5/minute"
 API_USER_LIMIT = "60/minute"
 JOIN_REQUEST_LIMIT = "10/minute"

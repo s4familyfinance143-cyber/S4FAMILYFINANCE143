@@ -57,26 +57,53 @@ docker --version
 echo "Docker Compose version:"
 docker compose version
 
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+HOST_NGINX_OVERLAY="deploy/docker/docker-compose.host-nginx.yml"
+SLIM_OVERLAY="deploy/docker/docker-compose.vps-shared-slim.yml"
+# Shared VPS (marketing site already on :80/:443): set SHARED_HOST_NGINX=1
+if [[ "${SHARED_HOST_NGINX:-0}" == "1" ]]; then
+  if [[ ! -f "$HOST_NGINX_OVERLAY" ]]; then
+    echo "ERROR: SHARED_HOST_NGINX=1 but missing $HOST_NGINX_OVERLAY"
+    exit 1
+  fi
+  COMPOSE_ARGS+=(-f "$HOST_NGINX_OVERLAY")
+  echo "SHARED_HOST_NGINX=1 — publishing app on 127.0.0.1:8088 (host nginx must proxy app subdomain)."
+fi
+# Small VPS: set SLIM=1 to skip Celery/Flower
+if [[ "${SLIM:-0}" == "1" ]]; then
+  if [[ ! -f "$SLIM_OVERLAY" ]]; then
+    echo "ERROR: SLIM=1 but missing $SLIM_OVERLAY"
+    exit 1
+  fi
+  COMPOSE_ARGS+=(-f "$SLIM_OVERLAY")
+  echo "SLIM=1 — Celery/Flower disabled for low-RAM VPS."
+fi
+
 echo "Validating compose config..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/tmp/s4-compose-config.out
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" config >/tmp/s4-compose-config.out
 
 echo "Building and starting production stack (no Mailpit / staging profile)..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" up -d --build
 
 echo "Container status:"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" ps
 
 echo "Recent backend logs:"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=80 backend || true
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" logs --tail=80 backend || true
 
 echo "Recent nginx logs:"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=40 nginx || true
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=20 frontend || true
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" logs --tail=40 nginx || true
+docker compose --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" logs --tail=20 frontend || true
 
 echo "DEPLOY SCRIPT COMPLETE"
 echo "Next:"
-echo "  1) bash deploy/scripts/verify_live.sh https://YOUR_DOMAIN"
-echo "  2) sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4family.app grafana.s4family.app you@email.com"
-echo "  3) sudo bash deploy/scripts/vps_backup_cron.sh"
-echo "  4) bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production"
+echo "  1) bash deploy/scripts/verify_live.sh https://app.s4businessthinking.com"
+if [[ "${SHARED_HOST_NGINX:-0}" == "1" ]]; then
+  echo "  2) Install host proxy: deploy/nginx/host_app_s4businessthinking.conf.example"
+  echo "  3) certbot --nginx -d app.s4businessthinking.com"
+else
+  echo "  2) sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4businessthinking.com you@email.com"
+fi
+echo "  4) sudo bash deploy/scripts/vps_backup_cron.sh"
+echo "  5) bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production"
 echo "Full checklist: deploy/OPERATOR_GO_LIVE.md"

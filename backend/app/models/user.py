@@ -22,7 +22,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     phone: Mapped[str | None] = mapped_column(
-        String(40),
+        String(255),  # encrypted phone values (enc:v1:...) exceed raw E.164 length
         unique=True,
         index=True,
         nullable=True,
@@ -46,6 +46,12 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     is_email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    is_phone_verified: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,

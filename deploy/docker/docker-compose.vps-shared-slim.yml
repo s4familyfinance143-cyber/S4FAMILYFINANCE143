@@ -1,0 +1,22 @@
+# Shared small VPS (sales site already running) — skip Celery/Flower.
+# Use with:
+#   SHARED_HOST_NGINX=1 SLIM=1 bash deploy/scripts/vps_go_live_deploy.sh
+# or:
+#   docker compose --env-file .env.production \
+#     -f docker-compose.production.yml \
+#     -f docker-compose.host-nginx.yml \
+#     -f docker-compose.vps-shared-slim.yml \
+#     up -d --build
+
+services:
+  celery_worker:
+    profiles: ["full"]
+  celery_beat:
+    profiles: ["full"]
+  flower:
+    profiles: ["full"]
+  backend:
+    environment:
+      CELERY_ENABLED: "false"
+      ENABLE_RECURRING_WORKER: "false"
+      ENABLE_AUTO_BACKUP_WORKER: "false"

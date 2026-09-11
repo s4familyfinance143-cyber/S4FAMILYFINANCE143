@@ -8,9 +8,16 @@ export const ACTIVE_FAMILY_STORAGE_KEY = CLOUD_FAMILY_KEY;
 
 export function isFirebaseFirstMode() {
   if (!isFirebaseConfigured()) return false;
+  // Explicit false/0/no wins everywhere (including native APK) for VPS/server cutover builds.
+  const raw = import.meta.env.VITE_FIREBASE_FIRST;
+  if (raw !== undefined && String(raw).trim() !== "") {
+    const flag = String(raw).trim().toLowerCase();
+    if (flag === "0" || flag === "false" || flag === "no") return false;
+    if (flag === "1" || flag === "true" || flag === "yes") return true;
+  }
+  // Legacy default: native Capacitor builds assumed Firebase-first when flag unset.
   if (isNativeApp()) return true;
-  const flag = String(import.meta.env.VITE_FIREBASE_FIRST ?? "true").trim().toLowerCase();
-  return flag !== "0" && flag !== "false" && flag !== "no";
+  return true;
 }
 
 /**

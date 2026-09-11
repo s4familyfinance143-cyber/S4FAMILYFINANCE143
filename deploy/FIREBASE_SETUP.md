@@ -91,7 +91,8 @@ Authentication → **Settings → Authorized domains** should include:
 See **`deploy/GOOGLE_DRIVE_SETUP.md`** for:
 
 - Enabling Drive API in the same GCP project
-- OAuth Web client ID → `VITE_GOOGLE_CLIENT_ID` in `frontend/.env`
+- OAuth Web client ID → `VITE_GOOGLE_CLIENT_ID` in `frontend/.env` (see `deploy/PER_USER_GOOGLE_DRIVE.md`)
+
 - Connect / upload / restore from **Settings → Cloud**
 
 ## Blaze billing (optional later)
