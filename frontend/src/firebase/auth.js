@@ -1,4 +1,5 @@
 import {
+  confirmPasswordReset,
   createUserWithEmailAndPassword,
   deleteUser,
   GoogleAuthProvider,
@@ -312,6 +313,17 @@ export async function firebaseSendPasswordReset(email) {
   } else {
     await sendPasswordResetEmail(auth, String(email).trim());
   }
+}
+
+/** Complete Firebase password reset when the email link lands with oobCode. */
+export async function firebaseConfirmPasswordReset(oobCode, newPassword) {
+  const auth = getFirebaseAuth();
+  if (!auth) throw new Error("Firebase is not configured");
+  const code = String(oobCode || "").trim();
+  const password = String(newPassword || "");
+  if (!code) throw new Error("Missing password reset code");
+  if (password.length < 8) throw new Error("Password must be at least 8 characters");
+  await confirmPasswordReset(auth, code, password);
 }
 
 export async function firebaseSignInGoogle() {

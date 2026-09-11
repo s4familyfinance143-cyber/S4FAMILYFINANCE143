@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
 import { formatFetchError, isLocalhostApi, isNativeApp, isProductionApi } from "../../lib/runtimeEnv";
-import { firebaseSendPasswordReset } from "../../firebase/auth";
+import { firebaseConfirmPasswordReset, firebaseSendPasswordReset } from "../../firebase/auth";
 import {
   JOIN_RELATIONSHIPS,
   OWNER_RELATIONSHIPS,
@@ -80,6 +80,16 @@ const UI = {
     rateNote: "নিরাপত্তার জন্য প্রতি মিনিটে সর্বোচ্চ ৫ বার চেষ্টা করা যাবে",
     resetInfo: "আপনার ইমেইলে একটি পাসওয়ার্ড রিসেট লিংক পাঠানো হবে (মেয়াদ ৩০ মিনিট)।",
     btnSendReset: "রিসেট লিংক পাঠান",
+    resetFormTitle: "নতুন পাসওয়ার্ড সেট করুন",
+    resetFormInfo:
+      "লিংক শুধু অ্যাপ খোলে না — এখানে নতুন পাসওয়ার্ড লিখে সেভ করুন। তারপর Login এ সেই নতুন পাসওয়ার্ড দিন।",
+    lblNewPassword: "নতুন পাসওয়ার্ড",
+    lblConfirmPassword: "পাসওয়ার্ড নিশ্চিত করুন",
+    btnSaveNewPassword: "নতুন পাসওয়ার্ড সেভ করুন",
+    resetTokenPaste: "আমার কাছে রিসেট টোকেন আছে",
+    lblResetToken: "রিসেট টোকেন (ইমেইল থেকে)",
+    passwordMismatch: "দুই পাসওয়ার্ড মিলছে না",
+    resetDone: "পাসওয়ার্ড বদলেছে — এখন নতুন পাসওয়ার্ড দিয়ে Login করুন",
     backToLogin: "← লগইনে ফিরুন",
     or: "অথবা",
     noAccount: "কোনো অ্যাকাউন্ট নেই? পরিবার তৈরি করুন অথবা ইনভাইট কোড দিয়ে যোগ দিন",
@@ -155,6 +165,16 @@ const UI = {
     rateNote: "For security, max 5 attempts allowed per minute",
     resetInfo: "A password reset link will be sent to your email (valid 30 minutes).",
     btnSendReset: "Send reset link",
+    resetFormTitle: "Set a new password",
+    resetFormInfo:
+      "Opening the app is not enough — enter and save a NEW password here, then Login with that new password.",
+    lblNewPassword: "New password",
+    lblConfirmPassword: "Confirm password",
+    btnSaveNewPassword: "Save new password",
+    resetTokenPaste: "I have a reset token",
+    lblResetToken: "Reset token (from email)",
+    passwordMismatch: "Passwords do not match",
+    resetDone: "Password updated — Login with your new password",
     backToLogin: "← Back to login",
     or: "or",
     noAccount: "Don't have an account? Create a family or join with an invite code",
@@ -205,6 +225,7 @@ const MODE_META = {
   createFamily: { ico: "👑", key: "btnCreate" },
   join: { ico: "🔗", key: "btnJoin" },
   forgot: { ico: "🔓", key: "btnPassword" },
+  resetPassword: { ico: "🔓", key: "btnPassword" },
   verifyOtp: { ico: "🔢", key: "btnLogin" },
 };
 
@@ -215,6 +236,42 @@ function passwordStrength(pw) {
   if (/\d/.test(pw)) score += 1;
   if (/[^A-Za-z0-9]/.test(pw)) score += 1;
   return score;
+}
+
+function readPasswordResetParams() {
+  try {
+    const url = new URL(window.location.href);
+    const fromSearch = url.searchParams;
+    let fromHash = new URLSearchParams();
+    if (url.hash.includes("?")) {
+      fromHash = new URLSearchParams(url.hash.slice(url.hash.indexOf("?") + 1));
+    }
+    const pick = (key) =>
+      String(fromSearch.get(key) || fromHash.get(key) || "").trim();
+    return {
+      token: pick("reset_token") || pick("token"),
+      oobCode: pick("oobCode"),
+      mode: pick("mode"),
+    };
+  } catch {
+    return { token: "", oobCode: "", mode: "" };
+  }
+}
+
+function clearPasswordResetParams() {
+  try {
+    const url = new URL(window.location.href);
+    ["reset_token", "token", "oobCode", "mode", "apiKey", "lang", "continueUrl"].forEach((key) => {
+      url.searchParams.delete(key);
+    });
+    if (url.hash.includes("?")) {
+      url.hash = url.hash.split("?")[0];
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", next || "/");
+  } catch {
+    /* ignore */
+  }
 }
 
 function StepIndicator({ active, labels }) {
@@ -348,14 +405,17 @@ export function FamilyAuthGate({
   onCloudJoinFamily,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
-  const L = UI[lang];
+  const L = UI[lang] || UI.en;
   const useCloudAuth = Boolean(firebaseFirstMode);
-  const [view, setView] = useState("login"); // login | createFamily | join | forgot | verifyOtp
+  const [view, setView] = useState("login"); // login | createFamily | join | forgot | resetPassword | verifyOtp
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [firebaseOobCode, setFirebaseOobCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -882,7 +942,12 @@ export function FamilyAuthGate({
     try {
       if (useCloudAuth) {
         await firebaseSendPasswordReset(email.trim());
-        setMessage(t("forgotSent"), "success");
+        setMessage(
+          lang === "bn"
+            ? "ইমেইল চেক করুন। Firebase পেজে নতুন পাসওয়ার্ড সেট করুন — শুধু অ্যাপ খুললে পাসওয়ার্ড বদলাবে না।"
+            : "Check email. Set the new password on the Firebase page — opening the app alone does not change it.",
+          "success",
+        );
         setView("login");
         setStatus("");
         return;
@@ -894,8 +959,74 @@ export function FamilyAuthGate({
       });
       const data = await parseJson(res);
       if (!res.ok) throw new Error(apiError(data, "Reset failed"));
-      setMessage(t("forgotSent"), "success");
+      // Dev/staging may return the token in the JSON body.
+      const inlineToken = String(data.reset_token || data.data?.reset_token || "").trim();
+      if (inlineToken) {
+        setResetToken(inlineToken);
+        setView("resetPassword");
+        setMessage(
+          lang === "bn"
+            ? "টোকেন পাওয়া গেছে — নিচে নতুন পাসওয়ার্ড সেট করুন (ইমেইলও চেক করুন)।"
+            : "Token ready — set a new password below (also check email).",
+          "success",
+        );
+      } else {
+        setMessage(
+          lang === "bn"
+            ? "রিসেট লিংক ইমেইলে পাঠানো হয়েছে। লিংকে ক্লিক করলে নতুন পাসওয়ার্ড সেট করার ফর্ম খুলবে।"
+            : "Reset link sent. Click it to open the form where you set a new password.",
+          "success",
+        );
+        setView("login");
+      }
+      setStatus("");
+    } catch (error) {
+      setMessage(formatFetchError(error, lang, apiBase), "error");
+      setStatus("");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleResetPassword(e) {
+    e?.preventDefault?.();
+    if (!password || password.length < 8) {
+      setMessage(t("emailPasswordRequired") || "Password required (min 8)", "error");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setMessage(L.passwordMismatch, "error");
+      return;
+    }
+    setAuthLoading(true);
+    setStatus(lang === "bn" ? "পাসওয়ার্ড সেভ হচ্ছে…" : "Saving password…");
+    try {
+      if (firebaseOobCode) {
+        await firebaseConfirmPasswordReset(firebaseOobCode, password);
+      } else {
+        const token = String(resetToken || "").trim();
+        if (!token) {
+          throw new Error(
+            lang === "bn"
+              ? "রিসেট টোকেন নেই — ইমেইলের লিংক খুলুন অথবা টোকেন পেস্ট করুন।"
+              : "Missing reset token — open the email link or paste the token.",
+          );
+        }
+        const res = await fetch(`${apiBase}/auth/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, new_password: password }),
+        });
+        const data = await parseJson(res);
+        if (!res.ok) throw new Error(apiError(data, "Reset failed"));
+      }
+      clearPasswordResetParams();
+      setResetToken("");
+      setFirebaseOobCode("");
+      setPassword("");
+      setConfirmPassword("");
       setView("login");
+      setMessage(L.resetDone, "success");
       setStatus("");
     } catch (error) {
       setMessage(formatFetchError(error, lang, apiBase), "error");
@@ -918,6 +1049,34 @@ export function FamilyAuthGate({
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    const params = readPasswordResetParams();
+    if (params.oobCode && (!params.mode || params.mode === "resetPassword")) {
+      setFirebaseOobCode(params.oobCode);
+      setView("resetPassword");
+      setMessage(
+        lang === "bn"
+          ? "রিসেট লিংক পাওয়া গেছে — নতুন পাসওয়ার্ড সেট করুন।"
+          : "Reset link detected — set your new password.",
+        "success",
+      );
+      return;
+    }
+    if (params.token) {
+      setResetToken(params.token);
+      setFirebaseOobCode("");
+      setView("resetPassword");
+      setMessage(
+        lang === "bn"
+          ? "রিসেট লিংক পাওয়া গেছে — নতুন পাসওয়ার্ড সেট করুন।"
+          : "Reset link detected — set your new password.",
+        "success",
+      );
+    }
+    // Only on mount — URL may include one-time token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -961,7 +1120,7 @@ export function FamilyAuthGate({
       <div className="shell">
         <div className="formside">
           <div className="stagearea">
-            {view === "login" || view === "forgot" || view === "verifyOtp" ? (
+            {view === "login" || view === "forgot" || view === "resetPassword" || view === "verifyOtp" ? (
               <div className="card">
                 <div className="top-row">
                   <select
@@ -993,7 +1152,7 @@ export function FamilyAuthGate({
                   saveApiBase={saveApiBase}
                 />
 
-                {!useCloudAuth && view !== "login" && view !== "forgot" ? (
+                {!useCloudAuth && view !== "login" && view !== "forgot" && view !== "resetPassword" ? (
                 <div className="mode-select-wrap" ref={menuRef}>
                   <span className="mode-select-label">{L.modeLabel}</span>
                   <button
@@ -1186,6 +1345,100 @@ export function FamilyAuthGate({
                       </div>
                     </form>
                   </>
+                ) : view === "resetPassword" ? (
+                  <>
+                    <div className="card-title" style={{ marginBottom: 8 }}>
+                      {L.resetFormTitle}
+                    </div>
+                    <div className="info-box">{L.resetFormInfo}</div>
+                    <form onSubmit={handleResetPassword}>
+                      {!firebaseOobCode ? (
+                        <div className="field">
+                          <label>{L.lblResetToken}</label>
+                          <div className="input-wrap">
+                            <span className="input-icon">🔑</span>
+                            <input
+                              type="text"
+                              autoComplete="one-time-code"
+                              placeholder="paste token from email"
+                              value={resetToken}
+                              disabled={authLoading}
+                              onChange={(e) => setResetToken(e.target.value.trim())}
+                              required
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="field">
+                        <label>{L.lblNewPassword}</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">🔒</span>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            value={password}
+                            disabled={authLoading}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            minLength={8}
+                          />
+                          <button
+                            type="button"
+                            className="toggle-eye"
+                            disabled={authLoading}
+                            onClick={() => setShowPassword((v) => !v)}
+                          >
+                            {showPassword ? L.hide : L.show}
+                          </button>
+                        </div>
+                        <div className={`pw-meter s${pwScore}`}>
+                          <i />
+                          <i />
+                          <i />
+                          <i />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label>{L.lblConfirmPassword}</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">🔒</span>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            value={confirmPassword}
+                            disabled={authLoading}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            required
+                            minLength={8}
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" className="btn-primary" disabled={authLoading}>
+                        {authLoading
+                          ? lang === "bn"
+                            ? "সেভ হচ্ছে…"
+                            : "Saving…"
+                          : L.btnSaveNewPassword}
+                      </button>
+                    </form>
+                    <div className="footer-note">
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={authLoading}
+                        onClick={() => {
+                          clearPasswordResetParams();
+                          setFirebaseOobCode("");
+                          setResetToken("");
+                          setPassword("");
+                          setConfirmPassword("");
+                          setMode("login");
+                        }}
+                      >
+                        {L.backToLogin}
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="info-box">{L.resetInfo}</div>
@@ -1209,6 +1462,23 @@ export function FamilyAuthGate({
                       </button>
                     </form>
                     <div className="footer-note">
+                      {!useCloudAuth ? (
+                        <>
+                          <button
+                            type="button"
+                            className="link"
+                            disabled={authLoading}
+                            onClick={() => {
+                              setPassword("");
+                              setConfirmPassword("");
+                              setMode("resetPassword");
+                            }}
+                          >
+                            {L.resetTokenPaste}
+                          </button>
+                          {" · "}
+                        </>
+                      ) : null}
                       <button type="button" className="link" disabled={authLoading} onClick={() => setMode("login")}>
                         {L.backToLogin}
                       </button>
@@ -1229,7 +1499,7 @@ export function FamilyAuthGate({
                   </div>
                 ) : null}
 
-                {view !== "login" && view !== "forgot" && view !== "verifyOtp" ? (
+                {view !== "login" && view !== "forgot" && view !== "resetPassword" && view !== "verifyOtp" ? (
                 <StepIndicator active={stepActive} labels={L} />
                 ) : null}
                 {status ? <p className="rate-note" style={{ marginTop: 12 }}>{status}</p> : null}

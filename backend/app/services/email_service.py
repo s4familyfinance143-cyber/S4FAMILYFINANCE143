@@ -109,14 +109,21 @@ def send_password_reset_email(*, to_email: str, token: str) -> EmailSendResult:
     subject = "S4 Family Finance — Password reset"
     text = (
         "You requested a password reset for S4 Family Finance.\n\n"
-        f"Reset token:\n{token}\n\n"
-        f"Open this link (or paste the token in the app):\n{link}\n\n"
+        "1) Open this link — the app will show a form to set a NEW password:\n"
+        f"{link}\n\n"
+        "2) Or open the app → Forgot password → “I have a reset token” and paste:\n"
+        f"{token}\n\n"
+        "After saving the new password, sign in with that new password (not the old one).\n\n"
         "If you did not request this, ignore this email."
     )
     html = (
         "<p>You requested a password reset for <strong>S4 Family Finance</strong>.</p>"
-        f"<p><code>{token}</code></p>"
-        f'<p><a href="{link}">Reset password</a></p>'
+        "<p>Open the link below. You will get a form to <strong>set a new password</strong> "
+        "(opening the app alone does not change the password).</p>"
+        f'<p><a href="{link}">Set new password</a></p>'
+        f"<p>Or paste this token in the app (Forgot password → I have a reset token):"
+        f"<br><code style='word-break:break-all'>{token}</code></p>"
+        "<p>Then <strong>Login</strong> with the <em>new</em> password.</p>"
         "<p>If you did not request this, ignore this email.</p>"
     )
     return send_email(to_email=to_email, subject=subject, text_body=text, html_body=html)
