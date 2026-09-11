@@ -365,6 +365,7 @@ function App() {
     Boolean(FIREBASE_CONFIGURED && (loadCloudOnlyMode() || loadCloudFamilyId())),
   );
   const [currentUser, setCurrentUser] = useState(null);
+  const [displayAvatarUrl, setDisplayAvatarUrl] = useState("");
   const [myPermissions, setMyPermissions] = useState(null);
   const [memberPermissions, setMemberPermissions] = useState([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -2921,6 +2922,50 @@ function App() {
     return `${apiBase}${path.startsWith("/") ? path : `/${path}`}`;
   }
 
+  // API avatars require Bearer auth — <img src> cannot send that header, so load as blob URL.
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    async function loadAvatar() {
+      const path = currentUser?.avatar_url || currentUser?.photo_url || "";
+      if (!path) {
+        setDisplayAvatarUrl("");
+        return;
+      }
+      const absolute = /^https?:\/\//i.test(path)
+        ? path
+        : `${apiBase}${path.startsWith("/") ? path : `/${path}`}`;
+      const isProtectedApiAvatar = /\/auth\/avatar\//i.test(absolute) || /^\/auth\/avatar\//i.test(path);
+      if (!isProtectedApiAvatar) {
+        setDisplayAvatarUrl(absolute);
+        return;
+      }
+      if (!token) {
+        setDisplayAvatarUrl("");
+        return;
+      }
+      try {
+        const res = await fetch(absolute, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          if (!cancelled) setDisplayAvatarUrl("");
+          return;
+        }
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setDisplayAvatarUrl(objectUrl);
+      } catch {
+        if (!cancelled) setDisplayAvatarUrl("");
+      }
+    }
+    void loadAvatar();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [currentUser?.avatar_url, currentUser?.photo_url, token, apiBase]);
+
   async function applyCloudUserAvatar(user, profileOverride = null) {
     if (!user?.uid) return;
     try {
@@ -3000,7 +3045,13 @@ function App() {
     }
 
     const form = new FormData();
-    form.append("file", file);
+    const mime = clientCheck.contentType || "image/jpeg";
+    const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+    const named =
+      file.name && /\.(jpe?g|png|webp)$/i.test(file.name)
+        ? file
+        : new File([file], `avatar.${ext}`, { type: mime });
+    form.append("file", named, named.name);
     try {
       console.info("[S4 ProfilePhoto] API upload start", {
         name: file.name,
@@ -10942,7 +10993,7 @@ function App() {
         t={t}
         email={email}
         currentUser={currentUser}
-        avatarUrl={avatarUrl(currentUser)}
+        avatarUrl={displayAvatarUrl || avatarUrl(currentUser)}
         families={families}
         activeFamilyId={activeFamilyId}
         changeActiveFamily={changeActiveFamily}
@@ -10977,7 +11028,7 @@ function App() {
           onMarkNotificationRead={markNotificationRead}
           onMarkAllNotificationsRead={markAllNotificationsRead}
           onLogout={logout}
-          avatarUrl={avatarUrl(currentUser)}
+          avatarUrl={displayAvatarUrl || avatarUrl(currentUser)}
           currentUser={currentUser}
           email={email}
           navItems={navItems}
@@ -12391,7 +12442,7 @@ function App() {
               email: currentUser?.email || firebaseUser?.email || email || "",
             }}
             email={email || firebaseUser?.email || ""}
-            avatarUrl={avatarUrl(currentUser)}
+            avatarUrl={displayAvatarUrl || avatarUrl(currentUser)}
             onUploadPhoto={uploadProfilePhoto}
             onRemovePhoto={removeProfilePhoto}
             activeFamily={activeFamily}

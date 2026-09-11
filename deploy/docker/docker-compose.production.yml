@@ -160,6 +160,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ../../secrets:/secrets:ro
+      - avatar_data:/app/storage/avatars
     healthcheck:
       test:
         [
@@ -313,3 +314,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  avatar_data:

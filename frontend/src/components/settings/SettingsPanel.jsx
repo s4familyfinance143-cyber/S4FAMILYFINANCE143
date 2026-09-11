@@ -526,7 +526,7 @@ export function SettingsPanel({
                 )}
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                   hidden
                   disabled={photoUploading || photoRemoving}
                   onChange={(e) => {

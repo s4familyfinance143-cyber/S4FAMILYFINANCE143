@@ -16,6 +16,16 @@ ALLOWED_TYPES = {
 MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 
 
+def _sniff_image_type(data: bytes) -> str | None:
+    if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def avatars_dir() -> Path:
     root = Path(__file__).resolve().parents[2] / "storage" / "avatars"
     root.mkdir(parents=True, exist_ok=True)
@@ -46,11 +56,6 @@ def avatar_url_for(user_id: str | UUID) -> str | None:
 async def save_avatar(user_id: str | UUID, upload: UploadFile) -> str:
     content_type = (upload.content_type or "").lower().strip()
     ext = ALLOWED_TYPES.get(content_type)
-    if not ext:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPG, PNG or WebP images allowed",
-        )
 
     data = await upload.read()
     if not data:
@@ -59,6 +64,18 @@ async def save_avatar(user_id: str | UUID, upload: UploadFile) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Image must be 2MB or smaller",
+        )
+
+    # Android/WebView often sends empty or application/octet-stream — sniff bytes.
+    if not ext:
+        sniffed = _sniff_image_type(data)
+        if sniffed:
+            content_type = sniffed
+            ext = ALLOWED_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG, PNG or WebP images allowed",
         )
 
     # Replace any previous extension for this user

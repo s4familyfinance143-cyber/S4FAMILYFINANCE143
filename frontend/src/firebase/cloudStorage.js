@@ -44,7 +44,11 @@ export function resolveProfilePhotoContentType(file) {
 
 export function validateProfilePhotoFile(file) {
   if (!file) return { ok: false, reason: "missing_file", message: "No file selected." };
-  const type = resolveProfilePhotoContentType(file);
+  let type = resolveProfilePhotoContentType(file);
+  // Android WebView / gallery picks often omit MIME and sometimes the filename.
+  if (!type || type === "application/octet-stream") {
+    type = "image/jpeg";
+  }
   if (!["image/jpeg", "image/png", "image/webp"].includes(type)) {
     return {
       ok: false,
