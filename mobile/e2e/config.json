@@ -1,0 +1,10 @@
+{
+  "testEnvironment": "detox/runners/jest/testEnvironment",
+  "testRunner": "jest-circus/runner",
+  "testTimeout": 180000,
+  "testMatch": ["**/e2e/**/*.e2e.js"],
+  "maxWorkers": 1,
+  "reporters": ["detox/runners/jest/reporter"],
+  "globalSetup": "detox/runners/jest/globalSetup",
+  "globalTeardown": "detox/runners/jest/globalTeardown"
+}
