@@ -931,6 +931,21 @@ export function FamilyAuthGate({
       return;
     }
     try {
+      const host = new URL(next).hostname.toLowerCase();
+      if (/s4businessthir/i.test(host) && !/s4businessthinking\.com$/i.test(host)) {
+        setMessage(
+          lang === "bn"
+            ? "API URL অসম্পূর্ণ। লিখুন: https://app.s4businessthinking.com/api/v1"
+            : "API URL incomplete. Use: https://app.s4businessthinking.com/api/v1",
+          "error",
+        );
+        return;
+      }
+    } catch {
+      setMessage(lang === "bn" ? "API URL সঠিক নয়" : "Invalid API URL", "error");
+      return;
+    }
+    try {
       localStorage.setItem("s4_api_base", next);
     } catch {
       /* ignore */
