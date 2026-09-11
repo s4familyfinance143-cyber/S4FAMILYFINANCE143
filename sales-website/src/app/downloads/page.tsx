@@ -216,6 +216,7 @@ export default function DownloadsPage() {
             {financeAndroid?.href ? (
               <a
                 href={financeAndroid.href}
+                download={financeAndroid.fileName || true}
                 className="inline-flex items-center justify-center rounded-xl bg-accent2 px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90"
               >
                 {c.android}
@@ -224,6 +225,7 @@ export default function DownloadsPage() {
             {financeWindows?.href ? (
               <a
                 href={financeWindows.href}
+                download={financeWindows.fileName || true}
                 className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90"
               >
                 {c.windows}
@@ -347,6 +349,7 @@ export default function DownloadsPage() {
                       {isAvailable ? (
                         <a
                           href={release.href}
+                          download={release.fileName || true}
                           className="mt-4 block rounded-xl bg-accent px-5 py-3 text-center text-sm font-bold text-bg transition-opacity hover:opacity-90"
                         >
                           {c.downloadNow}

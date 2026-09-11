@@ -50,7 +50,23 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      {
+        source: "/downloads/:file*",
+        headers: [
+          ...securityHeaders,
+          {
+            key: "Content-Disposition",
+            value: "attachment",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, immutable",
+          },
+        ],
+      },
+    ];
   },
 };
 
