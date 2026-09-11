@@ -51,9 +51,19 @@ jobs:
         run: |
           umask 077
           mkdir -p ~/.ssh
-          printf '%s\n' "$PRODUCTION_SSH_KEY" > ~/.ssh/vps_deploy
-          chmod 600 ~/.ssh/vps_deploy
+          # Avoid mangling OpenSSH PEM (preserve newlines exactly)
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          key = os.environ["PRODUCTION_SSH_KEY"].replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
+          path = Path.home() / ".ssh" / "vps_deploy"
+          path.write_text(key, encoding="utf-8")
+          path.chmod(0o600)
+          print("ssh_key_bytes", path.stat().st_size)
+          PY
           ssh-keyscan -H "${{ secrets.PRODUCTION_HOST }}" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/vps_deploy -o BatchMode=yes -o ConnectTimeout=15 \
+            "${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}" 'echo SSH_OK'
 
       - name: Sync + rebuild on VPS
         env:
