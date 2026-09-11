@@ -3,7 +3,12 @@
   "appName": "S4 Family Finance",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "allowNavigation": [
+      "app.s4businessthinking.com",
+      "www.s4businessthinking.com",
+      "*.s4businessthinking.com"
+    ]
   },
   "android": {
     "allowMixedContent": true

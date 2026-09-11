@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
-import { formatFetchError, isLocalhostApi, isNativeApp } from "../../lib/runtimeEnv";
+import { formatFetchError, isLocalhostApi, isNativeApp, isProductionApi } from "../../lib/runtimeEnv";
 import { firebaseSendPasswordReset } from "../../firebase/auth";
 import {
   JOIN_RELATIONSHIPS,
@@ -107,11 +107,11 @@ const UI = {
     colJoin: "ইনভাইট ও সম্পর্ক",
     lblNote: "নোট",
     lblLinkedMember: "লিংকড সদস্য ID",
-    mobileApiTitle: "ফোনে অ্যাকাউন্ট/পরিবার তৈরি",
+    mobileApiTitle: "মোবাইল অ্যাপ",
     mobileApiHint:
-      "PC-তে backend চালু রাখুন (start_dev.ps1)। নিচে Server settings-এ PC-র Wi‑Fi IP দিন — যেমন http://192.168.1.5:8000 (127.0.0.1 ফোনে কাজ করে না)।",
+      "লাইভ সার্ভার: https://app.s4businessthinking.com/api/v1 — সাধারণত আলাদা সেটিং লাগে না। সমস্যা হলে নিচে Server settings চেক করুন।",
     mobileApiBlocked:
-      "আগে Server settings-এ PC-র API URL সেট করুন (127.0.0.1 ফোনে কাজ করে না)।",
+      "Server settings-এ API URL দিন: https://app.s4businessthinking.com/api/v1",
     cloudCreateSub: "",
     cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
     cloudLoginPageSub: "Firebase ক্লাউড — লগইন করুন বা পরিবার তৈরি করুন",
@@ -182,11 +182,11 @@ const UI = {
     colJoin: "Invite & relationship",
     lblNote: "Note",
     lblLinkedMember: "Linked member ID",
-    mobileApiTitle: "Create account/family on phone",
+    mobileApiTitle: "Mobile app",
     mobileApiHint:
-      "Keep backend running on your PC (start_dev.ps1). In Server settings below, set your PC Wi‑Fi IP — e.g. http://192.168.1.5:8000 (127.0.0.1 does not work on phone).",
+      "Live server: https://app.s4businessthinking.com/api/v1 — usually no extra setup. If login fails, check Server settings below.",
     mobileApiBlocked:
-      "Set your PC API URL in Server settings first (127.0.0.1 does not work on phone).",
+      "Set API URL in Server settings: https://app.s4businessthinking.com/api/v1",
     cloudCreateSub: "",
     cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
     cloudLoginPageSub: "Cloud sign in or create your family",
@@ -255,8 +255,10 @@ function LoginCardBrand({ subtitle }) {
   );
 }
 
-function MobileApiBanner({ nativeApp, useCloudAuth, labels }) {
+function MobileApiBanner({ nativeApp, useCloudAuth, labels, apiBase }) {
   if (!nativeApp || useCloudAuth) return null;
+  // Hide noisy LAN/PC banner when talking to the live production API.
+  if (isProductionApi(apiBase) && !isLocalhostApi(apiBase)) return null;
   return (
     <div className="warn-box" style={{ marginBottom: 14 }}>
       <strong>{labels.mobileApiTitle}</strong>
@@ -294,12 +296,12 @@ function ServerSettingsBlock({
       </button>
       {showAdvancedServer ? (
         <div className="field">
-          <label>{lang === "bn" ? "API URL (LAN / backend)" : "API URL (LAN / backend)"}</label>
+          <label>{lang === "bn" ? "API URL (সার্ভার)" : "API URL (server)"}</label>
           <div className="input-wrap">
             <span className="input-icon">🌐</span>
             <input
               type="url"
-              placeholder="http://127.0.0.1:8000"
+              placeholder="https://app.s4businessthinking.com/api/v1"
               value={apiBaseDraft}
               disabled={authLoading}
               onChange={(e) => setApiBaseDraft(e.target.value)}
@@ -582,7 +584,7 @@ export function FamilyAuthGate({
       setOtpCode("");
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -607,7 +609,7 @@ export function FamilyAuthGate({
         "success",
       );
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
     } finally {
       setAuthLoading(false);
     }
@@ -640,7 +642,7 @@ export function FamilyAuthGate({
       );
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -679,7 +681,7 @@ export function FamilyAuthGate({
           );
         }
       } catch (error) {
-        setMessage(formatFetchError(error, lang), "error");
+        setMessage(formatFetchError(error, lang, apiBase), "error");
         setStatus("");
       } finally {
         setAuthLoading(false);
@@ -712,7 +714,7 @@ export function FamilyAuthGate({
       setMessage(t("loginSuccessful"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -740,7 +742,7 @@ export function FamilyAuthGate({
         });
         setStatus("");
       } catch (error) {
-        setMessage(formatFetchError(error, lang), "error");
+        setMessage(formatFetchError(error, lang, apiBase), "error");
         setStatus("");
       } finally {
         setAuthLoading(false);
@@ -781,7 +783,7 @@ export function FamilyAuthGate({
       setMessage(t("familyCreatedGate"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -807,7 +809,7 @@ export function FamilyAuthGate({
         });
         setStatus("");
       } catch (error) {
-        setMessage(formatFetchError(error, lang), "error");
+        setMessage(formatFetchError(error, lang, apiBase), "error");
         setStatus("");
       } finally {
         setAuthLoading(false);
@@ -862,7 +864,7 @@ export function FamilyAuthGate({
       setMessage(t("joinRequestedGate"), "success");
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -896,7 +898,7 @@ export function FamilyAuthGate({
       setView("login");
       setStatus("");
     } catch (error) {
-      setMessage(formatFetchError(error, lang), "error");
+      setMessage(formatFetchError(error, lang, apiBase), "error");
       setStatus("");
     } finally {
       setAuthLoading(false);
@@ -963,7 +965,7 @@ export function FamilyAuthGate({
                 </div>
 
                 <LoginCardBrand subtitle={useCloudAuth ? L.cloudLoginPageSub : L.subtitle} />
-                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
+                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
 
                 <ServerSettingsBlock
                   useCloudAuth={useCloudAuth}
@@ -1270,7 +1272,7 @@ export function FamilyAuthGate({
                     </button>
                   </div>
 
-                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} />
+                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
 
                 <ServerSettingsBlock
                   useCloudAuth={useCloudAuth}

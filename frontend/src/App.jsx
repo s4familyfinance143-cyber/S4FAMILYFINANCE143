@@ -210,6 +210,22 @@ function normalizeApiBase(value) {
   return cleaned;
 }
 
+function isUsableApiBase(url) {
+  try {
+    const u = new URL(String(url || "").trim());
+    const h = u.hostname.toLowerCase();
+    if (!h) return false;
+    if (h === "localhost" || h === "127.0.0.1") return true;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+    if (!h.includes(".")) return false;
+    // Reject truncated production host typed in Server settings (e.g. app.s4businessthir)
+    if (/s4businessthir/i.test(h) && !/s4businessthinking\.com$/i.test(h)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_API_BASE = normalizeApiBase(
   import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000",
 );
@@ -225,7 +241,9 @@ function readStoredApiBase() {
   try {
     const saved = localStorage.getItem(API_BASE_STORAGE_KEY);
     if (saved && String(saved).trim()) {
-      return normalizeApiBase(saved);
+      const normalized = normalizeApiBase(saved);
+      if (isUsableApiBase(normalized)) return normalized;
+      localStorage.removeItem(API_BASE_STORAGE_KEY);
     }
   } catch {
     /* ignore */
