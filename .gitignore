@@ -91,3 +91,18 @@ SETUP_COMPLETE.md
 .tmp-*.json
 .tmp-*.zip
 
+# Deploy SSH keys / one-off temp scripts (never commit)
+deploy/secrets/
+deploy/scripts/_tmp*
+sales-website/.env
+sales-website/.env.local
+sales-website/.env*.local
+sales-website/node_modules/
+sales-website/.next/
+sales-website/public/downloads/*.apk
+sales-website/public/downloads/*.exe
+sales-website/public/downloads/*.APK
+sales-website/public/downloads/*.EXE
+sales-website/public/uploads/*
+!sales-website/public/uploads/.gitkeep
+

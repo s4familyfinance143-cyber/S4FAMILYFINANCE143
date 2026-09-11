@@ -1,0 +1,87 @@
+name: Auto deploy VPS (app + website)
+
+# On every push to main: sync this repo to the production VPS and rebuild
+# Family Finance (app.s4businessthinking.com) + marketing site (www).
+# Server-only secrets (.env.production, website .env.local) are never overwritten.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      deploy_app:
+        description: Rebuild Family Finance app
+        type: boolean
+        default: true
+      deploy_website:
+        description: Rebuild marketing website
+        type: boolean
+        default: true
+
+concurrency:
+  group: vps-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy → production VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deploy secrets
+        id: gate
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          if [ -z "${PRODUCTION_HOST}" ] || [ -z "${PRODUCTION_SSH_KEY}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::error::PRODUCTION_HOST / PRODUCTION_SSH_KEY missing. Add GitHub secrets (repo or production environment)."
+            exit 1
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - name: Install rsync / ssh client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rsync openssh-client
+
+      - name: Write SSH key
+        env:
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PRODUCTION_SSH_KEY" > ~/.ssh/vps_deploy
+          chmod 600 ~/.ssh/vps_deploy
+          ssh-keyscan -H "${{ secrets.PRODUCTION_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync + rebuild on VPS
+        env:
+          DEPLOY_HOST: ${{ secrets.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+          APP_REMOTE_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+          SITE_REMOTE_PATH: ${{ secrets.PRODUCTION_SITE_PATH }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DEPLOY_APP: ${{ inputs.deploy_app }}
+          INPUT_DEPLOY_WEBSITE: ${{ inputs.deploy_website }}
+        run: |
+          set -euo pipefail
+          export DEPLOY_APP=1
+          export DEPLOY_WEBSITE=1
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            [ "${INPUT_DEPLOY_APP}" = "false" ] && export DEPLOY_APP=0
+            [ "${INPUT_DEPLOY_WEBSITE}" = "false" ] && export DEPLOY_WEBSITE=0
+          fi
+          export DEPLOY_SSH_KEY_PATH="$HOME/.ssh/vps_deploy"
+          export DEPLOY_USER="${DEPLOY_USER:-root}"
+          export APP_REMOTE_PATH="${APP_REMOTE_PATH:-/opt/s4-family-finance}"
+          export SITE_REMOTE_PATH="${SITE_REMOTE_PATH:-/opt/s4}"
+          chmod +x deploy/scripts/ci_rsync_deploy.sh deploy/scripts/vps_ci_auto_deploy.sh
+          sed -i 's/\r$//' deploy/scripts/ci_rsync_deploy.sh deploy/scripts/vps_ci_auto_deploy.sh
+          bash deploy/scripts/ci_rsync_deploy.sh
+
+      - name: Public smoke checks
+        run: |
+          set -euo pipefail
+          curl -fsS -o /dev/null -w "app=%{http_code}\n" https://app.s4businessthinking.com/ || true
+          curl -fsS -o /dev/null -w "www=%{http_code}\n" https://www.s4businessthinking.com/downloads || true

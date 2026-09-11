@@ -1,0 +1,21 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Download Center",
+  description:
+    "Download the latest installers for S4BUSINESSTHINKING Spare Parts Inventory Software and S4 FAMILY FINANCE 143 for Windows and Android.",
+  alternates: { canonical: "/downloads" },
+  openGraph: {
+    title: "Download Center — S4BUSINESSTHINKING",
+    description: "Official installers for Windows and Android.",
+    url: "/downloads",
+  },
+};
+
+export default function DownloadsLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return children;
+}

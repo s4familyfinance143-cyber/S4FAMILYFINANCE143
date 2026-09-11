@@ -7,23 +7,25 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 ```
 git push / PR open
   → pytest (unit + integration)
-  → ESLint
-  → bandit
-  → npm audit
-  → frontend build + packaging validate
-  → Docker build (+ push to GHCR on develop/main push)
-  → auto deploy staging (develop)
-  → manual approval → deploy production (main)
-  → Sentry deployment marker (optional)
+    → ESLint
+    → bandit
+    → npm audit
+    → frontend build + packaging validate
+    → Docker build (+ push to GHCR on develop/main push)
+    → auto deploy staging (develop) [optional GHCR path]
+    → Auto deploy VPS on main (rsync + local rebuild) — see README_AUTO_DEPLOY.md
 ```
+
+Production live path (shared VPS): **`auto-deploy-vps.yml`** →
+https://app.s4businessthinking.com + https://www.s4businessthinking.com
 
 ## Environments
 
 | Environment | Branch | Deploy | URL |
 |-------------|--------|--------|-----|
 | Local (WSL) | any | `docker compose up` | http://localhost:8000 |
-| Staging | `develop` | auto on push | https://staging.s4family.app |
-| Production | `main` | manual approval in GitHub | https://app.s4family.app |
+| Staging | `develop` | auto on push (if secrets set) | staging host |
+| Production VPS | `main` | **auto** via `auto-deploy-vps.yml` | https://app.s4businessthinking.com |
 
 ## GitHub repository setup
 
