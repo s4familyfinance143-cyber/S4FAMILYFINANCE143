@@ -149,8 +149,8 @@ export const downloadReleases: DownloadRelease[] = [
     releaseDate: "2026-09-12",
     status: "available",
     fileName: "S4-Family-Finance-143.apk",
-    size: "—",
-    sha256: null,
+    size: "10.2 MB",
+    sha256: "cf126feb505ce4143fce0cb307092cbed1e9b0fd3f71f0e6210518660519ffe8",
     href: "/downloads/S4-Family-Finance-143.apk",
   },
   {
