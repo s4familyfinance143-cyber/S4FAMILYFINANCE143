@@ -1089,61 +1089,6 @@ export function SettingsPanel({
               </button>
             </div>
 
-            <div className="security-row" role="listitem">
-              <div className="security-row-copy">
-                <div className="security-row-title">
-                  <h4>{t("emailVerification")}</h4>
-                  <span
-                    className={`security-status-badge ${
-                      currentUser?.is_email_verified ? "ok" : "warn"
-                    }`}
-                  >
-                    {currentUser?.is_email_verified
-                      ? t("verified")
-                      : t("pendingVerification")}
-                  </span>
-                </div>
-                <p>
-                  {displayEmail}
-                  {displayEmail !== "—" ? " · " : ""}
-                  {t("emailVerificationHelp")}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="btn security-row-action"
-                disabled={securityAction === "verification" || currentUser?.is_email_verified}
-                onClick={() => {
-                  Promise.resolve(resendVerification?.()).catch((err) => {
-                    console.warn("[S4 Security] resend verification failed", err);
-                  });
-                }}
-              >
-                {securityAction === "verification"
-                  ? t("sending")
-                  : currentUser?.is_email_verified
-                    ? t("verified")
-                    : t("resendVerification")}
-              </button>
-            </div>
-
-            {/* Soft mail readiness — no SMTP / .env jargon in UI */}
-            <div className="security-row security-row-muted" role="listitem">
-              <div className="security-row-copy">
-                <div className="security-row-title">
-                  <h4>{t("emailDelivery")}</h4>
-                  <span
-                    className={`security-status-badge ${
-                      emailStatus?.can_send ? "ok" : "warn"
-                    }`}
-                  >
-                    {emailStatus?.can_send ? t("mailReady") : t("mailUnavailable")}
-                  </span>
-                </div>
-                <p>{t("emailDeliveryHelp")}</p>
-              </div>
-            </div>
-
             <div className="security-row security-row-danger" role="listitem">
               <div className="security-row-copy">
                 <div className="security-row-title">
@@ -1202,6 +1147,62 @@ export function SettingsPanel({
                 </button>
               )}
             </div>
+
+            <div className="security-row" role="listitem">
+              <div className="security-row-copy">
+                <div className="security-row-title">
+                  <h4>{t("emailVerification")}</h4>
+                  <span
+                    className={`security-status-badge ${
+                      currentUser?.is_email_verified ? "ok" : "warn"
+                    }`}
+                  >
+                    {currentUser?.is_email_verified
+                      ? t("verified")
+                      : t("pendingVerification")}
+                  </span>
+                </div>
+                <p>
+                  {displayEmail}
+                  {displayEmail !== "—" ? " · " : ""}
+                  {t("emailVerificationHelp")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn security-row-action"
+                disabled={securityAction === "verification" || currentUser?.is_email_verified}
+                onClick={() => {
+                  Promise.resolve(resendVerification?.()).catch((err) => {
+                    console.warn("[S4 Security] resend verification failed", err);
+                  });
+                }}
+              >
+                {securityAction === "verification"
+                  ? t("sending")
+                  : currentUser?.is_email_verified
+                    ? t("verified")
+                    : t("resendVerification")}
+              </button>
+            </div>
+
+            {/* Soft mail readiness — no SMTP / .env jargon in UI */}
+            <div className="security-row security-row-muted" role="listitem">
+              <div className="security-row-copy">
+                <div className="security-row-title">
+                  <h4>{t("emailDelivery")}</h4>
+                  <span
+                    className={`security-status-badge ${
+                      emailStatus?.can_send ? "ok" : "warn"
+                    }`}
+                  >
+                    {emailStatus?.can_send ? t("mailReady") : t("mailUnavailable")}
+                  </span>
+                </div>
+                <p>{t("emailDeliveryHelp")}</p>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

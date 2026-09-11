@@ -145,12 +145,12 @@ export const downloadReleases: DownloadRelease[] = [
   {
     productSlug: "s4-family-finance-143",
     platform: "Android",
-    version: "1.0.37",
-    releaseDate: "2026-09-11",
+    version: "1.0.38",
+    releaseDate: "2026-09-12",
     status: "available",
     fileName: "S4-Family-Finance-143.apk",
-    size: "10.2 MB",
-    sha256: "069f28a3a20f65ef5ebfa651f96d7c437761d1a70b58c3c1387a4d4e105c9fe3",
+    size: "—",
+    sha256: null,
     href: "/downloads/S4-Family-Finance-143.apk",
   },
   {
