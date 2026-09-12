@@ -110,9 +110,12 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
   fi
 
   sleep 5
-  curl -fsS -o /dev/null -w "website_http=%{http_code}\n" http://127.0.0.1:3000/downloads || true
-  curl -fsS -o /dev/null -w "website_public=%{http_code}\n" https://www.s4businessthinking.com/downloads || true
-  # 401 = route alive + auth required (file check comes after auth)
+  # Best-effort purge of host/proxy HTML caches that kept serving old Downloads.
+  rm -rf /var/cache/nginx/* /var/lib/nginx/cache/* /var/cache/nginx/proxy_temp/* 2>/dev/null || true
+  nginx -s reload 2>/dev/null || systemctl reload nginx 2>/dev/null || true
+  curl -fsS -o /dev/null -w "website_http=%{http_code}\n" http://127.0.0.1:3000/installers || true
+  curl -fsS -o /dev/null -w "website_public=%{http_code}\n" https://www.s4businessthinking.com/installers || true
+  curl -fsS -o /dev/null -w "website_downloads_redirect=%{http_code}\n" https://www.s4businessthinking.com/downloads || true
   curl -sS -o /dev/null -w "secure_download=%{http_code}\n" \
     http://127.0.0.1:3000/api/secure-download/S4-Family-Finance-143.apk || true
 fi

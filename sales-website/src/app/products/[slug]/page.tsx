@@ -87,7 +87,7 @@ export default function ProductDetailPage() {
 
             <div className="mt-6 flex flex-col gap-2.5">
               <Link
-                href="/downloads"
+                href="/installers"
                 className={`rounded-xl px-5 py-3 text-center text-sm font-bold text-bg transition-opacity hover:opacity-90 ${accentBg}`}
               >
                 {t("download")}

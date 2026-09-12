@@ -30,7 +30,7 @@ export const site = {
     { label: "Home", href: "/" },
     { label: "Products", href: "/products" },
     { label: "Pricing", href: "/pricing" },
-    { label: "Downloads", href: "/downloads" },
+    { label: "Downloads", href: "/installers" },
     { label: "Support", href: "/support" },
     { label: "Contact", href: "/contact" },
   ],

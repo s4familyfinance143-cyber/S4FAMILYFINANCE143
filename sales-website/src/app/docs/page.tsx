@@ -82,9 +82,9 @@ const copy: Record<Lang, Copy> = {
 };
 
 const guideLinks = [
-  { title: "Installation guide", href: "/downloads", status: "ready" },
+  { title: "Installation guide", href: "/installers", status: "ready" },
   { title: "Account and security", href: "/account", status: "ready" },
-  { title: "Download and release notes", href: "/downloads", status: "ready" },
+  { title: "Download and release notes", href: "/installers", status: "ready" },
   { title: "License activation", href: "/account", status: "ready" },
   { title: "Troubleshooting", href: "/support", status: "ready" },
 ] as const;

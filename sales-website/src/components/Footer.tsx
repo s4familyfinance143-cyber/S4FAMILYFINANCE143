@@ -50,7 +50,7 @@ export function Footer() {
             ))}
             <li>
               <Link
-                href="/downloads"
+                href="/installers"
                 className="text-text/90 transition-colors hover:text-accent"
               >
                 {t("footerDownloadCenter")}

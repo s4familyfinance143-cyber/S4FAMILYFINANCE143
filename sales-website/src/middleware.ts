@@ -3,23 +3,24 @@ import type { NextRequest } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
 const INSTALLER_FILE = /\.(apk|exe)$/i;
-const DOWNLOADS_CACHE_BUST = "43";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token);
 
-  // Exact /downloads was missing from the old matcher, so a year-long prerender
-  // kept serving pending cards. Bust that cache key once per release.
-  if (pathname === "/downloads") {
+  // Old /downloads HTML is stuck in a reverse-proxy cache with pending cards.
+  // Serve the fresh installer center under /installers instead.
+  if (pathname === "/downloads" || pathname === "/downloads/") {
     const url = req.nextUrl.clone();
-    if (url.searchParams.get("v") !== DOWNLOADS_CACHE_BUST) {
-      url.searchParams.set("v", DOWNLOADS_CACHE_BUST);
-      const redirect = NextResponse.redirect(url);
-      redirect.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
-      return redirect;
-    }
+    url.pathname = "/installers";
+    url.search = "";
+    const redirect = NextResponse.redirect(url);
+    redirect.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+    return redirect;
+  }
+
+  if (pathname === "/installers") {
     const res = NextResponse.next();
     res.headers.set("Cache-Control", "private, no-store, max-age=0, must-revalidate");
     return res;
@@ -29,7 +30,7 @@ export async function middleware(req: NextRequest) {
   if (pathname.startsWith("/downloads/") && INSTALLER_FILE.test(pathname)) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", "/downloads");
+    url.searchParams.set("next", "/installers");
     return NextResponse.redirect(url);
   }
 
@@ -64,6 +65,8 @@ export const config = {
   matcher: [
     "/downloads",
     "/downloads/:path*",
+    "/installers",
+    "/installers/:path*",
     "/admin/:path*",
     "/api/admin/:path*",
     "/api/posts",

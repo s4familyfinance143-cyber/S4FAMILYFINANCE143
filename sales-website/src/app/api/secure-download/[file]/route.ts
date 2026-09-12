@@ -65,7 +65,7 @@ export async function GET(
   const ok = await customerAuthorized(req);
   if (!ok) {
     return NextResponse.json(
-      { error: "Login required", login: "/login?next=/downloads" },
+      { error: "Login required", login: "/login?next=/installers" },
       { status: 401 },
     );
   }

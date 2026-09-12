@@ -560,7 +560,7 @@ export default function Home() {
                 {c.explore}
                 <Icon name="arrow" className="h-5 w-5" />
               </Link>
-              <Link href="/downloads" className="inline-flex items-center gap-3 rounded-lg border border-white/35 bg-white/5 px-6 py-3.5 text-sm font-bold text-white transition hover:border-cyan-300 hover:text-cyan-200">
+              <Link href="/installers" className="inline-flex items-center gap-3 rounded-lg border border-white/35 bg-white/5 px-6 py-3.5 text-sm font-bold text-white transition hover:border-cyan-300 hover:text-cyan-200">
                 {c.download}
                 <Icon name="download" className="h-5 w-5" />
               </Link>

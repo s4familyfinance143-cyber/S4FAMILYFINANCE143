@@ -15,7 +15,7 @@ const navItems = [
   { key: "products", href: "/products", hasMenu: true },
   { key: "features", href: "/#features" },
   { key: "pricing", href: "/pricing" },
-  { key: "download", href: "/downloads" },
+  { key: "download", href: "/installers" },
   { key: "docs", href: "/docs" },
   { key: "tutorial", href: "/tutorials" },
   { key: "updates", href: "/updates" },
@@ -236,7 +236,7 @@ export function Header() {
                 <Link href={accountHref} onClick={() => setOpen(false)} className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-bold text-white">
                   {user ? c.myAccount : c.signIn}
                 </Link>
-                <Link href="/downloads" onClick={() => setOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-900">
+                <Link href="/installers" onClick={() => setOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-900">
                   {c.downloadNow}
                 </Link>
               </div>

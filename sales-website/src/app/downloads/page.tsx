@@ -267,13 +267,13 @@ export default function DownloadsPage() {
             <p className="mt-2 text-sm text-muted">{c.loginRequiredSub}</p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/register?next=/downloads"
+                href="/register?next=/installers"
                 className="inline-flex items-center justify-center rounded-xl bg-accent2 px-5 py-3.5 text-sm font-bold text-bg"
               >
                 {c.createAccount}
               </Link>
               <Link
-                href="/login?next=/downloads"
+                href="/login?next=/installers"
                 className="inline-flex items-center justify-center rounded-xl border border-line px-5 py-3.5 text-sm font-bold text-text"
               >
                 {c.signIn}
@@ -425,7 +425,7 @@ export default function DownloadsPage() {
                       {isAvailable ? (
                         locked ? (
                           <Link
-                            href="/login?next=/downloads"
+                            href="/login?next=/installers"
                             className="mt-4 block rounded-xl border border-accent px-5 py-3 text-center text-sm font-bold text-accent"
                           >
                             {c.signIn}
