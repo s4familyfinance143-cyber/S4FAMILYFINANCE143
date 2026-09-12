@@ -84,15 +84,36 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
   )
 
   # Host nginx often serves /downloads/*.apk|exe from the bind-mounted public
-  # folder and bypasses Next middleware. Keep binaries inside the image for
-  # /api/secure-download, but remove host copies so hotlinks 404.
-  echo "==> Removing host-public installer hotlinks (secure API keeps image copies)"
+  # folder and bypasses Next middleware. Keep a private copy and inject into
+  # the running website container for /api/secure-download.
+  echo "==> Removing host-public installer hotlinks"
   rm -f "$SITE_ROOT/s4-website/public/downloads/"*.apk \
         "$SITE_ROOT/s4-website/public/downloads/"*.exe || true
+
+  if [[ -f "$SITE_ROOT/installer-binaries/S4-Family-Finance-143.apk" ]]; then
+    echo "==> Ensuring installers exist inside website container"
+    (
+      cd "$SITE_ROOT"
+      CID="$(docker compose -f docker-compose.prod.yml ps -q website | head -n1)"
+      if [[ -n "$CID" ]]; then
+        docker exec "$CID" mkdir -p /app/public/downloads
+        docker cp "$SITE_ROOT/installer-binaries/S4-Family-Finance-143.apk" "$CID:/app/public/downloads/"
+        docker cp "$SITE_ROOT/installer-binaries/S4-Family-Finance-143-Setup.exe" "$CID:/app/public/downloads/"
+        docker exec "$CID" ls -lh /app/public/downloads/S4-Family-Finance-143.apk /app/public/downloads/S4-Family-Finance-143-Setup.exe
+      else
+        echo "WARN: website container id not found — skip installer inject"
+      fi
+    )
+  else
+    echo "WARN: missing $SITE_ROOT/installer-binaries — secure download may 404"
+  fi
 
   sleep 5
   curl -fsS -o /dev/null -w "website_http=%{http_code}\n" http://127.0.0.1:3000/downloads || true
   curl -fsS -o /dev/null -w "website_public=%{http_code}\n" https://www.s4businessthinking.com/downloads || true
+  # 401 = route alive + auth required (file check comes after auth)
+  curl -sS -o /dev/null -w "secure_download=%{http_code}\n" \
+    http://127.0.0.1:3000/api/secure-download/S4-Family-Finance-143.apk || true
 fi
 
 echo "==> AUTO-DEPLOY COMPLETE"

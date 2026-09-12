@@ -148,11 +148,15 @@ missing = wanted - set(os.listdir(out))
 if missing:
     raise SystemExit(f"missing release assets: {sorted(missing)}")
 PY
-    ssh_cmd "mkdir -p '$SITE_REMOTE_PATH/s4-website/public/downloads'"
+    ssh_cmd "mkdir -p '$SITE_REMOTE_PATH/s4-website/public/downloads' '$SITE_REMOTE_PATH/installer-binaries'"
     rsync_ssh \
       "$DL_TMP/S4-Family-Finance-143.apk" \
       "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
       "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/s4-website/public/downloads/"
+    rsync_ssh \
+      "$DL_TMP/S4-Family-Finance-143.apk" \
+      "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
+      "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/installer-binaries/"
     rm -rf "$DL_TMP"
     # Skip VPS-side GitHub curl (private repo → 404 without token).
     SKIP_INSTALLER_CURL=1
