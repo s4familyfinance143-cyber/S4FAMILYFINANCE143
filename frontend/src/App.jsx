@@ -11106,9 +11106,13 @@ function App() {
           <section>
             <div className="card" style={{ maxWidth: 520 }}>
               <h2>{t("noActiveFamilySelected")}</h2>
-              <p>{t("cloudOnlyNoDataCreate") || t("createJoinFamilyFirst")}</p>
+              <p>
+                {appLanguage === "bn"
+                  ? "এই অ্যাকাউন্টে এখনো কোনো পরিবার নেই। Refresh দিয়ে দেখুন, নতুন পরিবার তৈরি করুন, অথবা ইনভাইট কোড দিয়ে যোগ দিন।"
+                  : "No family is linked to this account yet. Tap Refresh, create a new family, or join with an invite code."}
+              </p>
               <p className="hint" style={{ marginTop: 8 }}>
-                {firebaseUser?.email || currentUser?.email || email || ""}
+                {currentUser?.email || email || ""}
               </p>
 
               {noFamilySetupMode === "choose" ? (
@@ -11116,23 +11120,28 @@ function App() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={cloudBusy || authLoading}
+                    disabled={cloudBusy || authLoading || !token}
                     onClick={async () => {
-                      if (!firebaseUser?.uid) {
+                      if (!token) {
                         setMessage(
-                          appLanguage === "bn"
-                            ? "আগে Logout → Login করুন"
-                            : "Logout and Login first",
+                          appLanguage === "bn" ? "আগে Logout → Login করুন" : "Logout and Login first",
                           "error",
                         );
                         return;
                       }
                       setCloudBusy(true);
                       try {
-                        await restoreFamilyFromCloud(firebaseUser);
-                        setMessage(t("cloudOnlySignInSuccess") || "Family restored", "success");
+                        await loadFamilies();
+                        if (!loadCloudFamilyId()) {
+                          setMessage(
+                            appLanguage === "bn"
+                              ? "এই অ্যাকাউন্টে পরিবার পাওয়া যায়নি — Create বা Join করুন।"
+                              : "No family found for this account — Create or Join.",
+                            "warning",
+                          );
+                        }
                       } catch (err) {
-                        softFail("Family restore", err);
+                        setMessage(err?.message || t("familyLoadFailed"), "error");
                       } finally {
                         setCloudBusy(false);
                       }
@@ -11141,8 +11150,8 @@ function App() {
                     {cloudBusy
                       ? t("loading") || "…"
                       : appLanguage === "bn"
-                        ? "ক্লাউড থেকে পরিবার লোড"
-                        : "Load family from cloud"}
+                        ? "রিফ্রেশ / পরিবার লোড"
+                        : "Refresh / load family"}
                   </button>
                   <button
                     type="button"
@@ -11152,7 +11161,7 @@ function App() {
                       setNoFamilySetupMode("join");
                       setNoFamilyForm((f) => ({
                         ...f,
-                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
+                        fullName: currentUser?.full_name || f.fullName,
                       }));
                     }}
                   >
@@ -11166,7 +11175,7 @@ function App() {
                       setNoFamilySetupMode("create");
                       setNoFamilyForm((f) => ({
                         ...f,
-                        fullName: currentUser?.full_name || firebaseUser?.displayName || f.fullName,
+                        fullName: currentUser?.full_name || f.fullName,
                         familyName: f.familyName || "S4 FAMILY 143",
                       }));
                     }}
@@ -11185,24 +11194,37 @@ function App() {
                   style={{ marginTop: 16 }}
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    const mail = String(firebaseUser?.email || currentUser?.email || email || "").trim();
-                    if (!mail || !noFamilyForm.password || !noFamilyForm.familyName.trim()) {
+                    if (!token) {
+                      setMessage(
+                        appLanguage === "bn" ? "আগে Logout → Login করুন" : "Logout and Login first",
+                        "error",
+                      );
+                      return;
+                    }
+                    if (!noFamilyForm.familyName.trim()) {
                       setMessage(t("familyGateFieldsRequired") || "Fill required fields", "error");
                       return;
                     }
-                    await handleCreateCloudFamily({
-                      email: mail,
-                      password: noFamilyForm.password,
-                      fullName:
-                        noFamilyForm.fullName.trim() ||
-                        currentUser?.full_name ||
-                        firebaseUser?.displayName ||
-                        mail,
-                      familyName: noFamilyForm.familyName.trim(),
-                      currency: "BDT",
-                      timezone: "Asia/Dhaka",
-                      ownerRelation: noFamilyForm.relation || "Husband",
-                    });
+                    setCloudBusy(true);
+                    setAuthLoading(true);
+                    setStatus(t("creatingFamilyGate"));
+                    try {
+                      await apiPost("/families", {
+                        name: noFamilyForm.familyName.trim(),
+                        default_currency: "BDT",
+                        timezone: "Asia/Dhaka",
+                        relationship_type: noFamilyForm.relation || "Husband",
+                      });
+                      await loadFamilies();
+                      setNoFamilySetupMode("choose");
+                      setMessage(t("familyCreatedGate") || "Family created", "success");
+                    } catch (err) {
+                      setMessage(err?.message || t("familyCreateFailed") || "Create failed", "error");
+                    } finally {
+                      setCloudBusy(false);
+                      setAuthLoading(false);
+                      setStatus("");
+                    }
                   }}
                 >
                   <div className="field">
@@ -11210,7 +11232,6 @@ function App() {
                     <input
                       value={noFamilyForm.fullName}
                       onChange={(e) => setNoFamilyForm((f) => ({ ...f, fullName: e.target.value }))}
-                      required
                     />
                   </div>
                   <div className="field">
@@ -11219,16 +11240,6 @@ function App() {
                       value={noFamilyForm.familyName}
                       onChange={(e) => setNoFamilyForm((f) => ({ ...f, familyName: e.target.value }))}
                       required
-                    />
-                  </div>
-                  <div className="field">
-                    <label>{t("password") || "Password"}</label>
-                    <input
-                      type="password"
-                      value={noFamilyForm.password}
-                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, password: e.target.value }))}
-                      required
-                      autoComplete="current-password"
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -11253,22 +11264,35 @@ function App() {
                   style={{ marginTop: 16 }}
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    const mail = String(firebaseUser?.email || currentUser?.email || email || "").trim();
-                    if (!mail || !noFamilyForm.password || !noFamilyForm.inviteCode.trim()) {
+                    if (!token) {
+                      setMessage(
+                        appLanguage === "bn" ? "আগে Logout → Login করুন" : "Logout and Login first",
+                        "error",
+                      );
+                      return;
+                    }
+                    if (!noFamilyForm.inviteCode.trim()) {
                       setMessage(t("joinGateFieldsRequired") || "Fill required fields", "error");
                       return;
                     }
-                    await handleCloudJoinFamily({
-                      email: mail,
-                      password: noFamilyForm.password,
-                      fullName:
-                        noFamilyForm.fullName.trim() ||
-                        currentUser?.full_name ||
-                        firebaseUser?.displayName ||
-                        mail,
-                      inviteCode: noFamilyForm.inviteCode.trim().toUpperCase(),
-                      relationshipType: noFamilyForm.relation || "Wife",
-                    });
+                    setCloudBusy(true);
+                    setAuthLoading(true);
+                    setStatus(t("joiningFamilyGate"));
+                    try {
+                      await apiPost("/invites/join", {
+                        invite_code: noFamilyForm.inviteCode.trim().toUpperCase(),
+                        relationship_type: noFamilyForm.relation || "Wife",
+                      });
+                      await loadFamilies();
+                      setNoFamilySetupMode("choose");
+                      setMessage(t("joinRequestedGate") || "Join requested", "success");
+                    } catch (err) {
+                      setMessage(err?.message || t("joinFailedGate") || "Join failed", "error");
+                    } finally {
+                      setCloudBusy(false);
+                      setAuthLoading(false);
+                      setStatus("");
+                    }
                   }}
                 >
                   <div className="field">
@@ -11276,7 +11300,6 @@ function App() {
                     <input
                       value={noFamilyForm.fullName}
                       onChange={(e) => setNoFamilyForm((f) => ({ ...f, fullName: e.target.value }))}
-                      required
                     />
                   </div>
                   <div className="field">
@@ -11289,16 +11312,6 @@ function App() {
                       placeholder="S4-XXXXXX"
                       required
                       style={{ textTransform: "uppercase" }}
-                    />
-                  </div>
-                  <div className="field">
-                    <label>{t("password") || "Password"}</label>
-                    <input
-                      type="password"
-                      value={noFamilyForm.password}
-                      onChange={(e) => setNoFamilyForm((f) => ({ ...f, password: e.target.value }))}
-                      required
-                      autoComplete="current-password"
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>

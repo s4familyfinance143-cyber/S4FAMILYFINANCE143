@@ -1195,5 +1195,6 @@
   "nisabLabel": "Nisab:",
   "btnJoin": "Join invite",
   "btnCreate": "Create family",
+  "btnCreateSubmit": "Create family & become Owner",
   "back": "Back"
 }
