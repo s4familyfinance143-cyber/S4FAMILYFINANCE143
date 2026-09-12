@@ -150,7 +150,7 @@ export const downloadReleases: DownloadRelease[] = [
     status: "available",
     fileName: "S4-Family-Finance-143.apk",
     size: "10.1 MB",
-    sha256: "pending-release-build",
+    sha256: "302f895ebba59c7078251cb82a30b0ecb00f157c0ac929cd0b9edcdbde1da59a",
     href: "/api/secure-download/S4-Family-Finance-143.apk",
   },
   {
@@ -161,7 +161,7 @@ export const downloadReleases: DownloadRelease[] = [
     status: "available",
     fileName: "S4-Family-Finance-143-Setup.exe",
     size: "4.4 MB",
-    sha256: "pending-release-build",
+    sha256: "d6017da824ec9796758a1136afa4d11ae1ebf667e6cf5e4cc8e72d2910ef07c2",
     href: "/api/secure-download/S4-Family-Finance-143-Setup.exe",
   },
 ];
