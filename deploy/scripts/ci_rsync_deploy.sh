@@ -98,8 +98,8 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
   if [[ -n "$INSTALLER_TAG" ]]; then
     echo "==> Fetching installers for $INSTALLER_TAG (authenticated) → VPS public/downloads"
     DL_TMP="$(mktemp -d)"
-    INSTALLER_TAG="$INSTALLER_TAG" DL_TMP="$DL_TMP" GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}" python3 - <<'PY'
-import json, os, urllib.request
+    if INSTALLER_TAG="$INSTALLER_TAG" DL_TMP="$DL_TMP" GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}" python3 - <<'PY'
+import json, os, sys, urllib.error, urllib.request
 
 tag = os.environ["INSTALLER_TAG"]
 token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
@@ -119,8 +119,12 @@ req = urllib.request.Request(
     f"https://api.github.com/repos/s4familyfinance143-cyber/S4FAMILYFINANCE143/releases/tags/{tag}",
     headers=headers,
 )
-with urllib.request.urlopen(req) as resp:
-    data = json.load(resp)
+try:
+    with urllib.request.urlopen(req) as resp:
+        data = json.load(resp)
+except urllib.error.HTTPError as exc:
+    print(f"WARN: release {tag} not ready yet ({exc.code}) — keep previous installers", file=sys.stderr)
+    sys.exit(2)
 
 for asset in data.get("assets", []):
     name = asset.get("name")
@@ -146,20 +150,25 @@ for asset in data.get("assets", []):
 
 missing = wanted - set(os.listdir(out))
 if missing:
-    raise SystemExit(f"missing release assets: {sorted(missing)}")
+    print(f"WARN: missing release assets: {sorted(missing)}", file=sys.stderr)
+    sys.exit(2)
 PY
-    ssh_cmd "mkdir -p '$SITE_REMOTE_PATH/s4-website/public/downloads' '$SITE_REMOTE_PATH/installer-binaries'"
-    rsync_ssh \
-      "$DL_TMP/S4-Family-Finance-143.apk" \
-      "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
-      "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/s4-website/public/downloads/"
-    rsync_ssh \
-      "$DL_TMP/S4-Family-Finance-143.apk" \
-      "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
-      "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/installer-binaries/"
+    then
+      ssh_cmd "mkdir -p '$SITE_REMOTE_PATH/s4-website/public/downloads' '$SITE_REMOTE_PATH/installer-binaries'"
+      rsync_ssh \
+        "$DL_TMP/S4-Family-Finance-143.apk" \
+        "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
+        "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/s4-website/public/downloads/"
+      rsync_ssh \
+        "$DL_TMP/S4-Family-Finance-143.apk" \
+        "$DL_TMP/S4-Family-Finance-143-Setup.exe" \
+        "${DEPLOY_USER}@${DEPLOY_HOST}:${SITE_REMOTE_PATH}/installer-binaries/"
+      # Skip VPS-side GitHub curl (private repo → 404 without token).
+      SKIP_INSTALLER_CURL=1
+    else
+      echo "==> Installer sync skipped (release assets unavailable); website deploy continues"
+    fi
     rm -rf "$DL_TMP"
-    # Skip VPS-side GitHub curl (private repo → 404 without token).
-    SKIP_INSTALLER_CURL=1
   fi
 fi
 
