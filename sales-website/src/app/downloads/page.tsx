@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { downloadReleases, products, site } from "@/lib/site";
 import { useI18n } from "@/components/LanguageProvider";
+import { useAuth } from "@/components/AuthProvider";
 import { PageHeader, Note } from "@/components/PageHeader";
 import type { Lang } from "@/lib/i18n";
 
@@ -12,6 +14,12 @@ type Copy = {
   title: string;
   sub: string;
   note: string;
+  loginRequiredTitle: string;
+  loginRequiredSub: string;
+  createAccount: string;
+  signIn: string;
+  downloading: string;
+  downloadError: string;
   available: string;
   unavailable: string;
   notify: string;
@@ -38,7 +46,13 @@ const copy: Record<Lang, Copy> = {
   en: {
     title: "Download Center",
     sub: "Android APK, Windows EXE, or iPhone PWA (Safari → Add to Home Screen).",
-    note: "Official Family Finance installers are ready below. Inventory software downloads will appear here after verification.",
+    note: "Create a free customer account and sign in to download installers. Inventory software downloads will appear here after verification.",
+    loginRequiredTitle: "Account required to download",
+    loginRequiredSub: "Create a customer account or sign in first. Then Android APK / Windows EXE downloads unlock.",
+    createAccount: "Create account",
+    signIn: "Sign in",
+    downloading: "Downloading…",
+    downloadError: "Download failed — sign in again and retry.",
     available: "Available",
     unavailable: "Verification Pending",
     notify: "Notify me on WhatsApp",
@@ -68,7 +82,13 @@ const copy: Record<Lang, Copy> = {
   bn: {
     title: "ডাউনলোড সেন্টার",
     sub: "Android APK, Windows EXE, অথবা iPhone PWA (Safari → Home Screen-এ যোগ)।",
-    note: "Family Finance official installer নিচে রেডি। Inventory সফটওয়্যার যাচাই শেষ হলে এখানে আসবে।",
+    note: "ডাউনলোড করতে আগে ফ্রি কাস্টমার অ্যাকাউন্ট তৈরি করে লগইন করুন। Inventory সফটওয়্যার যাচাই শেষ হলে এখানে আসবে।",
+    loginRequiredTitle: "ডাউনলোডের জন্য অ্যাকাউন্ট লাগবে",
+    loginRequiredSub: "আগে অ্যাকাউন্ট তৈরি করুন বা লগইন করুন। তারপর Android APK / Windows EXE ডাউনলোড খুলবে।",
+    createAccount: "অ্যাকাউন্ট তৈরি",
+    signIn: "লগইন",
+    downloading: "ডাউনলোড হচ্ছে…",
+    downloadError: "ডাউনলোড ব্যর্থ — আবার লগইন করে চেষ্টা করুন।",
     available: "ডাউনলোড আছে",
     unavailable: "যাচাই বাকি",
     notify: "WhatsApp-এ জানান",
@@ -99,6 +119,12 @@ const copy: Record<Lang, Copy> = {
     title: "डाउनलोड सेंटर",
     sub: "Android APK, Windows EXE, या iPhone PWA (Safari → Home Screen पर जोड़ें)।",
     note: "Family Finance इंस्टॉलर नीचे तैयार हैं। Inventory डाउनलोड सत्यापन के बाद आएंगे।",
+    loginRequiredTitle: "Download के लिए account ज़रूरी",
+    loginRequiredSub: "पहले customer account बनाएं या sign in करें। फिर Android APK / Windows EXE unlock होंगे।",
+    createAccount: "Account बनाएं",
+    signIn: "Sign in",
+    downloading: "Downloading…",
+    downloadError: "Download failed — again sign in करें।",
     available: "उपलब्ध",
     unavailable: "सत्यापन बाकी",
     notify: "व्हाट्सएप पर सूचित करें",
@@ -129,6 +155,12 @@ const copy: Record<Lang, Copy> = {
     title: "ڈاؤن لوڈ سینٹر",
     sub: "Android APK، Windows EXE، یا iPhone PWA (Safari → Home Screen)۔",
     note: "Family Finance انسٹالر نیچے تیار ہیں۔ Inventory ڈاؤن لوڈ تصدیق کے بعد آئیں گے۔",
+    loginRequiredTitle: "Download کے لیے account ضروری",
+    loginRequiredSub: "پہلے customer account بنائیں یا sign in کریں۔ پھر Android APK / Windows EXE کھلیں گے۔",
+    createAccount: "Account بنائیں",
+    signIn: "Sign in",
+    downloading: "Downloading…",
+    downloadError: "Download ناکام — دوبارہ sign in کریں۔",
     available: "دستیاب",
     unavailable: "تصدیق باقی ہے",
     notify: "واٹس ایپ پر مطلع کریں",
@@ -159,6 +191,12 @@ const copy: Record<Lang, Copy> = {
     title: "مركز التنزيل",
     sub: "Android APK أو Windows EXE أو iPhone PWA (Safari ← إضافة إلى الشاشة الرئيسية).",
     note: "مثبتات Family Finance جاهزة أدناه. ستظهر تنزيلات Inventory بعد التحقق.",
+    loginRequiredTitle: "يلزم حساب للتنزيل",
+    loginRequiredSub: "أنشئ حساب عميل أو سجّل الدخول أولاً، ثم يُفتح تنزيل Android APK / Windows EXE.",
+    createAccount: "إنشاء حساب",
+    signIn: "تسجيل الدخول",
+    downloading: "جارٍ التنزيل…",
+    downloadError: "فشل التنزيل — سجّل الدخول مجددًا وحاول.",
     available: "متاح",
     unavailable: "بانتظار التحقق",
     notify: "أبلغني عبر واتساب",
@@ -198,6 +236,9 @@ const FINANCE_SLUG = "s4-family-finance-143";
 export default function DownloadsPage() {
   const { lang, t } = useI18n();
   const c = copy[lang] ?? copy.en;
+  const { ready, isAuthenticated, authDownload } = useAuth();
+  const [busyFile, setBusyFile] = useState("");
+  const [dlError, setDlError] = useState("");
   const financeAndroid = releaseFor(FINANCE_SLUG, "Android");
   const financeWindows = releaseFor(FINANCE_SLUG, "Windows");
   const orderedProducts = [
@@ -205,31 +246,66 @@ export default function DownloadsPage() {
     ...products.filter((p) => p.slug !== FINANCE_SLUG),
   ];
 
+  async function startDownload(fileName?: string) {
+    if (!fileName) return;
+    setDlError("");
+    setBusyFile(fileName);
+    const res = await authDownload(fileName);
+    setBusyFile("");
+    if (!res.ok) setDlError(res.error || c.downloadError);
+  }
+
+  const locked = ready && !isAuthenticated;
+
   return (
     <>
       <PageHeader title={c.title} subtitle={c.sub} />
       <section className="mx-auto max-w-[1220px] px-5 py-14">
+        {locked ? (
+          <div className="mb-6 rounded-3xl border border-accent/40 bg-accent/10 p-7 sm:p-8">
+            <h2 className="text-xl font-black text-text sm:text-2xl">{c.loginRequiredTitle}</h2>
+            <p className="mt-2 text-sm text-muted">{c.loginRequiredSub}</p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/register?next=/downloads"
+                className="inline-flex items-center justify-center rounded-xl bg-accent2 px-5 py-3.5 text-sm font-bold text-bg"
+              >
+                {c.createAccount}
+              </Link>
+              <Link
+                href="/login?next=/downloads"
+                className="inline-flex items-center justify-center rounded-xl border border-line px-5 py-3.5 text-sm font-bold text-text"
+              >
+                {c.signIn}
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-3xl border border-accent2/40 bg-gradient-to-br from-accent2/15 to-white/[0.03] p-7 sm:p-8">
           <h2 className="text-xl font-black text-text sm:text-2xl">{c.quickTitle}</h2>
           <p className="mt-2 text-sm text-muted">{c.quickSub}</p>
+          {dlError ? <p className="mt-3 text-sm font-semibold text-red-400">{dlError}</p> : null}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            {financeAndroid?.href ? (
-              <a
-                href={financeAndroid.href}
-                download={financeAndroid.fileName || true}
-                className="inline-flex items-center justify-center rounded-xl bg-accent2 px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90"
+            {financeAndroid?.fileName ? (
+              <button
+                type="button"
+                disabled={locked || Boolean(busyFile)}
+                onClick={() => startDownload(financeAndroid.fileName)}
+                className="inline-flex items-center justify-center rounded-xl bg-accent2 px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {c.android}
-              </a>
+                {busyFile === financeAndroid.fileName ? c.downloading : c.android}
+              </button>
             ) : null}
-            {financeWindows?.href ? (
-              <a
-                href={financeWindows.href}
-                download={financeWindows.fileName || true}
-                className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90"
+            {financeWindows?.fileName ? (
+              <button
+                type="button"
+                disabled={locked || Boolean(busyFile)}
+                onClick={() => startDownload(financeWindows.fileName)}
+                className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-3.5 text-sm font-bold text-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {c.windows}
-              </a>
+                {busyFile === financeWindows.fileName ? c.downloading : c.windows}
+              </button>
             ) : null}
             <a
               href={APP_URL}
@@ -301,7 +377,7 @@ export default function DownloadsPage() {
               <div className="mt-6 flex flex-col gap-4">
                 {p.platforms.map((plat) => {
                   const release = releaseFor(p.slug, plat);
-                  const isAvailable = release?.status === "available" && release.href;
+                  const isAvailable = release?.status === "available" && Boolean(release.fileName);
 
                   return (
                     <div
@@ -347,13 +423,23 @@ export default function DownloadsPage() {
                       </dl>
 
                       {isAvailable ? (
-                        <a
-                          href={release.href}
-                          download={release.fileName || true}
-                          className="mt-4 block rounded-xl bg-accent px-5 py-3 text-center text-sm font-bold text-bg transition-opacity hover:opacity-90"
-                        >
-                          {c.downloadNow}
-                        </a>
+                        locked ? (
+                          <Link
+                            href="/login?next=/downloads"
+                            className="mt-4 block rounded-xl border border-accent px-5 py-3 text-center text-sm font-bold text-accent"
+                          >
+                            {c.signIn}
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={Boolean(busyFile)}
+                            onClick={() => startDownload(release?.fileName)}
+                            className="mt-4 block w-full rounded-xl bg-accent px-5 py-3 text-center text-sm font-bold text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+                          >
+                            {busyFile === release?.fileName ? c.downloading : c.downloadNow}
+                          </button>
+                        )
                       ) : (
                         <a
                           href={site.contact.whatsappUrl}

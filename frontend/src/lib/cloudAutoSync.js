@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   intervalMinutes: 15,
   local: true,
   drive: true,
-  firebase: true,
+  firebase: false,
   lastRun: {
     local: null,
     drive: null,

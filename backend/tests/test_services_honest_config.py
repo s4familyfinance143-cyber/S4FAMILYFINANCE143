@@ -16,14 +16,12 @@ def test_smtp_not_configured_is_honest(monkeypatch):
 
 
 def test_fcm_not_configured_is_honest(monkeypatch):
-    monkeypatch.setattr(config_module.settings, "NOTIFICATION_FCM_ENABLED", False)
-    monkeypatch.setattr(config_module.settings, "FCM_PROJECT_ID", None)
-    monkeypatch.setattr(config_module.settings, "FCM_CREDENTIALS_PATH", None)
     status = fcm_service.fcm_status()
     assert status["configured"] is False
+    assert status["firebase_admin_available"] is False
     result = fcm_service.send_fcm_push(token="tok", title="t", body="b")
     assert result.sent is False
-    assert "not configured" in result.reason.lower() or "FCM" in result.reason
+    assert "removed" in result.reason.lower() or "fcm" in result.reason.lower()
 
 
 def test_s3_not_configured_falls_back_local(monkeypatch):

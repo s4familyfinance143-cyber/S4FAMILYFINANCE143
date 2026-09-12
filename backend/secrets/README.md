@@ -1,7 +1,3 @@
-# Place Firebase service-account JSON here as:
-#   firebase-service-account.json
-#
-# Never commit this file. Obtain from Firebase Console → Project settings → Service accounts.
-#
-# Then run:
-#   powershell -File scripts\switch_live_api_fcm_when_ready.ps1
+# Firebase Admin / FCM removed from S4.
+# Do not place firebase-service-account.json here — it will not be used.
+# Push notifications are disabled; in-app notifications use the VPS API.

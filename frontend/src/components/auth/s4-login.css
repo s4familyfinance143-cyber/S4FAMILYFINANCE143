@@ -188,6 +188,23 @@
   padding-bottom: 2px;
 }
 
+/* Keep Create/Join submit visible while scrolling long signup forms (phone). */
+.s4-login-shell.s4-login-shell--signup .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin-top: 12px;
+  padding: 10px 0 6px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #fff 28%);
+}
+
+.s4-login-shell.s4-login-shell--signup .form-actions .btn-primary {
+  width: 100%;
+  min-height: 46px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .s4-login-shell.s4-login-shell--signup .step-indicator {
   margin-top: 14px;
   padding-top: 12px;

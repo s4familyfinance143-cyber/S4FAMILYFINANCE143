@@ -38,7 +38,11 @@ export default function RegisterPage() {
     });
     setBusy(false);
     if (res.ok) {
-      router.push(`/verify?email=${encodeURIComponent(email)}`);
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next");
+      const q = new URLSearchParams({ email });
+      if (next && next.startsWith("/") && !next.startsWith("//")) q.set("next", next);
+      router.push(`/verify?${q.toString()}`);
       return;
     }
     setError(res.error ?? "Registration failed.");

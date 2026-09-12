@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import "./s4-login.css";
 import { BRAND_LOGO_SRC } from "../../lib/brandAssets";
 import { formatFetchError, isLocalhostApi, isNativeApp, isProductionApi } from "../../lib/runtimeEnv";
-import { firebaseConfirmPasswordReset, firebaseSendPasswordReset } from "../../firebase/auth";
 import {
   JOIN_RELATIONSHIPS,
   OWNER_RELATIONSHIPS,
@@ -399,14 +398,11 @@ export function FamilyAuthGate({
   apiBase,
   onApiBaseChange,
   onAuthenticated,
-  firebaseFirstMode = false,
-  onCloudEmailSignIn,
-  onCreateCloudFamily,
-  onCloudJoinFamily,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang] || UI.en;
-  const useCloudAuth = Boolean(firebaseFirstMode);
+  // Firebase client removed — always VPS/API auth.
+  const useCloudAuth = false;
   const [view, setView] = useState("login"); // login | createFamily | join | forgot | resetPassword | verifyOtp
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -415,7 +411,6 @@ export function FamilyAuthGate({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetToken, setResetToken] = useState("");
-  const [firebaseOobCode, setFirebaseOobCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -723,31 +718,6 @@ export function FamilyAuthGate({
       setMessage(t("emailPasswordRequired"), "error");
       return;
     }
-    if (useCloudAuth && onCloudEmailSignIn) {
-      setAuthLoading(true);
-      setStatus(t("signingIn"));
-      try {
-        const result = await onCloudEmailSignIn({ email: email.trim(), password });
-        setStatus("");
-        if (result?.needsFamilySetup) {
-          setView("createFamily");
-          setModeMenuOpen(false);
-          setMessage(
-            t("cloudOnlyNoDataCreate") ||
-              (lang === "bn"
-                ? "এই অ্যাকাউন্টে পরিবার নেই — Create family অথবা Join invite ব্যবহার করুন।"
-                : "No family on this account yet — use Create family or Join invite."),
-            "warning",
-          );
-        }
-      } catch (error) {
-        setMessage(formatFetchError(error, lang, apiBase), "error");
-        setStatus("");
-      } finally {
-        setAuthLoading(false);
-      }
-      return;
-    }
     if (!requireMobileApiBase()) return;
     setAuthLoading(true);
     setStatus(t("signingIn"));
@@ -784,28 +754,19 @@ export function FamilyAuthGate({
   async function handleCreateFamily(e) {
     e?.preventDefault?.();
     if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !familyName.trim()) {
-      setMessage(t("familyGateFieldsRequired"), "error");
-      return;
-    }
-    if (useCloudAuth && onCreateCloudFamily) {
-      setAuthLoading(true);
-      setStatus(t("creatingFamilyGate"));
+      const missing = !phone.trim()
+        ? lang === "bn"
+          ? "মোবাইল নম্বর (*) দিন — তারপর নিচের Create বাটনে ট্যাপ করুন।"
+          : "Enter phone number (*), then tap Create at the bottom."
+        : t("familyGateFieldsRequired");
+      setMessage(missing, "error");
       try {
-        await onCreateCloudFamily({
-          email: email.trim(),
-          password,
-          fullName: fullName.trim(),
-          familyName: familyName.trim(),
-          currency: currency.trim() || "BDT",
-          timezone: timezone.trim() || "Asia/Dhaka",
-          ownerRelation,
+        document.querySelector(".s4-login-shell--signup .form-actions")?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
         });
-        setStatus("");
-      } catch (error) {
-        setMessage(formatFetchError(error, lang, apiBase), "error");
-        setStatus("");
-      } finally {
-        setAuthLoading(false);
+      } catch {
+        /* ignore */
       }
       return;
     }
@@ -854,26 +815,6 @@ export function FamilyAuthGate({
     e?.preventDefault?.();
     if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !inviteCode.trim()) {
       setMessage(t("joinGateFieldsRequired"), "error");
-      return;
-    }
-    if (useCloudAuth && onCloudJoinFamily) {
-      setAuthLoading(true);
-      setStatus(t("joiningFamilyGate"));
-      try {
-        await onCloudJoinFamily({
-          email: email.trim(),
-          password,
-          fullName: fullName.trim(),
-          inviteCode: inviteCode.trim().toUpperCase(),
-          relationshipType: joinRelation,
-        });
-        setStatus("");
-      } catch (error) {
-        setMessage(formatFetchError(error, lang, apiBase), "error");
-        setStatus("");
-      } finally {
-        setAuthLoading(false);
-      }
       return;
     }
     if (!requireMobileApiBase()) return;
@@ -940,18 +881,6 @@ export function FamilyAuthGate({
     setAuthLoading(true);
     setStatus(t("sendingReset"));
     try {
-      if (useCloudAuth) {
-        await firebaseSendPasswordReset(email.trim());
-        setMessage(
-          lang === "bn"
-            ? "ইমেইল চেক করুন। Firebase পেজে নতুন পাসওয়ার্ড সেট করুন — শুধু অ্যাপ খুললে পাসওয়ার্ড বদলাবে না।"
-            : "Check email. Set the new password on the Firebase page — opening the app alone does not change it.",
-          "success",
-        );
-        setView("login");
-        setStatus("");
-        return;
-      }
       const res = await fetch(`${apiBase}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1001,9 +930,7 @@ export function FamilyAuthGate({
     setAuthLoading(true);
     setStatus(lang === "bn" ? "পাসওয়ার্ড সেভ হচ্ছে…" : "Saving password…");
     try {
-      if (firebaseOobCode) {
-        await firebaseConfirmPasswordReset(firebaseOobCode, password);
-      } else {
+      {
         const token = String(resetToken || "").trim();
         if (!token) {
           throw new Error(
@@ -1022,7 +949,6 @@ export function FamilyAuthGate({
       }
       clearPasswordResetParams();
       setResetToken("");
-      setFirebaseOobCode("");
       setPassword("");
       setConfirmPassword("");
       setView("login");
@@ -1053,20 +979,8 @@ export function FamilyAuthGate({
 
   useEffect(() => {
     const params = readPasswordResetParams();
-    if (params.oobCode && (!params.mode || params.mode === "resetPassword")) {
-      setFirebaseOobCode(params.oobCode);
-      setView("resetPassword");
-      setMessage(
-        lang === "bn"
-          ? "রিসেট লিংক পাওয়া গেছে — নতুন পাসওয়ার্ড সেট করুন।"
-          : "Reset link detected — set your new password.",
-        "success",
-      );
-      return;
-    }
     if (params.token) {
       setResetToken(params.token);
-      setFirebaseOobCode("");
       setView("resetPassword");
       setMessage(
         lang === "bn"
@@ -1352,7 +1266,7 @@ export function FamilyAuthGate({
                     </div>
                     <div className="info-box">{L.resetFormInfo}</div>
                     <form onSubmit={handleResetPassword}>
-                      {!firebaseOobCode ? (
+                      {true ? (
                         <div className="field">
                           <label>{L.lblResetToken}</label>
                           <div className="input-wrap">
@@ -1428,7 +1342,6 @@ export function FamilyAuthGate({
                         disabled={authLoading}
                         onClick={() => {
                           clearPasswordResetParams();
-                          setFirebaseOobCode("");
                           setResetToken("");
                           setPassword("");
                           setConfirmPassword("");
@@ -1721,10 +1634,15 @@ export function FamilyAuthGate({
                       </div>
                     </div>
 
-                    <div className="form-actions">
+                    <div className="form-actions signup-submit-bar">
                       <button type="submit" className="btn-primary" disabled={authLoading}>
                         {authLoading ? t("creatingFamilyGate") : L.btnCreateSubmit}
                       </button>
+                      <p className="hint" style={{ marginTop: 8, textAlign: "center" }}>
+                        {lang === "bn"
+                          ? "সব ঘর পূরণ করে এই বাটনে ট্যাপ করুন (মোবাইল নম্বর আবশ্যক)।"
+                          : "Fill all fields (phone required), then tap this button."}
+                      </p>
                     </div>
                   </form>
                 ) : (

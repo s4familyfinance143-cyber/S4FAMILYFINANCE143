@@ -376,11 +376,11 @@ function App() {
   const [familiesLoading, setFamiliesLoading] = useState(false);
   /** True while restoring/selecting the user's active family after login or refresh. */
   const [isFamilyLoading, setIsFamilyLoading] = useState(() =>
-    Boolean(loadCloudOnlyMode() || loadCloudFamilyId()),
+    Boolean(FIREBASE_FIRST_MODE && (loadCloudOnlyMode() || loadCloudFamilyId())),
   );
   /** True until first Firebase auth callback finishes when a cloud session is expected. */
   const [sessionBootstrapping, setSessionBootstrapping] = useState(() =>
-    Boolean(FIREBASE_CONFIGURED && (loadCloudOnlyMode() || loadCloudFamilyId())),
+    Boolean(FIREBASE_FIRST_MODE && FIREBASE_CONFIGURED && (loadCloudOnlyMode() || loadCloudFamilyId())),
   );
   const [currentUser, setCurrentUser] = useState(null);
   const [displayAvatarUrl, setDisplayAvatarUrl] = useState("");
@@ -408,7 +408,9 @@ function App() {
   const [driveFiles, setDriveFiles] = useState([]);
   const [localFolderLabel, setLocalFolderLabel] = useState(() => getStoredFolderLabel());
   const [cloudAutoSync, setCloudAutoSync] = useState(() => loadCloudAutoSyncSettings());
-  const [cloudOnlyMode, setCloudOnlyMode] = useState(() => loadCloudOnlyMode());
+  const [cloudOnlyMode, setCloudOnlyMode] = useState(() =>
+    FIREBASE_FIRST_MODE ? loadCloudOnlyMode() : false,
+  );
   const [showBackupOnboarding, setShowBackupOnboarding] = useState(false);
   const cloudAutoSyncRef = useRef(cloudAutoSync);
   const cloudAutoBackupRunningRef = useRef(false);
@@ -847,16 +849,13 @@ function App() {
     setMessage(`${scope}: ${detail}`, type);
   }
 
-  const isAppAuthed =
-    Boolean(token) ||
-    (cloudOnlyMode && Boolean(firebaseUser?.uid)) ||
-    (sessionBootstrapping && cloudOnlyMode);
+  const isAppAuthed = Boolean(token);
 
   function isCloudLocalMode() {
-    // Firebase-first: always use IndexedDB shim when cloud-only is on.
-    // Do not require !token — a stale JWT would otherwise skip the shim and
-    // hit a dead localhost backend, so creates appear to do nothing.
-    return Boolean(cloudOnlyMode && activeFamilyId);
+    // Offline-first local data plane (IndexedDB). Used when the device has no
+    // internet so UI + local/Google-Drive backup blobs still get real data.
+    // Firebase shim is gone — api* helpers must not fall through to the network.
+    return Boolean(activeFamilyId) && !isBrowserOnline();
   }
 
   function selectActiveFamily(familyId, meta = {}) {
@@ -1309,7 +1308,7 @@ function App() {
   }
 
   async function handleCloudEmailSignIn({ email, password }) {
-    if (!FIREBASE_CONFIGURED) {
+    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
     }
@@ -1427,7 +1426,7 @@ function App() {
     timezone,
     ownerRelation,
   }) {
-    if (!FIREBASE_CONFIGURED) {
+    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
     }
@@ -1568,7 +1567,7 @@ function App() {
   }
 
   async function handleCloudJoinFamily({ email, password, fullName, inviteCode, relationshipType }) {
-    if (!FIREBASE_CONFIGURED) {
+    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
     }
@@ -1751,7 +1750,9 @@ function App() {
     const next = saveCloudAutoSyncSettings({
       ...cloudAutoSyncRef.current,
       enabled: true,
+      local: true,
       drive: true,
+      firebase: false,
       intervalMinutes: cloudAutoSyncRef.current?.intervalMinutes || 15,
     });
     setCloudAutoSync(next);
@@ -2621,11 +2622,9 @@ function App() {
         currentUser: cloudApiUser(),
       });
       if (hit.handled) return hit.data;
-      // Never fall through to localhost backend in Firebase-only mode
-      if (!token) {
-        console.warn("[S4 Cloud] unhandled GET (skipped backend):", path);
-        return [];
-      }
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -2650,24 +2649,20 @@ function App() {
   }
 
   async function syncCloudAfterWrite() {
-    if (!isCloudLocalMode()) return;
-    if (!isBrowserOnline()) return;
-    // Push local truth first (includes the write we just made), then pull-merge.
-    let pushResult = await pushCloudSnapshotIfReady();
-    if (!pushResult?.ok && !pushResult?.skipped) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-      pushResult = await pushCloudSnapshotIfReady();
-    }
-    await pullAndHydrateCloudLocal();
-    if (!pushResult?.ok && !pushResult?.skipped && !pushResult?.offline) {
-      setMessage(
-        appLanguage === "bn"
-          ? "এই ফোনে সেভ হয়েছে, কিন্তু ক্লাউডে যায়নি — অন্য ডিভাইসে দেখা যাবে না। Sync → Push চাপুন।"
-          : "Saved on this device, but cloud sync failed — other devices won't see it. Tap Sync → Push.",
-        "warning",
-      );
-    }
+    // Local folder backup can run offline; Drive needs internet.
     runCloudAutoBackup({ force: true });
+    if (!isBrowserOnline()) return;
+    if (token && activeFamilyId) {
+      try {
+        await flushLocalOutbox({
+          familyId: activeFamilyId,
+          deviceId: SYNC_DEVICE_ID || "web-dashboard",
+          apiPost,
+        });
+      } catch (err) {
+        softFail("Outbox flush", err);
+      }
+    }
   }
 
   async function apiPost(path, body) {
@@ -2688,9 +2683,9 @@ function App() {
         }
         return hit.data;
       }
-      if (!token) {
-        throw new Error(`Cloud mode: unsupported API POST ${path}`);
-      }
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -2727,16 +2722,15 @@ function App() {
           }
           return hit.data;
         }
-        if (!token) {
-          throw new Error(`Cloud mode: unsupported API PATCH ${path}`);
-        }
       } catch (err) {
+        if (err?.offline || /offline/i.test(String(err?.message || ""))) throw err;
         if (err?.status || err?.isPermission || /permission|denied|connection|database|Cloud mode/i.test(String(err?.message || ""))) {
           throw err;
         }
-        // Unhandled cloud path — fall through to HTTP only when a JWT backend exists
-        if (!token) throw err;
       }
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -2783,9 +2777,9 @@ function App() {
         }
         return hit.data;
       }
-      if (!token) {
-        throw new Error(`Cloud mode: unsupported API PUT ${path}`);
-      }
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -2822,9 +2816,9 @@ function App() {
         }
         return hit.data;
       }
-      if (!token) {
-        throw new Error(`Cloud mode: unsupported API DELETE ${path}`);
-      }
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -6630,10 +6624,20 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
         bindActiveWalletForms(activeWalletRows(next));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (token) {
+          await enqueueOutboxChange({
+            familyId: activeFamilyId,
+            entity_type: "accounts",
+            operation: "CREATE",
+            payload: { ...payload, id: newWallet.id },
+          });
+          await refreshLocalOutboxCount();
+        }
         if (isBrowserOnline()) {
           await syncCloudAfterWrite();
           setMessage(t("walletCreated"), "success");
         } else {
+          await runCloudAutoBackup({ force: true });
           setMessage(t("walletCreatedOffline"), "success");
         }
         setWalletForm(emptyWalletForm());
@@ -6920,10 +6924,23 @@ function App() {
           }
         }
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (token) {
+          await enqueueOutboxChange({
+            familyId: activeFamilyId,
+            entity_type: "transactions",
+            operation: "CREATE",
+            payload: {
+              ...createdRows[0],
+              client_request_id: createdRows[0]?.client_request_id || `web-tx-${Date.now()}`,
+            },
+          });
+          await refreshLocalOutboxCount();
+        }
         if (isBrowserOnline()) {
           await syncCloudAfterWrite();
           setMessage(t("transactionPosted"), "success");
         } else {
+          await runCloudAutoBackup({ force: true });
           setMessage(t("transactionPostedOffline") || t("transactionPosted"), "success");
         }
         setTxForm((prev) => ({ ...prev, amount: "", description: "", split_enabled: false }));
@@ -9788,9 +9805,16 @@ function App() {
   }, [firebaseUser?.uid, activeFamilyId, sessionBootstrapping, isFamilyLoading]);
 
   useEffect(() => {
-    if (!FIREBASE_CONFIGURED) {
+    // VPS / API mode — never attach Firebase Auth session bootstrap.
+    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
+      try {
+        persistCloudOnlyMode(false);
+      } catch {
+        /* ignore */
+      }
+      setCloudOnlyMode(false);
       setSessionBootstrapping(false);
-      if (!loadCloudFamilyId()) setIsFamilyLoading(false);
+      if (!loadCloudFamilyId() && !token) setIsFamilyLoading(false);
       return undefined;
     }
 
@@ -10636,10 +10660,6 @@ function App() {
             setToken(access);
             setRefreshToken(refresh || "");
           }}
-          firebaseFirstMode={FIREBASE_FIRST_MODE}
-          onCloudEmailSignIn={handleCloudEmailSignIn}
-          onCreateCloudFamily={handleCreateCloudFamily}
-          onCloudJoinFamily={handleCloudJoinFamily}
         />
       </main>
     );
@@ -12506,9 +12526,6 @@ function App() {
             cloudOnlyMode={cloudOnlyMode}
             onApiBaseChange={(next) => setApiBase(persistApiBase(next))}
             browserOnline={browserOnline}
-            firebaseConfigured={FIREBASE_CONFIGURED}
-            firebaseUser={firebaseUser}
-            firebaseMeta={firebaseMeta}
             cloudBusy={cloudBusy}
             cloudAutoSync={cloudAutoSync}
             onCloudAutoSyncChange={handleCloudAutoSyncChange}
@@ -12525,12 +12542,6 @@ function App() {
             onDriveDisconnect={handleDriveDisconnect}
             onDriveUpload={handleDriveUpload}
             onDriveRestore={handleDriveRestore}
-            onFirebaseGoogleSignIn={handleFirebaseGoogleSignIn}
-            onFirebaseEmailSignIn={handleFirebaseEmailSignIn}
-            onFirebaseEmailRegister={handleFirebaseEmailRegister}
-            onFirebaseSignOut={handleFirebaseSignOut}
-            onFirebaseSyncNow={handleFirebaseSyncNow}
-            onFirebaseRestore={handleFirebaseRestore}
           />
         )}
 

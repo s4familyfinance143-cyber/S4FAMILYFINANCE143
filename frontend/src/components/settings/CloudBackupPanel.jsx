@@ -1,4 +1,4 @@
-/** Settings → Cloud: Local Disk, Google Drive, Secure Cloud Sync. */
+/** Settings → Cloud: Local Disk + Google Drive (Firebase removed). */
 import { useEffect, useState } from "react";
 import { CLOUD_SYNC_INTERVALS } from "../../lib/cloudAutoSync";
 
@@ -69,21 +69,10 @@ export function CloudBackupPanel({
   onDriveDisconnect,
   onDriveUpload,
   onDriveRestore,
-  firebaseConfigured,
-  firebaseUser,
-  firebaseMeta,
-  onFirebaseGoogleSignIn,
-  onFirebaseEmailSignIn,
-  onFirebaseEmailRegister,
-  onFirebaseSignOut,
-  onFirebaseSyncNow,
-  onFirebaseRestore,
 }) {
   const localActive = Boolean(localFolderSupported && localFolderLabel);
-  const cloudConnected = Boolean(firebaseConfigured && firebaseUser);
   const lastLocal = cloudAutoSync?.lastRun?.local || null;
   const lastDrive = cloudAutoSync?.lastRun?.drive || null;
-  const lastCloud = firebaseMeta?.exportedAt || cloudAutoSync?.lastRun?.firebase || null;
 
   const localStatus = {
     kind: localActive ? "ok" : "warn",
@@ -96,34 +85,22 @@ export function CloudBackupPanel({
         ? t("cloudStatusConnected")
         : t("cloudStatusNotConfigured"),
   };
-  const cloudStatus = {
-    kind: cloudConnected ? "ok" : "warn",
-    label: cloudConnected ? t("cloudStatusConnected") : t("cloudStatusNotConfigured"),
-  };
 
-  const [providerTab, setProviderTab] = useState(() =>
-    cloudConnected ? "cloud" : localActive ? "local" : "cloud"
-  );
+  const [providerTab, setProviderTab] = useState(() => (localActive ? "local" : "drive"));
 
   function patchAutoSync(patch) {
-    onCloudAutoSyncChange?.({ ...cloudAutoSync, ...patch });
+    onCloudAutoSyncChange?.({ ...cloudAutoSync, firebase: false, ...patch });
   }
 
   useEffect(() => {
     if (!driveConfigured) {
       console.info(
-        "[S4 Cloud] Google Drive not configured — set VITE_GOOGLE_CLIENT_ID in frontend/.env (see deploy/PER_USER_GOOGLE_DRIVE.md)"
+        "[S4 Cloud] Google Drive not configured — set VITE_GOOGLE_CLIENT_ID in frontend/.env (see deploy/PER_USER_GOOGLE_DRIVE.md)",
       );
     }
-    if (!firebaseConfigured) {
-      console.info(
-        "[S4 Cloud] Secure Cloud Sync not configured — enable Auth + Firestore and set VITE_FIREBASE_* (see deploy/FIREBASE_SETUP.md)"
-      );
-    }
-  }, [driveConfigured, firebaseConfigured]);
+  }, [driveConfigured]);
 
   const tabs = [
-    { id: "cloud", short: t("cloudProviderTabCloud"), status: cloudStatus },
     { id: "local", short: t("cloudProviderTabLocal"), status: localStatus },
     { id: "drive", short: t("cloudProviderTabDrive"), status: driveStatus },
   ];
@@ -181,30 +158,18 @@ export function CloudBackupPanel({
               />
               <span>{t("cloudAutoBackupDrive")}</span>
             </label>
-            <label className="cloud-chip-check">
-              <input
-                type="checkbox"
-                checked={Boolean(cloudAutoSync?.firebase)}
-                disabled={!cloudAutoSync?.enabled}
-                onChange={(e) => patchAutoSync({ firebase: e.target.checked })}
-              />
-              <span>{t("cloudAutoBackupFirebase")}</span>
-            </label>
           </div>
         </div>
 
         {cloudAutoSync?.enabled ? (
           <p className="hint cloud-auto-summary">
-            {lastLocal || lastDrive || lastCloud
+            {lastLocal || lastDrive
               ? [
                   cloudAutoSync.local && lastLocal
                     ? `${t("cloudAutoBackupLocal")}: ${formatRelativeTime(lastLocal, t, digits)}`
                     : null,
                   cloudAutoSync.drive && lastDrive
                     ? `${t("cloudAutoBackupDrive")}: ${formatRelativeTime(lastDrive, t, digits)}`
-                    : null,
-                  cloudAutoSync.firebase && lastCloud
-                    ? `${t("cloudAutoBackupFirebase")}: ${formatRelativeTime(lastCloud, t, digits)}`
                     : null,
                 ]
                   .filter(Boolean)
@@ -216,11 +181,7 @@ export function CloudBackupPanel({
         )}
       </section>
 
-      <div
-        className="cloud-provider-tabs"
-        role="tablist"
-        aria-label={t("settingsTab_cloud")}
-      >
+      <div className="cloud-provider-tabs" role="tablist" aria-label={t("settingsTab_cloud")}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -239,7 +200,6 @@ export function CloudBackupPanel({
       </div>
 
       <div className="cloud-providers-grid" data-active-tab={providerTab}>
-        {/* Local Disk */}
         <article
           id="cloud-panel-local"
           role="tabpanel"
@@ -251,9 +211,7 @@ export function CloudBackupPanel({
             <div>
               <h3>
                 {t("localBackupTitle")}
-                <span className="cloud-mobile-inline-status">
-                  : {localStatus.label}
-                </span>
+                <span className="cloud-mobile-inline-status">: {localStatus.label}</span>
               </h3>
               <p className="hint cloud-card-hint">{t("localBackupHint")}</p>
             </div>
@@ -273,9 +231,7 @@ export function CloudBackupPanel({
             ) : (
               <p className="hint">{t("localBackupNoFolder")}</p>
             )}
-            {lastLocal ? (
-              <p className="cloud-last-sync">{lastBackedUpLabel(lastLocal, t, digits)}</p>
-            ) : null}
+            {lastLocal ? <p className="cloud-last-sync">{lastBackedUpLabel(lastLocal, t, digits)}</p> : null}
           </div>
 
           {localFolderSupported ? (
@@ -296,7 +252,6 @@ export function CloudBackupPanel({
           ) : null}
         </article>
 
-        {/* Google Drive */}
         <article
           id="cloud-panel-drive"
           role="tabpanel"
@@ -308,9 +263,7 @@ export function CloudBackupPanel({
             <div>
               <h3>
                 {t("driveBackupTitle")}
-                <span className="cloud-mobile-inline-status">
-                  : {driveStatus.label}
-                </span>
+                <span className="cloud-mobile-inline-status">: {driveStatus.label}</span>
               </h3>
               <p className="hint cloud-card-hint">{t("driveBackupHint")}</p>
             </div>
@@ -335,9 +288,7 @@ export function CloudBackupPanel({
                 ) : (
                   <p className="hint">{t("driveNoFiles")}</p>
                 )}
-                {lastDrive ? (
-                  <p className="cloud-last-sync">{lastBackedUpLabel(lastDrive, t, digits)}</p>
-                ) : null}
+                {lastDrive ? <p className="cloud-last-sync">{lastBackedUpLabel(lastDrive, t, digits)}</p> : null}
               </>
             )}
           </div>
@@ -357,83 +308,6 @@ export function CloudBackupPanel({
                 </button>
                 <button type="button" className="btn" disabled={cloudBusy} onClick={onDriveDisconnect}>
                   {t("driveDisconnect")}
-                </button>
-              </>
-            )}
-          </div>
-        </article>
-
-        {/* Secure Cloud Sync */}
-        <article
-          id="cloud-panel-cloud"
-          role="tabpanel"
-          aria-labelledby="cloud-tab-cloud"
-          data-provider="cloud"
-          className={`cloud-provider-card panel-subcard${providerTab === "cloud" ? " is-active" : ""}`}
-        >
-          <header className="cloud-card-header">
-            <div>
-              <h3>
-                {t("firebaseCloudTitle")}
-                <span className="cloud-mobile-inline-status">
-                  : {cloudStatus.label}
-                </span>
-              </h3>
-              <p className="hint cloud-card-hint">{t("firebaseCloudHint")}</p>
-            </div>
-            <StatusBadge kind={cloudStatus.kind} label={cloudStatus.label} />
-          </header>
-
-          <div className="cloud-card-body">
-            {!firebaseConfigured ? (
-              <p className="hint">{t("firebaseNotConfigured")}</p>
-            ) : !firebaseUser ? (
-              <p className="hint">{t("firebaseSignInHint")}</p>
-            ) : (
-              <>
-                <p className="cloud-meta">
-                  <span className="cloud-meta-label">{t("account")}</span>
-                  <strong className="cloud-meta-value">
-                    {firebaseUser.displayName || firebaseUser.email}
-                  </strong>
-                </p>
-                {lastCloud ? (
-                  <p className="cloud-last-sync">{lastBackedUpLabel(lastCloud, t, digits)}</p>
-                ) : (
-                  <p className="hint">{t("firebaseNoSnapshotYet")}</p>
-                )}
-              </>
-            )}
-          </div>
-
-          <div className="cloud-card-actions">
-            {!firebaseConfigured ? null : !firebaseUser ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={cloudBusy}
-                  onClick={onFirebaseGoogleSignIn}
-                >
-                  {t("firebaseGoogleSignIn")}
-                </button>
-                <button type="button" className="btn" disabled={cloudBusy} onClick={onFirebaseEmailSignIn}>
-                  {t("firebaseSignIn")}
-                </button>
-                <button type="button" className="btn" disabled={cloudBusy} onClick={onFirebaseEmailRegister}>
-                  {t("firebaseSignUp")}
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" className="btn btn-primary" disabled={cloudBusy} onClick={onFirebaseSyncNow}>
-                  {t("firebaseSyncNow")}
-                </button>
-                <button type="button" className="btn" disabled={cloudBusy} onClick={onFirebaseRestore}>
-                  {t("firebaseRestore")}
-                </button>
-                <button type="button" className="btn" disabled={cloudBusy} onClick={onFirebaseSignOut}>
-                  {t("firebaseSignOut")}
                 </button>
               </>
             )}

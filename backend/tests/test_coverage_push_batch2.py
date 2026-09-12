@@ -1105,43 +1105,22 @@ def test_job_queue_celery_enabled_paths(monkeypatch):
 
 def test_fcm_credential_resolve_and_send_guards(monkeypatch, tmp_path):
     from app.services import fcm_service as fcm
-    from app.core import config as cfg
 
-    monkeypatch.setattr(cfg.settings, "FCM_CREDENTIALS_PATH", "", raising=False)
     assert fcm._resolve_credentials_path() is None
-
-    cred = tmp_path / "svc.json"
-    cred.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(cfg.settings, "FCM_CREDENTIALS_PATH", str(cred), raising=False)
-    assert fcm._resolve_credentials_path() == str(cred.resolve())
-
-    monkeypatch.setattr(cfg.settings, "FCM_CREDENTIALS_PATH", "relative-missing.json", raising=False)
-    path = fcm._resolve_credentials_path()
-    assert path.endswith("relative-missing.json")
-
-    monkeypatch.setattr(cfg.settings, "NOTIFICATION_FCM_ENABLED", True, raising=False)
-    monkeypatch.setattr(cfg.settings, "FCM_PROJECT_ID", "proj", raising=False)
-    monkeypatch.setattr(cfg.settings, "FCM_CREDENTIALS_PATH", str(cred), raising=False)
-    monkeypatch.setattr(fcm, "_firebase_admin_available", lambda: False)
+    assert fcm._firebase_admin_available() is False
     st = fcm.fcm_status()
-    assert "firebase-admin" in st["note"]
-
-    monkeypatch.setattr(fcm, "_firebase_admin_available", lambda: True)
-    monkeypatch.setattr(cfg.settings, "FCM_CREDENTIALS_PATH", str(tmp_path / "nope.json"), raising=False)
-    st2 = fcm.fcm_status()
-    assert "missing" in st2["note"].lower()
+    assert st["configured"] is False
+    assert st["firebase_admin_available"] is False
+    assert "removed" in st["note"].lower()
 
     assert fcm.send_fcm_push(token="", title="t", body="b").sent is False
     assert fcm.send_fcm_push(token="tok", title="", body="b").sent is False
-    monkeypatch.setattr(fcm, "is_fcm_configured", lambda: False)
     r = fcm.send_fcm_push(token="tok", title="t", body="b")
     assert r.sent is False
+    assert "removed" in r.reason.lower()
 
-    monkeypatch.setattr(fcm, "is_fcm_configured", lambda: True)
-    monkeypatch.setattr(fcm, "_get_firebase_app", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    fail = fcm.send_fcm_push(token="tok", title="t", body="b")
-    assert fail.sent is False
-    assert "failed" in fail.reason.lower()
+    with pytest.raises(RuntimeError, match="removed"):
+        fcm._get_firebase_app()
 
 
 # ---------------------------------------------------------------------------

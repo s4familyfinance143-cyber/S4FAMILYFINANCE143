@@ -1,4 +1,4 @@
-# Build normal Windows desktop installer (Tauri + Firebase — no Python backend)
+# Build Windows desktop installer (Tauri + VPS API — Firebase Auth disabled)
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -7,11 +7,10 @@ if (-not (Test-Path (Join-Path $Root "desktop\src-tauri\Cargo.toml"))) {
 }
 
 $Desktop = Join-Path $Root "desktop"
-$FrontendDist = Join-Path $Root "frontend\dist\index.html"
-
-Write-Host "Building S4 desktop installer (Firebase cloud — no backend)..." -ForegroundColor Cyan
-
 $Frontend = Join-Path $Root "frontend"
+
+Write-Host "Building S4 desktop installer (VPS API — Firebase Auth off)..." -ForegroundColor Cyan
+
 Set-Location $Frontend
 if (-not (Test-Path "node_modules")) {
   npm ci
@@ -22,7 +21,11 @@ if (-not (Test-Path "node_modules")) {
   npm install
 }
 
+# beforeBuildCommand runs `npm run build` in frontend — force VPS cutover env.
 $env:TAURI_PLATFORM = "windows"
+$env:VITE_API_BASE = "https://app.s4businessthinking.com/api/v1"
+$env:VITE_GOOGLE_CLIENT_ID = "337941876187-bolk7n1dbmbiclqf1kqr2g6t2tq92bnc.apps.googleusercontent.com"
+
 npm run tauri build
 if ($LASTEXITCODE -ne 0) { throw "Tauri build failed" }
 

@@ -1,37 +1,15 @@
-import { isFirebaseConfigured } from "../firebase/config";
-import { isNativeApp } from "./runtimeEnv";
-
 const CLOUD_ONLY_KEY = "s4_cloud_only_mode";
 const CLOUD_FAMILY_KEY = "s4_cloud_family_id";
-/** Alias — active family id is persisted for both cloud and API sessions. */
+/** Alias — active family id is persisted for API sessions. */
 export const ACTIVE_FAMILY_STORAGE_KEY = CLOUD_FAMILY_KEY;
 
+/** Firebase client removed — always VPS/API mode. */
 export function isFirebaseFirstMode() {
-  if (!isFirebaseConfigured()) return false;
-  // Explicit false/0/no wins everywhere (including native APK) for VPS/server cutover builds.
-  const raw = import.meta.env.VITE_FIREBASE_FIRST;
-  if (raw !== undefined && String(raw).trim() !== "") {
-    const flag = String(raw).trim().toLowerCase();
-    if (flag === "0" || flag === "false" || flag === "no") return false;
-    if (flag === "1" || flag === "true" || flag === "yes") return true;
-  }
-  // Legacy default: native Capacitor builds assumed Firebase-first when flag unset.
-  if (isNativeApp()) return true;
-  return true;
+  return false;
 }
 
-/**
- * Block app until Firebase email is verified (after Create / before Login dashboard).
- * Default ON in Firebase-first mode. Override with VITE_REQUIRE_EMAIL_VERIFICATION=0.
- */
 export function requireEmailVerification() {
-  if (!isFirebaseConfigured()) return false;
-  const raw = import.meta.env.VITE_REQUIRE_EMAIL_VERIFICATION;
-  if (raw !== undefined && String(raw).trim() !== "") {
-    const flag = String(raw).trim().toLowerCase();
-    return flag !== "0" && flag !== "false" && flag !== "no";
-  }
-  return isFirebaseFirstMode();
+  return false;
 }
 
 export function loadCloudOnlyMode() {

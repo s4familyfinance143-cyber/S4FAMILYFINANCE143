@@ -35,7 +35,14 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && isAuthenticated) router.replace("/account");
+    if (!(ready && isAuthenticated)) return;
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      router.replace(next);
+      return;
+    }
+    router.replace("/account");
   }, [ready, isAuthenticated, router]);
 
   async function submit(e: React.FormEvent) {
@@ -46,7 +53,13 @@ export default function LoginPage() {
     const res = await login(email, password);
     setBusy(false);
     if (res.ok) {
-      router.replace("/account");
+      const params = new URLSearchParams(window.location.search);
+      const next = params.get("next");
+      if (next && next.startsWith("/") && !next.startsWith("//")) {
+        router.replace(next);
+      } else {
+        router.replace("/account");
+      }
       return;
     }
     if ((res.error ?? "").toLowerCase().includes("not verified")) {

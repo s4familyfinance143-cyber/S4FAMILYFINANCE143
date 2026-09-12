@@ -283,15 +283,6 @@ export function SettingsPanel({
   onDriveDisconnect,
   onDriveUpload,
   onDriveRestore,
-  firebaseConfigured = false,
-  firebaseUser = null,
-  firebaseMeta = null,
-  onFirebaseGoogleSignIn,
-  onFirebaseEmailSignIn,
-  onFirebaseEmailRegister,
-  onFirebaseSignOut,
-  onFirebaseSyncNow,
-  onFirebaseRestore,
   cloudOnlyMode = false,
 }) {
   const displayName = currentUser?.full_name || currentUser?.email || email || "—";
@@ -330,7 +321,7 @@ export function SettingsPanel({
   const roleKey = String(role || "").toUpperCase();
   const isOwnerOrAdmin = roleKey === "OWNER" || roleKey === "ADMIN";
   const isLocalDev = Boolean(import.meta.env.DEV);
-  const cloudSessionReady = Boolean(cloudOnlyMode && firebaseUser);
+  const cloudSessionReady = false;
   const canRefreshSession = Boolean(refreshToken) || cloudSessionReady;
   // Family cloud/Firebase users never need localhost API URL.
   // Show only when Developer Mode is on AND not in cloud-only mode.
@@ -1227,15 +1218,6 @@ export function SettingsPanel({
           onDriveDisconnect={onDriveDisconnect}
           onDriveUpload={onDriveUpload}
           onDriveRestore={onDriveRestore}
-          firebaseConfigured={firebaseConfigured}
-          firebaseUser={firebaseUser}
-          firebaseMeta={firebaseMeta}
-          onFirebaseGoogleSignIn={onFirebaseGoogleSignIn}
-          onFirebaseEmailSignIn={onFirebaseEmailSignIn}
-          onFirebaseEmailRegister={onFirebaseEmailRegister}
-          onFirebaseSignOut={onFirebaseSignOut}
-          onFirebaseSyncNow={onFirebaseSyncNow}
-          onFirebaseRestore={onFirebaseRestore}
         />
       )}
     </section>

@@ -413,7 +413,7 @@ def test_fcm_disabled_status_and_send(monkeypatch):
     result = fcm_service.send_fcm_push(token="tok", title="T", body="B")
     assert not result.sent
     assert result.as_dict()["token"] == "tok"
-    with pytest.raises(RuntimeError, match="not configured"):
+    with pytest.raises(RuntimeError, match="removed"):
         fcm_service._get_firebase_app()
 
 

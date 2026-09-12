@@ -310,7 +310,7 @@
     height: auto !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 6px !important;
+    gap: 10px !important;
     overflow: visible !important;
     grid-template-columns: none !important;
     grid-template-rows: none !important;
@@ -322,8 +322,9 @@
 
   .dash-shoyb .mobile-quick-actions {
     display: flex !important;
-    gap: 6px;
+    gap: 8px;
     flex: 0 0 auto;
+    padding: 2px 1px 4px;
   }
 
   /* Deep blue balance card — high-contrast labels (compact mobile) */
@@ -594,22 +595,22 @@
     flex: 1;
     background: #fffdf7 !important;
     border: 1px solid #ded2b3 !important;
-    border-radius: 10px !important;
-    padding: 5px 2px 4px !important;
-    min-height: 0 !important;
+    border-radius: 12px !important;
+    padding: 8px 4px 7px !important;
+    min-height: 58px !important;
     height: auto !important;
     box-shadow: none !important;
     display: block !important;
   }
 
   .dash-shoyb .mobile-quick-actions .qa-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
     display: grid;
     place-items: center;
     margin: 0 auto;
-    font-size: 12px;
+    font-size: 13px;
     color: #fff;
   }
 
@@ -618,9 +619,10 @@
   }
 
   .dash-shoyb .mobile-quick-actions .qa-label {
-    font-size: 7.5px;
-    font-weight: 600;
-    margin-top: 2px;
+    font-size: 9px;
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: 1.15;
     color: var(--ink, #252017);
   }
 
@@ -886,10 +888,10 @@
   }
 
   .main-content .dash-shoyb button.qa-btn {
-    min-height: 0 !important;
+    min-height: 58px !important;
     height: auto !important;
-    padding: 8px 2px 7px !important;
-    font-size: 8px !important;
+    padding: 8px 4px 7px !important;
+    font-size: 9px !important;
   }
 
   .main-content .dash-shoyb button.family-banner {
