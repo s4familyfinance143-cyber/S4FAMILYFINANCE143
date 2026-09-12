@@ -75,12 +75,13 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
     ls -lh "$SITE_ROOT/s4-website/public/downloads/"*.{apk,exe} 2>/dev/null || true
   fi
 
-  echo "==> Rebuilding marketing website (no-deps)"
+  echo "==> Rebuilding marketing website (no-deps, no-cache — avoid stale Downloads UI)"
   (
     cd "$SITE_ROOT"
-    # Avoid touching broken/unrelated api if possible — rebuild website image only
-    docker compose -f docker-compose.prod.yml build website
-    docker compose -f docker-compose.prod.yml up -d --no-deps website
+    # BuildKit sometimes kept a stale COPY . . layer, so Downloads stayed on
+    # old pending metadata even after rsync. Force a clean website image.
+    docker compose -f docker-compose.prod.yml build --no-cache website
+    docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps website
   )
 
   # Host nginx often serves /downloads/*.apk|exe from the bind-mounted public
