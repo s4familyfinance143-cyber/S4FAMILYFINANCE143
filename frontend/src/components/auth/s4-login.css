@@ -380,8 +380,7 @@
 .s4-login-shell .view{display:none}
 .s4-login-shell .view.active{display:block}
 
-.s4-login-shell .advanced-block{margin-bottom:14px}
-.s4-login-shell .advanced-toggle{font-size:12px;margin-bottom:8px}
+.s4-login-shell .warn-box{margin-bottom:14px}
 .s4-login-shell .choice-row{display:flex;gap:8px;margin-top:10px}
 .s4-login-shell .choice-mini{
   flex:1;border:1.5px solid #1D9E75;background:#EDF9F4;color:#0F6E56;

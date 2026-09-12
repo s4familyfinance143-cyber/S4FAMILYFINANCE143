@@ -10655,7 +10655,6 @@ function App() {
           setStatus={setStatus}
           setMessage={setMessage}
           apiBase={apiBase}
-          onApiBaseChange={(next) => setApiBase(persistApiBase(next))}
           onAuthenticated={(access, refresh) => {
             setToken(access);
             setRefreshToken(refresh || "");

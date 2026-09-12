@@ -38,14 +38,6 @@ function relText(lang, value) {
   return value;
 }
 
-function normalizeApiBase(value) {
-  const cleaned = String(value || "").trim().replace(/\/+$/, "");
-  if (/^https?:\/\//i.test(cleaned)) {
-    return `${cleaned.replace(/\/api(?:\/v\d+)?$/i, "")}/api/v1`;
-  }
-  return cleaned;
-}
-
 const UI = {
   bn: {
     logoSub: "Full Architecture v2.1 · Family Finance Platform",
@@ -118,9 +110,9 @@ const UI = {
     lblLinkedMember: "লিংকড সদস্য ID",
     mobileApiTitle: "মোবাইল অ্যাপ",
     mobileApiHint:
-      "লাইভ সার্ভার: https://app.s4businessthinking.com/api/v1 — সাধারণত আলাদা সেটিং লাগে না। সমস্যা হলে নিচে Server settings চেক করুন।",
+      "লাইভ সার্ভার: https://app.s4businessthinking.com/api/v1 — সাধারণত আলাদা সেটিং লাগে না।",
     mobileApiBlocked:
-      "Server settings-এ API URL দিন: https://app.s4businessthinking.com/api/v1",
+      "এই অ্যাপ localhost API ধরছে। নতুন APK ইনস্টল করুন বা https://app.s4businessthinking.com খুলুন।",
     cloudCreateSub: "",
     cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
     cloudLoginPageSub: "Firebase ক্লাউড — লগইন করুন বা পরিবার তৈরি করুন",
@@ -203,9 +195,9 @@ const UI = {
     lblLinkedMember: "Linked member ID",
     mobileApiTitle: "Mobile app",
     mobileApiHint:
-      "Live server: https://app.s4businessthinking.com/api/v1 — usually no extra setup. If login fails, check Server settings below.",
+      "Live server: https://app.s4businessthinking.com/api/v1 — usually no extra setup.",
     mobileApiBlocked:
-      "Set API URL in Server settings: https://app.s4businessthinking.com/api/v1",
+      "This app is pointed at localhost. Install the latest APK or open https://app.s4businessthinking.com.",
     cloudCreateSub: "",
     cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
     cloudLoginPageSub: "Cloud sign in or create your family",
@@ -323,61 +315,6 @@ function MobileApiBanner({ nativeApp, useCloudAuth, labels, apiBase }) {
   );
 }
 
-function ServerSettingsBlock({
-  useCloudAuth,
-  showAdvancedServer,
-  setShowAdvancedServer,
-  authLoading,
-  lang,
-  apiBaseDraft,
-  setApiBaseDraft,
-  saveApiBase,
-}) {
-  if (useCloudAuth) return null;
-  return (
-    <div className="advanced-block">
-      <button
-        type="button"
-        className="link advanced-toggle"
-        disabled={authLoading}
-        onClick={() => setShowAdvancedServer((v) => !v)}
-      >
-        {showAdvancedServer
-          ? lang === "bn"
-            ? "সার্ভার সেটিংস লুকান"
-            : "Hide server settings"
-          : lang === "bn"
-            ? "সার্ভার সেটিংস (উন্নত)"
-            : "Server settings (advanced)"}
-      </button>
-      {showAdvancedServer ? (
-        <div className="field">
-          <label>{lang === "bn" ? "API URL (সার্ভার)" : "API URL (server)"}</label>
-          <div className="input-wrap">
-            <span className="input-icon">🌐</span>
-            <input
-              type="url"
-              placeholder="https://app.s4businessthinking.com/api/v1"
-              value={apiBaseDraft}
-              disabled={authLoading}
-              onChange={(e) => setApiBaseDraft(e.target.value)}
-            />
-          </div>
-          <button
-            type="button"
-            className="link"
-            style={{ marginTop: 6 }}
-            disabled={authLoading}
-            onClick={saveApiBase}
-          >
-            {lang === "bn" ? "API URL সংরক্ষণ" : "Save API URL"}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * Architecture auth gate:
  * Register/Login → Create Family (Owner) OR Join with Invite (relationship) → Approve later.
@@ -396,7 +333,6 @@ export function FamilyAuthGate({
   setStatus,
   setMessage,
   apiBase,
-  onApiBaseChange,
   onAuthenticated,
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
@@ -427,8 +363,6 @@ export function FamilyAuthGate({
   const [serialLabel, setSerialLabel] = useState("");
   const [relationshipNote, setRelationshipNote] = useState("");
   const [linkedMemberId, setLinkedMemberId] = useState("");
-  const [apiBaseDraft, setApiBaseDraft] = useState(apiBase || "");
-  const [showAdvancedServer, setShowAdvancedServer] = useState(false);
   const nativeApp = isNativeApp();
   const menuRef = useRef(null);
   const TIMEZONE_PRESETS = ["Asia/Dhaka", "Asia/Dubai", "Asia/Kolkata", "UTC"];
@@ -708,7 +642,6 @@ export function FamilyAuthGate({
     if (useCloudAuth) return true;
     if (!nativeApp || !isLocalhostApi(apiBase)) return true;
     setMessage(L.mobileApiBlocked, "error");
-    setShowAdvancedServer(true);
     return false;
   }
 
@@ -993,40 +926,6 @@ export function FamilyAuthGate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    setApiBaseDraft(apiBase || "");
-  }, [apiBase]);
-
-  function saveApiBase() {
-    const next = normalizeApiBase(apiBaseDraft);
-    if (!next) {
-      setMessage(lang === "bn" ? "API URL প্রয়োজন" : "API URL required", "error");
-      return;
-    }
-    try {
-      const host = new URL(next).hostname.toLowerCase();
-      if (/s4businessthir/i.test(host) && !/s4businessthinking\.com$/i.test(host)) {
-        setMessage(
-          lang === "bn"
-            ? "API URL অসম্পূর্ণ। লিখুন: https://app.s4businessthinking.com/api/v1"
-            : "API URL incomplete. Use: https://app.s4businessthinking.com/api/v1",
-          "error",
-        );
-        return;
-      }
-    } catch {
-      setMessage(lang === "bn" ? "API URL সঠিক নয়" : "Invalid API URL", "error");
-      return;
-    }
-    try {
-      localStorage.setItem("s4_api_base", next);
-    } catch {
-      /* ignore */
-    }
-    onApiBaseChange?.(next);
-    setMessage(lang === "bn" ? "API URL সংরক্ষিত" : "API URL saved", "success");
-  }
-
   const stepActive = view === "createFamily" || view === "join" ? "family" : "account";
 
   return (
@@ -1054,17 +953,6 @@ export function FamilyAuthGate({
 
                 <LoginCardBrand subtitle={useCloudAuth ? L.cloudLoginPageSub : L.subtitle} />
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
-
-                <ServerSettingsBlock
-                  useCloudAuth={useCloudAuth}
-                  showAdvancedServer={showAdvancedServer}
-                  setShowAdvancedServer={setShowAdvancedServer}
-                  authLoading={authLoading}
-                  lang={lang}
-                  apiBaseDraft={apiBaseDraft}
-                  setApiBaseDraft={setApiBaseDraft}
-                  saveApiBase={saveApiBase}
-                />
 
                 {!useCloudAuth && view !== "login" && view !== "forgot" && view !== "resetPassword" ? (
                 <div className="mode-select-wrap" ref={menuRef}>
@@ -1471,17 +1359,6 @@ export function FamilyAuthGate({
                   </div>
 
                 <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
-
-                <ServerSettingsBlock
-                  useCloudAuth={useCloudAuth}
-                  showAdvancedServer={showAdvancedServer}
-                  setShowAdvancedServer={setShowAdvancedServer}
-                  authLoading={authLoading}
-                  lang={lang}
-                  apiBaseDraft={apiBaseDraft}
-                  setApiBaseDraft={setApiBaseDraft}
-                  saveApiBase={saveApiBase}
-                />
 
                 {view === "createFamily" ? (
                   <form className="signup-form" onSubmit={handleCreateFamily}>
