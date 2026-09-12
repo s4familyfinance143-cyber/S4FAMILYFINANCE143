@@ -55,6 +55,25 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
   if [[ ! -f "$SITE_ROOT/s4-website/.env.local" ]]; then
     echo "WARN: $SITE_ROOT/s4-website/.env.local missing — website may need secrets restored"
   fi
+
+  # Pull installer binaries from the GitHub Release into public/downloads
+  # (rsync intentionally excludes this folder so secrets/binaries persist).
+  INSTALLER_TAG="${SYNC_INSTALLERS_TAG:-}"
+  if [[ -z "$INSTALLER_TAG" && -f "$APP_ROOT/deploy/release/CURRENT_INSTALLER_TAG" ]]; then
+    INSTALLER_TAG="$(tr -d '[:space:]' < "$APP_ROOT/deploy/release/CURRENT_INSTALLER_TAG")"
+  fi
+  if [[ -n "$INSTALLER_TAG" ]]; then
+    DL_DIR="$SITE_ROOT/s4-website/public/downloads"
+    BASE="https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE143/releases/download/${INSTALLER_TAG}"
+    echo "==> Syncing installers from GitHub Release ${INSTALLER_TAG}"
+    mkdir -p "$DL_DIR"
+    curl -fsSL -o "$DL_DIR/S4-Family-Finance-143.apk" "$BASE/S4-Family-Finance-143.apk"
+    curl -fsSL -o "$DL_DIR/S4-Family-Finance-143-Setup.exe" "$BASE/S4-Family-Finance-143-Setup.exe"
+    ls -lh "$DL_DIR/S4-Family-Finance-143.apk" "$DL_DIR/S4-Family-Finance-143-Setup.exe"
+  else
+    echo "==> Skipping installer sync (no SYNC_INSTALLERS_TAG / CURRENT_INSTALLER_TAG)"
+  fi
+
   echo "==> Rebuilding marketing website (no-deps)"
   (
     cd "$SITE_ROOT"
