@@ -82,6 +82,14 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
     docker compose -f docker-compose.prod.yml build website
     docker compose -f docker-compose.prod.yml up -d --no-deps website
   )
+
+  # Host nginx often serves /downloads/*.apk|exe from the bind-mounted public
+  # folder and bypasses Next middleware. Keep binaries inside the image for
+  # /api/secure-download, but remove host copies so hotlinks 404.
+  echo "==> Removing host-public installer hotlinks (secure API keeps image copies)"
+  rm -f "$SITE_ROOT/s4-website/public/downloads/"*.apk \
+        "$SITE_ROOT/s4-website/public/downloads/"*.exe || true
+
   sleep 5
   curl -fsS -o /dev/null -w "website_http=%{http_code}\n" http://127.0.0.1:3000/downloads || true
   curl -fsS -o /dev/null -w "website_public=%{http_code}\n" https://www.s4businessthinking.com/downloads || true
