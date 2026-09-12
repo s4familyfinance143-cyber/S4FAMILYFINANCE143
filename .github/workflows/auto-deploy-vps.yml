@@ -74,6 +74,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_DEPLOY_APP: ${{ inputs.deploy_app }}
           INPUT_DEPLOY_WEBSITE: ${{ inputs.deploy_website }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           export DEPLOY_APP=1
