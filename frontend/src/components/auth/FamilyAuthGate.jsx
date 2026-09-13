@@ -1154,23 +1154,21 @@ export function FamilyAuthGate({
                     </div>
                     <div className="info-box">{L.resetFormInfo}</div>
                     <form onSubmit={handleResetPassword}>
-                      {true ? (
-                        <div className="field">
-                          <label>{L.lblResetToken}</label>
-                          <div className="input-wrap">
-                            <span className="input-icon">🔑</span>
-                            <input
-                              type="text"
-                              autoComplete="one-time-code"
-                              placeholder="paste token from email"
-                              value={resetToken}
-                              disabled={authLoading}
-                              onChange={(e) => setResetToken(e.target.value.trim())}
-                              required
-                            />
-                          </div>
+                      <div className="field">
+                        <label>{L.lblResetToken}</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">🔑</span>
+                          <input
+                            type="text"
+                            autoComplete="one-time-code"
+                            placeholder="paste token from email"
+                            value={resetToken}
+                            disabled={authLoading}
+                            onChange={(e) => setResetToken(e.target.value.trim())}
+                            required
+                          />
                         </div>
-                      ) : null}
+                      </div>
                       <div className="field">
                         <label>{L.lblNewPassword}</label>
                         <div className="input-wrap">

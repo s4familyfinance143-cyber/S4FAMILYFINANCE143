@@ -1307,7 +1307,7 @@ function App() {
     return cache;
   }
 
-  async function handleCloudEmailSignIn({ email, password }) {
+  async function _handleCloudEmailSignIn({ email, password }) {
     if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
@@ -1417,7 +1417,7 @@ function App() {
     }
   }
 
-  async function handleCreateCloudFamily({
+  async function _handleCreateCloudFamily({
     email,
     password,
     fullName,
@@ -1566,7 +1566,7 @@ function App() {
     }
   }
 
-  async function handleCloudJoinFamily({ email, password, fullName, inviteCode, relationshipType }) {
+  async function _handleCloudJoinFamily({ email, password, fullName, inviteCode, relationshipType }) {
     if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
@@ -1955,7 +1955,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseGoogleSignIn() {
+  async function _handleFirebaseGoogleSignIn() {
     if (!FIREBASE_CONFIGURED) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
@@ -1974,7 +1974,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseEmailSignIn() {
+  async function _handleFirebaseEmailSignIn() {
     if (!FIREBASE_CONFIGURED) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
@@ -1997,7 +1997,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseEmailRegister() {
+  async function _handleFirebaseEmailRegister() {
     if (!FIREBASE_CONFIGURED) {
       setMessage(t("firebaseNotConfigured"), "error");
       return;
@@ -2020,7 +2020,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseSignOut() {
+  async function _handleFirebaseSignOut() {
     setCloudBusy(true);
     try {
       // Cloud-only session: full logout so we don't leave a half-authed shell.
@@ -2042,7 +2042,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseSyncNow() {
+  async function _handleFirebaseSyncNow() {
     if (!firebaseUser?.uid) {
       setMessage(t("firebaseSignInPrompt"), "error");
       return;
@@ -2064,7 +2064,7 @@ function App() {
     }
   }
 
-  async function handleFirebaseRestore() {
+  async function _handleFirebaseRestore() {
     if (!firebaseUser?.uid) {
       setMessage(t("firebaseSignInPrompt"), "error");
       return;
