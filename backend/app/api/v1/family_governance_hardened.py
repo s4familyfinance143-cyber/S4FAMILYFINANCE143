@@ -315,6 +315,7 @@ def tables(db: Session) -> dict[str, Table | None]:
     return {
         "families": find_table(metadata, ["families", "family"], ["famil"]),
         "members": find_table(metadata, ["family_members", "members"], ["family_member"]),
+        "users": find_table(metadata, ["users"], ["user"]),
         "invites": optional_table(metadata, ["family_invites", "invites", "invite_codes", "invites"], ["invite"]),
         "join_requests": optional_table(metadata, ["join_requests", "family_join_requests"], ["join"]),
         "relationships": optional_table(metadata, ["relationship_types", "relationships"], ["relationship"]),
@@ -1174,54 +1175,62 @@ def list_family_members_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.models.family_member import FamilyMember
-    from app.models.user import User
-
     try:
-        actor = (
-            db.query(FamilyMember)
-            .filter(
-                FamilyMember.family_id == family_id,
-                FamilyMember.user_id == current_user.id,
-                FamilyMember.deleted_at.is_(None),
-                FamilyMember.status == "ACTIVE",
-            )
-            .first()
-        )
-        if not actor:
-            raise HTTPException(status_code=403, detail="Not a family member")
+        t = tables(db)
+        mem = t["members"]
+        users = t.get("users")
 
-        rows = (
-            db.query(FamilyMember, User)
-            .join(User, User.id == FamilyMember.user_id)
-            .filter(
-                FamilyMember.family_id == family_id,
-                FamilyMember.deleted_at.is_(None),
-            )
-            .order_by(FamilyMember.created_at.asc())
-            .all()
-        )
+        if mem is None:
+            raise HTTPException(status_code=500, detail="Members table not found")
+
+        require_family_member(db, family_id, user_id_value(current_user), t)
+
+        family_col = first_col(mem, ["family_id"])
+        user_col = first_col(mem, ["user_id", "member_user_id"])
+        pkn = pk_name(mem)
+        rows = query_all(db, mem, [mem.c[family_col] == family_id])
 
         members = []
-        for member, user in rows:
-            relation = member.relationship_display_label or ""
+        for row in rows:
+            if row.get("deleted_at") is not None:
+                continue
+
+            uid = row.get(user_col) if user_col else None
+            full_name = ""
+            email = ""
+            if uid and users is not None:
+                user_pk = pk_name(users)
+                user_row = query_one(db, users, [users.c[user_pk] == uid])
+                if user_row:
+                    full_name = str(user_row.get("full_name") or "")
+                    email = str(user_row.get("email") or "")
+
+            relation = (
+                row.get("relationship_display_label")
+                or row.get("relationship_type")
+                or row.get("relationship")
+                or ""
+            )
+            role = str(row.get("role") or row.get("member_role") or "MEMBER")
+            status = str(row.get("status") or ("ACTIVE" if row.get("is_active") else "INACTIVE"))
+
             members.append(
                 {
-                    "id": member.id,
-                    "member_id": member.id,
-                    "user_id": member.user_id,
-                    "full_name": user.full_name,
-                    "email": user.email,
-                    "role": member.role,
-                    "normalized_role": str(member.role or "").upper(),
-                    "status": member.status,
+                    "id": row.get(pkn),
+                    "member_id": row.get(pkn),
+                    "user_id": uid,
+                    "full_name": full_name,
+                    "email": email,
+                    "role": role,
+                    "normalized_role": role.upper(),
+                    "status": status,
                     "relationship_type": relation,
                     "relationship": relation,
                     "relationship_display_label": relation,
-                    "relationship_serial": member.relationship_serial,
-                    "linked_member_id": member.linked_member_id,
-                    "relationship_note": member.relationship_note,
-                    "created_at": member.created_at,
+                    "relationship_serial": row.get("relationship_serial"),
+                    "linked_member_id": row.get("linked_member_id"),
+                    "relationship_note": row.get("relationship_note"),
+                    "created_at": row.get("created_at"),
                 }
             )
 

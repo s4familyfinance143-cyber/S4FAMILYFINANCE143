@@ -63,12 +63,13 @@ def create_development_tables() -> None:
 
 create_development_tables()
 
+SCHEMA_GUARD_ADDED: list[str] = []
 try:
     from app.services.schema_guard import ensure_required_columns
 
-    _schema_added = ensure_required_columns()
-    if _schema_added:
-        print("Schema guard added:", ", ".join(_schema_added))
+    SCHEMA_GUARD_ADDED = ensure_required_columns()
+    if SCHEMA_GUARD_ADDED:
+        print("Schema guard added:", ", ".join(SCHEMA_GUARD_ADDED))
 except Exception as _schema_exc:
     print("Schema guard error:", _schema_exc)
 
@@ -212,6 +213,7 @@ def _health_payload() -> dict:
         "cache": cache_status(),
         "redis_stack": redis_stack_status(),
         "orm_table_count": len(Base.metadata.tables),
+        "schema_guard_added": SCHEMA_GUARD_ADDED,
         "celery_enabled": bool(settings.CELERY_ENABLED),
         "google_vision_enabled": bool(settings.GOOGLE_VISION_ENABLED),
         "metrics_endpoint": "/metrics",

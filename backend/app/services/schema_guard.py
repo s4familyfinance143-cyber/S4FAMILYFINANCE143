@@ -10,8 +10,13 @@ from app.core.database import engine
 REQUIRED_COLUMNS: list[tuple[str, str, str, str]] = [
     # table, column, sqlite_type, postgres_type
     ("ownership_transfer_requests", "admin_approved_by_member_id", "VARCHAR(36)", "VARCHAR(36)"),
+    ("family_members", "relationship_type_id", "VARCHAR(36)", "VARCHAR(36)"),
+    ("family_members", "relationship_serial", "INTEGER", "INTEGER"),
+    ("family_members", "relationship_display_label", "VARCHAR(80)", "VARCHAR(80)"),
     ("family_members", "linked_member_id", "VARCHAR(36)", "VARCHAR(36)"),
     ("family_members", "relationship_note", "VARCHAR(500)", "VARCHAR(500)"),
+    ("family_members", "invited_by_member_id", "VARCHAR(36)", "VARCHAR(36)"),
+    ("family_members", "can_login_family", "BOOLEAN DEFAULT 1", "BOOLEAN DEFAULT TRUE"),
     ("join_requests", "requested_linked_member_id", "VARCHAR(36)", "VARCHAR(36)"),
     ("join_requests", "requested_relationship_note", "VARCHAR(500)", "VARCHAR(500)"),
     ("join_requests", "requested_serial_label", "VARCHAR(40)", "VARCHAR(40)"),
