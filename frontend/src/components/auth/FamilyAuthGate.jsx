@@ -673,7 +673,7 @@ export function FamilyAuthGate({
           /* ignore */
         }
       }
-      onAuthenticated(access, refresh);
+      onAuthenticated(access, refresh, data.user || data.data?.user || null);
       setMessage(t("loginSuccessful"), "success");
       setStatus("");
     } catch (error) {

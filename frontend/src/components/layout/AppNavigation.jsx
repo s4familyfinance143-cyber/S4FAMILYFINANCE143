@@ -202,7 +202,7 @@ export function TopHeader({
   onMarkNotificationRead,
   onMarkAllNotificationsRead,
   onLogout,
-  _avatarUrl = "",
+  avatarUrl = "",
   currentUser,
   email,
   navItems = [],
@@ -448,11 +448,11 @@ export function TopHeader({
 
         <button
           type="button"
-          className="avatar-mini"
+          className={`avatar-mini${avatarUrl ? " has-photo" : ""}`}
           onClick={() => setActiveMenu("settings")}
           title={t("settings")}
         >
-          {_initials}
+          {avatarUrl ? <img src={avatarUrl} alt="" /> : _initials}
         </button>
 
         <button type="button" className="btn topbar-logout" onClick={() => onLogout?.()} title={t("logout")}>

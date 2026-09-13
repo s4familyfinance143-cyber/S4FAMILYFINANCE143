@@ -1,6 +1,7 @@
 /** Settings → Cloud: Local Disk + Google Drive (Firebase removed). */
 import { useEffect, useState } from "react";
 import { CLOUD_SYNC_INTERVALS } from "../../lib/cloudAutoSync";
+import { isNativeApp } from "../../lib/runtimeEnv";
 
 function formatRelativeTime(iso, t, digits) {
   if (!iso) return null;
@@ -220,7 +221,9 @@ export function CloudBackupPanel({
 
           <div className="cloud-card-body">
             {!localFolderSupported ? (
-              <p className="hint">{t("localBackupUnsupported")}</p>
+              <p className="hint">
+                {isNativeApp() ? t("localBackupMobileHint") : t("localBackupUnsupported")}
+              </p>
             ) : localFolderLabel ? (
               <p className="cloud-meta">
                 <span className="cloud-meta-label">{t("localBackupFolder")}</span>

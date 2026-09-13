@@ -2,6 +2,8 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const _SCRIPT_ID = "s4-google-identity-services";
 const TOKEN_KEY = "s4_google_drive_token";
 const TOKEN_EXP_KEY = "s4_google_drive_token_exp";
+const LEGACY_SESSION_TOKEN_KEY = "s4_google_drive_token";
+const LEGACY_SESSION_EXP_KEY = "s4_google_drive_token_exp";
 
 function readEnv(key) {
   const v = import.meta.env[key];
@@ -14,6 +16,38 @@ export function isGoogleDriveConfigured() {
 
 export function getGoogleClientId() {
   return readEnv("VITE_GOOGLE_CLIENT_ID");
+}
+
+function readStorage(kind) {
+  try {
+    return kind.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function readExpStorage(kind) {
+  try {
+    return kind.getItem(TOKEN_EXP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function migrateLegacySessionToken() {
+  try {
+    const legacyToken = sessionStorage.getItem(LEGACY_SESSION_TOKEN_KEY);
+    const legacyExp = sessionStorage.getItem(LEGACY_SESSION_EXP_KEY);
+    if (!legacyToken || !legacyExp) return;
+    if (!localStorage.getItem(TOKEN_KEY)) {
+      localStorage.setItem(TOKEN_KEY, legacyToken);
+      localStorage.setItem(TOKEN_EXP_KEY, legacyExp);
+    }
+    sessionStorage.removeItem(LEGACY_SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(LEGACY_SESSION_EXP_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 function loadScript(src) {
@@ -40,18 +74,20 @@ export async function ensureGoogleIdentityScript() {
 }
 
 function storeToken(accessToken, expiresInSeconds = 3500) {
+  migrateLegacySessionToken();
   try {
-    sessionStorage.setItem(TOKEN_KEY, accessToken);
-    sessionStorage.setItem(TOKEN_EXP_KEY, String(Date.now() + expiresInSeconds * 1000));
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    localStorage.setItem(TOKEN_EXP_KEY, String(Date.now() + expiresInSeconds * 1000));
   } catch {
     /* ignore */
   }
 }
 
 export function getStoredDriveToken() {
+  migrateLegacySessionToken();
   try {
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    const exp = Number(sessionStorage.getItem(TOKEN_EXP_KEY) || 0);
+    const token = readStorage(localStorage) || readStorage(sessionStorage);
+    const exp = Number(readExpStorage(localStorage) || readExpStorage(sessionStorage) || 0);
     if (!token || !exp || Date.now() > exp) return null;
     return token;
   } catch {
@@ -61,17 +97,33 @@ export function getStoredDriveToken() {
 
 export function clearStoredDriveToken() {
   try {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(TOKEN_EXP_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXP_KEY);
+    sessionStorage.removeItem(LEGACY_SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(LEGACY_SESSION_EXP_KEY);
   } catch {
     /* ignore */
   }
 }
 
+function formatDriveAuthError(errorCode) {
+  const code = String(errorCode || "").toLowerCase();
+  if (code.includes("origin") || code.includes("redirect")) {
+    return "Google Drive sign-in blocked (origin mismatch). Use the latest app build or contact support.";
+  }
+  if (code === "popup_closed_by_user" || code === "access_denied") {
+    return "Google sign-in was cancelled.";
+  }
+  if (code === "immediate_failed") {
+    return "Google Drive session expired — tap Connect again.";
+  }
+  return errorCode || "Google Drive sign-in failed";
+}
+
 export async function connectGoogleDrive({ prompt = "" } = {}) {
   if (!isGoogleDriveConfigured()) {
     console.error(
-      "[S4 Drive] Missing VITE_GOOGLE_CLIENT_ID — add it to frontend/.env (see deploy/PER_USER_GOOGLE_DRIVE.md)"
+      "[S4 Drive] Missing VITE_GOOGLE_CLIENT_ID — add it to frontend/.env (see deploy/PER_USER_GOOGLE_DRIVE.md)",
     );
     throw new Error("Google Drive backup is not available on this device.");
   }
@@ -84,7 +136,7 @@ export async function connectGoogleDrive({ prompt = "" } = {}) {
       scope: DRIVE_SCOPE,
       callback: (response) => {
         if (response.error) {
-          reject(new Error(response.error));
+          reject(new Error(formatDriveAuthError(response.error)));
           return;
         }
         storeToken(response.access_token, Number(response.expires_in) || 3500);
@@ -98,7 +150,7 @@ export async function connectGoogleDrive({ prompt = "" } = {}) {
 export async function getDriveAccessToken() {
   const cached = getStoredDriveToken();
   if (cached) return cached;
-  return connectGoogleDrive({ prompt: "consent" });
+  return connectGoogleDrive({ prompt: "" });
 }
 
 async function driveFetch(path, accessToken, options = {}) {

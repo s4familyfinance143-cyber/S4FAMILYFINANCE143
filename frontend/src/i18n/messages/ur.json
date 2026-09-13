@@ -515,6 +515,7 @@
   "localBackupSaved": "مقامی فولڈر میں محفوظ",
   "localBackupTitle": "لوکل ڈسک",
   "localBackupUnsupported": "فولڈر بیک اپ کے لیے Chrome یا Edge چاہیے۔ JSON ڈاؤن لوڈ کر سکتے ہیں۔",
+  "localBackupMobileHint": "Android/iOS ایپ PC فولڈر نہیں چن سکتی۔ JSON ڈاؤن لوڈ کریں یا Google Drive منسلک کریں۔",
   "localPayload": "مقامی پے لوڈ",
   "localPendingOutbox": "مقامی زیر التواء",
   "localWritesWaiting": "مقامی تحریریں سرور کا انتظار کر رہی ہیں۔",

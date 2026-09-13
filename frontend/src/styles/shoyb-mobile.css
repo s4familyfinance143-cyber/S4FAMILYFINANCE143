@@ -266,6 +266,18 @@
     border: 1.5px solid #ded2b3 !important;
     padding: 0 !important;
     box-shadow: none !important;
+    overflow: hidden !important;
+  }
+
+  .app-layout.shoyb-shell .main-content button.avatar-mini.has-photo {
+    background: transparent !important;
+  }
+
+  .app-layout.shoyb-shell .main-content button.avatar-mini img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
   }
 
   /* Dashboard fixed fill */

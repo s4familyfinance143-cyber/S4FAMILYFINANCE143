@@ -120,6 +120,13 @@ import {
 import { hydrateFamilyFromOfflineCache, buildDashboardFromCache } from "./lib/hydrateFromCache";
 import { buildReportExportBlob } from "./lib/clientReportExport";
 import { isNativeApp } from "./lib/runtimeEnv";
+import {
+  clearAuthSession,
+  hasRestorableAuthSession,
+  persistAuthSession,
+  restoreAuthSession,
+  touchAuthSessionActivity,
+} from "./lib/authSession";
 import { loadBackupOnboardingDone, saveBackupOnboardingDone } from "./lib/cloudOnboardingStorage";
 import {
   DEFAULT_CLOUD_CATEGORIES,
@@ -364,6 +371,7 @@ function App() {
   const [_authView, setAuthView] = useState("login");
   const [_showPassword, _setShowPassword] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [authRestoring, setAuthRestoring] = useState(() => hasRestorableAuthSession(readStoredApiBase()));
   const [fullName, _setFullName] = useState("");
   const [phone, _setPhone] = useState("");
   const [showSplash, setShowSplash] = useState(true);
@@ -374,6 +382,8 @@ function App() {
   const [families, setFamilies] = useState([]);
   const [activeFamilyId, setActiveFamilyId] = useState(() => loadCloudFamilyId());
   const [familiesLoading, setFamiliesLoading] = useState(false);
+  /** False until the first /families fetch finishes for the current token. */
+  const [familiesReady, setFamiliesReady] = useState(false);
   /** True while restoring/selecting the user's active family after login or refresh. */
   const [isFamilyLoading, setIsFamilyLoading] = useState(() =>
     Boolean(FIREBASE_FIRST_MODE && (loadCloudOnlyMode() || loadCloudFamilyId())),
@@ -1691,6 +1701,10 @@ function App() {
   }
 
   async function handlePickLocalFolder() {
+    if (!LOCAL_FOLDER_SUPPORTED) {
+      setMessage(isNativeApp() ? t("localBackupMobileHint") : t("localBackupUnsupported"), "warning");
+      return;
+    }
     setCloudBusy(true);
     try {
       const handle = await pickBackupFolder();
@@ -2356,6 +2370,13 @@ function App() {
 
       setToken(data.access_token);
       setRefreshToken(data.refresh_token || "");
+      persistAuthSession({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || "",
+        user: data.user || null,
+        apiBase,
+      });
+      if (data.user) setCurrentUser(data.user);
       setMessage(t("loginSuccessful"), "success");
       setStatus("");
     } catch {
@@ -2469,9 +2490,11 @@ function App() {
 
     setToken("");
     setRefreshToken("");
+    clearAuthSession();
     clearCloudSession();
     setCloudOnlyMode(false);
     setFamilies([]);
+    setFamiliesReady(false);
     setActiveFamilyId("");
     persistCloudFamilyId("");
     setIsFamilyLoading(false);
@@ -2614,7 +2637,36 @@ function App() {
     };
   }
 
-  async function apiGet(path) {
+  async function tryRefreshAccessToken() {
+    if (!refreshToken) return false;
+    try {
+      const res = await fetch(`${apiBase}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return false;
+      const nextAccess = data.access_token || "";
+      const nextRefresh = data.refresh_token || refreshToken;
+      if (!nextAccess) return false;
+      setToken(nextAccess);
+      setRefreshToken(nextRefresh);
+      persistAuthSession({
+        accessToken: nextAccess,
+        refreshToken: nextRefresh,
+        user: data.user || currentUser,
+        apiBase,
+      });
+      if (data.user) setCurrentUser(data.user);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function apiGet(path, retried = false) {
     if (isCloudLocalMode()) {
       const hit = await cloudApiGet({
         familyId: activeFamilyId,
@@ -2632,6 +2684,10 @@ function App() {
     });
 
     if (!res.ok) {
+      if (res.status === 401 && !retried) {
+        const refreshed = await tryRefreshAccessToken();
+        if (refreshed) return apiGet(path, true);
+      }
       const text = await res.text();
       let detail = text;
       try {
@@ -2893,6 +2949,7 @@ function App() {
   async function loadFamilies() {
     if (!token) return;
 
+    setFamiliesReady(false);
     setFamiliesLoading(true);
     setIsFamilyLoading(true);
 
@@ -2924,6 +2981,7 @@ function App() {
       clearFamilyData();
       setMessage(t("familyLoadFailed"), "error");
     } finally {
+      setFamiliesReady(true);
       setFamiliesLoading(false);
       setIsFamilyLoading(false);
     }
@@ -3830,8 +3888,32 @@ function App() {
     if (!token) return [];
 
     try {
-      const data = await apiGet(`/categories/family/${activeFamilyId}`);
+      let data = await apiGet(`/categories/family/${activeFamilyId}`);
+      if (!Array.isArray(data)) data = [];
+
+      if (!data.length) {
+        try {
+          await apiPost(`/categories/seed/${activeFamilyId}`, {});
+          data = await apiGet(`/categories/family/${activeFamilyId}`);
+          if (!Array.isArray(data)) data = [];
+        } catch {
+          /* seed requires owner/admin */
+        }
+      }
+
+      if (!data.length) {
+        const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+        if (Array.isArray(cached?.data) && cached.data.length) {
+          data = cached.data;
+        } else if (DEFAULT_CLOUD_CATEGORIES.length) {
+          data = DEFAULT_CLOUD_CATEGORIES;
+        }
+      }
+
       setCategories(data);
+      if (data.length) {
+        await saveOfflineSnapshot(activeFamilyId, "finance", "categories", data).catch(() => {});
+      }
 
       if (data.length && !txForm.category_id) {
         setTxForm((prev) => ({
@@ -3856,8 +3938,14 @@ function App() {
         }));
       }
       return data;
-    } catch {
+    } catch (err) {
+      const cached = await loadOfflineSnapshot(activeFamilyId, "finance", "categories").catch(() => null);
+      if (Array.isArray(cached?.data) && cached.data.length) {
+        setCategories(cached.data);
+        return cached.data;
+      }
       setCategories([]);
+      softFail("Categories", err, "error");
       return [];
     }
   }
@@ -4002,14 +4090,18 @@ function App() {
     if (!token) return;
 
     try {
-      const [data, statusData] = await Promise.all([
-        apiGet(`/budgets/${activeFamilyId}`),
-        apiGet(`/budgets/status/${activeFamilyId}`),
-      ]);
+      const data = await apiGet(`/budgets/${activeFamilyId}`);
       const rows = normalizeBudgetsList(data);
       setBudgets(rows);
-      setBudgetStatus(statusData);
       await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", persistableBudgets(rows)).catch(() => {});
+
+      try {
+        const statusData = await apiGet(`/budgets/status/${activeFamilyId}`);
+        setBudgetStatus(statusData);
+      } catch (statusErr) {
+        console.warn("[S4 Budget] status load failed", statusErr);
+        setBudgetStatus(null);
+      }
     } catch (err) {
       const msg = String(err?.message || "");
       if (/failed to fetch|network|offline/i.test(msg) || !isBrowserOnline()) {
@@ -10114,6 +10206,42 @@ function App() {
   }, [isAppAuthed, activeFamilyId, firebaseUser?.uid]);
 
   useEffect(() => {
+    if (!authRestoring) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const result = await restoreAuthSession(apiBase);
+        if (cancelled) return;
+        if (result.ok) {
+          setToken(result.accessToken);
+          setRefreshToken(result.refreshToken || "");
+          if (result.user) setCurrentUser(result.user);
+        }
+      } finally {
+        if (!cancelled) setAuthRestoring(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, authRestoring]);
+
+  useEffect(() => {
+    if (!token) return;
+    persistAuthSession({ accessToken: token, refreshToken, user: currentUser, apiBase });
+  }, [token, refreshToken, currentUser, apiBase]);
+
+  useEffect(() => {
+    function onVisibility() {
+      if (token) touchAuthSessionActivity();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [token]);
+
+  useEffect(() => {
     if (!token) return;
 
     setIsFamilyLoading(true);
@@ -10128,6 +10256,7 @@ function App() {
 
   useEffect(() => {
     if (!token || !activeFamilyId) return;
+    if (!familiesReady || familiesLoading || isFamilyLoading) return;
 
     const timeoutId = window.setTimeout(() => {
       refreshAll();
@@ -10135,7 +10264,7 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeFamilyId]);
+  }, [token, activeFamilyId, familiesReady, familiesLoading, isFamilyLoading]);
 
   useEffect(() => {
     if (!isCloudLocalMode() || !activeFamilyId) return;
@@ -10638,6 +10767,20 @@ function App() {
     );
   }
 
+  if (authRestoring) {
+    return (
+      <main className="splash-root" lang={currentLanguage.code} dir={currentLanguage.dir}>
+        <div className="auth-loading-overlay" role="status" aria-live="polite">
+          <div className="auth-loading-card">
+            <div className="auth-spinner" aria-hidden="true" />
+            <h2>{t("authLoadingTitle")}</h2>
+            <p>{t("authLoadingHint") || t("splashHint")}</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (!isAppAuthed) {
     return (
       <main className="splash-root" lang={currentLanguage.code} dir={currentLanguage.dir}>
@@ -10668,9 +10811,16 @@ function App() {
           setStatus={setStatus}
           setMessage={setMessage}
           apiBase={apiBase}
-          onAuthenticated={(access, refresh) => {
+          onAuthenticated={(access, refresh, user) => {
             setToken(access);
             setRefreshToken(refresh || "");
+            persistAuthSession({
+              accessToken: access,
+              refreshToken: refresh || "",
+              user: user || null,
+              apiBase,
+            });
+            if (user) setCurrentUser(user);
           }}
         />
       </main>

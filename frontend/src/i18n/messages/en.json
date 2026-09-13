@@ -515,6 +515,7 @@
   "localBackupSaved": "Saved to local folder",
   "localBackupTitle": "Local Disk",
   "localBackupUnsupported": "Folder backup needs Chrome or Edge. You can still download a JSON file.",
+  "localBackupMobileHint": "Android/iOS app cannot pick a PC folder. Use Download JSON, or connect Google Drive instead.",
   "localPayload": "Local payload",
   "localPendingOutbox": "Local pending",
   "localWritesWaiting": "Local writes waiting for server",

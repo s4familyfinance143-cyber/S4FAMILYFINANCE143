@@ -515,6 +515,7 @@
   "localBackupSaved": "লোকাল ফোল্ডারে সেভ হয়েছে",
   "localBackupTitle": "লোকাল ডিস্ক",
   "localBackupUnsupported": "ফোল্ডার ব্যাকআপের জন্য Chrome বা Edge লাগে। JSON ডাউনলোড করা যাবে।",
+  "localBackupMobileHint": "Android/iOS অ্যাপে PC ফোল্ডার বেছে নেওয়া যায় না। JSON ডাউনলোড করুন, অথবা Google Drive সংযুক্ত করুন।",
   "localPayload": "লোকাল ডেটা",
   "localPendingOutbox": "লোকাল পেন্ডিং",
   "localWritesWaiting": "লোকাল লেখা সার্ভারের অপেক্ষায়",
