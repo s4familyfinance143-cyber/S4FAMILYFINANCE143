@@ -52,3 +52,8 @@ class OwnershipTransferCreateRequest(BaseModel):
 
 class MemberRoleUpdateRequest(BaseModel):
     role: str = Field(description="MEMBER, ADMIN, VIEWER, or CHILD")
+
+
+class MemberRelationshipUpdateRequest(BaseModel):
+    relationship_type: str = Field(min_length=2, max_length=80)
+    relationship: str | None = Field(default=None, max_length=80)

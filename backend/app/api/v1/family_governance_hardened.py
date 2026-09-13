@@ -1141,130 +1141,31 @@ def decide_join_request_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    t = tables(db)
-    jr = t["join_requests"]
-    mem = t["members"]
-    inv = t["invites"]
+    from app.api.v1.join_requests import approve_or_reject_request
+    from app.schemas.join_request import JoinRequestDecisionRequest
 
-    if jr is None:
-        raise HTTPException(status_code=500, detail="join_requests table not found")
-
-    req = fetch_by_id(db, jr, request_id)
-    if not req:
-        raise HTTPException(status_code=404, detail="Join request not found")
-
-    family_col = first_col(jr, ["family_id"])
-    family_id = req.get(family_col)
-
-    if not is_owner_or_admin(db, family_id, user_id_value(current_user), t):
-        raise HTTPException(status_code=403, detail="Only owner/admin can approve or reject join request")
-
-    status_col = first_col(jr, ["status", "request_status"])
-    current_status = str(req.get(status_col, "PENDING")).upper() if status_col else "PENDING"
-    if current_status != "PENDING":
-        raise HTTPException(status_code=409, detail="Join request already decided")
-
-    decision = normalize_decision(payload.decision)
-
-    member_created = False
-    member_id = None
-
-    if decision == "APPROVED":
-        req_user_col = first_col(jr, ["user_id", "requester_user_id", "requested_by_user_id"])
-        req_user_id = req.get(req_user_col)
-
-        family_col_mem = first_col(mem, ["family_id"])
-        user_col_mem = first_col(mem, ["user_id", "member_user_id"])
-
-        existing_member = query_one(db, mem, [mem.c[family_col_mem] == family_id, mem.c[user_col_mem] == req_user_id])
-
-        if not existing_member:
-            req_rel_id = row_first(req, ["requested_relationship_type_id", "relationship_type_id"])
-            req_serial_value = row_first(req, ["requested_relationship_serial", "relationship_serial"])
-            req_serial_value = normalize_relationship_serial(req_serial_value, False)
-            assert_relationship_serial_available(
-                db,
-                family_id,
-                req_rel_id,
-                req_serial_value,
-                t,
-                exclude_request_id=request_id,
-            )
-
-            values = {
-                "family_id": family_id,
-                "user_id": req_user_id,
-                "member_user_id": req_user_id,
-                "role": "MEMBER",
-                "relationship_type_id": req_rel_id,
-                "relationship_serial": req_serial_value,
-                "relationship_display_label": row_first(req, ["requested_relationship_label", "relationship_label"])
-                or "Member",
-                "linked_member_id": row_first(req, ["requested_linked_member_id", "linked_member_id"]),
-                "relationship_note": row_first(req, ["requested_relationship_note", "relationship_note"]),
-                "is_active": True,
-                "status": "ACTIVE",
-            }
-            member_id = insert_dynamic(db, mem, values, context={"role": "MEMBER", "status": "ACTIVE", "name": "Member"})
-            create_default_permissions(db, family_id, member_id, req_user_id, t, role="MEMBER")
-            member_created = True
-        else:
-            member_id = existing_member.get(pk_name(mem))
-
-        invite_id_col = first_col(jr, ["invite_code_id", "invite_id"])
-        invite_id = req.get(invite_id_col) if invite_id_col else None
-
-        if inv is not None and invite_id:
-            used_col = invite_used_col(inv)
-            if used_col:
-                current_inv = fetch_by_id(db, inv, invite_id)
-                current_used = int(current_inv.get(used_col) or 0) if current_inv else 0
-                db.execute(update(inv).where(inv.c[pk_name(inv)] == invite_id).values(**{used_col: current_used + 1}))
-
-    update_values = {}
-    if status_col:
-        update_values[status_col] = decision
-    for c in ["decision", "decision_status"]:
-        if has(jr, c):
-            update_values[c] = decision
-    for c in ["decided_by", "decision_by", "approved_by", "updated_by"]:
-        if has(jr, c):
-            update_values[c] = user_id_value(current_user)
-    reviewer_member_id = member_id_for_user(db, family_id, user_id_value(current_user), t)
-    if has(jr, "reviewed_by_member_id") and reviewer_member_id:
-        update_values["reviewed_by_member_id"] = reviewer_member_id
-    for c in ["decided_at", "decision_at", "approved_at", "updated_at"]:
-        if has(jr, c):
-            update_values[c] = utc_now()
-    if has(jr, "decision_reason") and payload.reason:
-        update_values["decision_reason"] = payload.reason
-    if has(jr, "review_note") and payload.reason:
-        update_values["review_note"] = payload.reason
-
-    if update_values:
-        db.execute(update(jr).where(jr.c[pk_name(jr)] == request_id).values(**update_values))
-
-    from app.services.family_audit import write_family_audit
-
-    write_family_audit(
-        db,
-        family_id=str(family_id),
-        member_id=str(reviewer_member_id) if reviewer_member_id else None,
-        action_type="MEMBER_APPROVED" if decision == "APPROVED" else "MEMBER_REJECTED",
-        entity_type="JOIN_REQUEST",
-        entity_id=str(request_id),
-        title=f"Join request {decision.lower()}",
-    )
-
-    db.commit()
-
-    return {
-        "hardened": True,
-        "request_id": request_id,
-        "status": decision,
-        "member_created": member_created,
-        "member_id": member_id,
-    }
+    try:
+        decision = normalize_decision(payload.decision or payload.action or "")
+        action = "APPROVE" if decision == "APPROVED" else "REJECT"
+        note = payload.reason or payload.note
+        if action == "REJECT" and not (note or "").strip():
+            note = "Rejected by family owner"
+        result = approve_or_reject_request(
+            request_id,
+            JoinRequestDecisionRequest(action=action, note=note),
+            db,
+            current_user,
+        )
+        return {"hardened": True, **result}
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _log_db_route_error(
+            "POST /join-requests/decision",
+            exc,
+            request_id=request_id,
+            user_id=user_id_value(current_user),
+        )
+        raise
 
 
 @router.get("/families/{family_id}/members")
@@ -1273,20 +1174,72 @@ def list_family_members_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    t = tables(db)
-    mem = t["members"]
+    from app.models.family_member import FamilyMember
+    from app.models.user import User
 
-    require_family_member(db, family_id, user_id_value(current_user), t)
+    try:
+        actor = (
+            db.query(FamilyMember)
+            .filter(
+                FamilyMember.family_id == family_id,
+                FamilyMember.user_id == current_user.id,
+                FamilyMember.deleted_at.is_(None),
+                FamilyMember.status == "ACTIVE",
+            )
+            .first()
+        )
+        if not actor:
+            raise HTTPException(status_code=403, detail="Not a family member")
 
-    family_col = first_col(mem, ["family_id"])
-    rows = query_all(db, mem, [mem.c[family_col] == family_id])
+        rows = (
+            db.query(FamilyMember, User)
+            .join(User, User.id == FamilyMember.user_id)
+            .filter(
+                FamilyMember.family_id == family_id,
+                FamilyMember.deleted_at.is_(None),
+            )
+            .order_by(FamilyMember.created_at.asc())
+            .all()
+        )
 
-    return {
-        "hardened": True,
-        "family_id": family_id,
-        "count": len(rows),
-        "members": rows,
-    }
+        members = []
+        for member, user in rows:
+            relation = member.relationship_display_label or ""
+            members.append(
+                {
+                    "id": member.id,
+                    "member_id": member.id,
+                    "user_id": member.user_id,
+                    "full_name": user.full_name,
+                    "email": user.email,
+                    "role": member.role,
+                    "normalized_role": str(member.role or "").upper(),
+                    "status": member.status,
+                    "relationship_type": relation,
+                    "relationship": relation,
+                    "relationship_display_label": relation,
+                    "relationship_serial": member.relationship_serial,
+                    "linked_member_id": member.linked_member_id,
+                    "relationship_note": member.relationship_note,
+                    "created_at": member.created_at,
+                }
+            )
+
+        return {
+            "hardened": True,
+            "family_id": family_id,
+            "count": len(members),
+            "members": members,
+        }
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _log_db_route_error(
+            "GET /families/members",
+            exc,
+            family_id=family_id,
+            user_id=user_id_value(current_user),
+        )
+        raise
 
 
 

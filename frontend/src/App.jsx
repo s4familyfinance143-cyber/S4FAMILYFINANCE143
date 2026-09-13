@@ -2636,7 +2636,12 @@ function App() {
       let detail = text;
       try {
         const parsed = JSON.parse(text);
-        detail = parsed.detail || parsed.message || text;
+        detail =
+          parsed.detail ||
+          parsed.message ||
+          parsed.error?.message ||
+          (parsed.error?.code ? `${parsed.error.code}: ${parsed.error.message || "Request failed"}` : null) ||
+          text;
       } catch {
         /* keep raw text */
       }
@@ -2699,7 +2704,15 @@ function App() {
 
     const data = await res.json().catch(() => ({}));
 
-    if (!res.ok) throw new Error(data.detail || "Request failed");
+    if (!res.ok) {
+      throw new Error(
+        data.detail ||
+          data.message ||
+          data.error?.message ||
+          (data.error?.code ? `${data.error.code}: ${data.error.message || "Request failed"}` : null) ||
+          "Request failed",
+      );
+    }
     return data;
   }
 

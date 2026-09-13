@@ -9,9 +9,11 @@ from app.models.family import Family
 from app.models.family_member import FamilyMember
 from app.models.life_planner import CalendarEvent, FamilyTask, OwnershipTransferRequest
 from app.models.user import User
+from app.models.relationship_type import RelationshipType
 from app.schemas.life_planner import (
     CalendarEventCreateRequest,
     CalendarEventUpdateRequest,
+    MemberRelationshipUpdateRequest,
     MemberRoleUpdateRequest,
     OwnershipTransferCreateRequest,
     TaskCreateRequest,
@@ -484,6 +486,68 @@ def cancel_ownership_transfer(
     db.commit()
     db.refresh(row)
     return _transfer_dict(row)
+
+
+@router.patch("/families/{family_id}/members/{member_id}/relationship")
+def set_member_relationship(
+    family_id: str,
+    member_id: str,
+    payload: MemberRelationshipUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    actor = _member(db, family_id, current_user.id)
+    if not _is_owner(actor):
+        raise HTTPException(403, "Only owner can change member relationship")
+
+    rel_name = (payload.relationship_type or payload.relationship or "").strip()
+    if not rel_name:
+        raise HTTPException(422, "relationship_type is required")
+
+    target = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.id == member_id,
+            FamilyMember.family_id == family_id,
+            FamilyMember.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(404, "Member not found")
+
+    relationship = (
+        db.query(RelationshipType)
+        .filter(
+            RelationshipType.name_en.ilike(rel_name),
+            RelationshipType.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not relationship:
+        relationship = RelationshipType(
+            name_bn=rel_name,
+            name_en=rel_name,
+            group_name="FAMILY",
+            needs_serial=False,
+            is_system=True,
+            is_active=True,
+        )
+        db.add(relationship)
+        db.flush()
+
+    target.relationship_type_id = relationship.id
+    target.relationship_display_label = rel_name
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "id": target.id,
+        "family_id": family_id,
+        "relationship_type": rel_name,
+        "relationship": rel_name,
+        "relationship_display_label": rel_name,
+    }
 
 
 @router.patch("/families/{family_id}/members/{member_id}/role")

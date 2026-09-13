@@ -52,9 +52,9 @@ def create_development_tables() -> None:
                 Base.metadata.remove(table)
         Base.metadata.create_all(bind=engine)
         try:
-            from app.services.schema_guard import ensure_sqlite_columns
+            from app.services.schema_guard import ensure_required_columns
 
-            added = ensure_sqlite_columns()
+            added = ensure_required_columns()
             if added:
                 print("SQLite schema guard added:", ", ".join(added))
         except Exception as exc:
@@ -62,6 +62,15 @@ def create_development_tables() -> None:
 
 
 create_development_tables()
+
+try:
+    from app.services.schema_guard import ensure_required_columns
+
+    _schema_added = ensure_required_columns()
+    if _schema_added:
+        print("Schema guard added:", ", ".join(_schema_added))
+except Exception as _schema_exc:
+    print("Schema guard error:", _schema_exc)
 
 try:
     from app.core.audit_events import register_audit_listeners
