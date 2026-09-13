@@ -4,10 +4,13 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 import hashlib
+import logging
+import sys
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import MetaData, Table, and_, func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -21,6 +24,14 @@ _phase5b_get_current_user = get_current_user
 
 
 router = APIRouter(tags=["Family Governance Hardened"])
+_log = logging.getLogger("s4.family_governance")
+
+
+def _log_db_route_error(route: str, exc: Exception, **context: Any) -> None:
+    """Log the underlying SQLAlchemy/DB exception before the global DB_001 handler."""
+    ctx = " ".join(f"{k}={v!r}" for k, v in context.items())
+    _log.exception("%s failed %s: %s", route, ctx, exc)
+    print(f"[S4 DB ERROR] {route} {ctx}: {exc!r}", file=sys.stderr, flush=True)
 
 # Map Phase5B-era keys → architecture role-matrix keys
 _PHASE5B_KEY_ALIASES = {
@@ -51,6 +62,8 @@ class FamilyCreateRequest(BaseModel):
 class InviteGenerateRequest(BaseModel):
     expires_in_days: int = Field(default=7, ge=1, le=30)
     max_uses: int = Field(default=1, ge=1, le=100)
+    invitee_email: str | None = Field(default=None, max_length=255)
+    send_email: bool = False
 
 
 class JoinInviteRequest(BaseModel):
@@ -889,94 +902,76 @@ def generate_invite_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    t = tables(db)
-    inv = t["invites"]
+    try:
+        from app.api.v1.invites import _create_invite_row, _maybe_send_invite_email, _public_join_link
+        from app.services.family_audit import write_family_audit
 
-    if inv is None:
-        raise HTTPException(status_code=500, detail="Invite table not found")
+        t = tables(db)
+        if not is_owner_or_admin(db, family_id, user_id_value(current_user), t):
+            raise HTTPException(status_code=403, detail="Only owner/admin can generate invite")
 
-    if not is_owner_or_admin(db, family_id, user_id_value(current_user), t):
-        raise HTTPException(status_code=403, detail="Only owner/admin can generate invite")
+        actor_member_id = member_id_for_user(db, family_id, user_id_value(current_user), t) or get_owner_member_id(
+            db, family_id, user_id_value(current_user), t
+        )
+        if not actor_member_id:
+            raise HTTPException(status_code=403, detail="Member record not found")
 
-    code_col = invite_code_col(inv)
-    family_col = first_col(inv, ["family_id"])
-    used_col = invite_used_col(inv)
-    max_col = invite_max_col(inv)
-    exp_col = invite_expiry_col(inv)
-    created_by_member_col = first_col(inv, ["created_by_member_id"])
+        email = (payload.invitee_email or "").strip().lower() or None
+        channel = "EMAIL" if email else "CODE"
 
-    actor_member_id = member_id_for_user(db, family_id, user_id_value(current_user), t) or get_owner_member_id(
-        db, family_id, user_id_value(current_user), t
-    )
-    if created_by_member_col and not actor_member_id:
-        raise HTTPException(status_code=403, detail="Member record not found")
+        invite, raw_code = _create_invite_row(
+            db=db,
+            family_id=family_id,
+            actor_id=str(actor_member_id),
+            expires_days=payload.expires_in_days,
+            max_uses=payload.max_uses,
+            channel=channel,
+            invitee_email=email,
+        )
+        link = _public_join_link(raw_code)
 
-    for _ in range(10):
-        code = "S4F-" + uuid4().hex[:8].upper()
-        if not get_invite_by_code(db, inv, code):
-            break
-    else:
-        raise HTTPException(status_code=500, detail="Could not generate unique invite code")
+        email_sent = None
+        email_reason = None
+        if email and payload.send_email:
+            email_sent, email_reason = _maybe_send_invite_email(to_email=email, code=raw_code, link=link)
 
-    stored_code = hash_invite_code(code) if code_col == "code_hash" else code
+        write_family_audit(
+            db,
+            family_id=str(family_id),
+            member_id=str(actor_member_id),
+            action_type="INVITE_CREATED",
+            entity_type="INVITE_CODE",
+            entity_id=str(invite.id),
+            title="Invite code created",
+            description=f"channel={channel}, expires_in_days={payload.expires_in_days}",
+        )
 
-    values = {
-        code_col: stored_code,
-        "status": "ACTIVE",
-    }
+        db.commit()
 
-    if family_col:
-        values[family_col] = family_id
-    if created_by_member_col:
-        values[created_by_member_col] = actor_member_id
-    if has(inv, "created_by"):
-        values["created_by"] = user_id_value(current_user)
-    if has(inv, "created_by_user_id"):
-        values["created_by_user_id"] = user_id_value(current_user)
-    if has(inv, "is_active"):
-        values["is_active"] = True
-
-    if used_col:
-        values[used_col] = 0
-    if max_col:
-        values[max_col] = payload.max_uses
-    if exp_col:
-        values[exp_col] = utc_now() + timedelta(days=payload.expires_in_days)
-    if has(inv, "invite_channel"):
-        values["invite_channel"] = "CODE"
-    if has(inv, "raw_code_hint"):
-        values["raw_code_hint"] = code[-8:]
-
-    invite_id = insert_dynamic(
-        db,
-        inv,
-        values,
-        context={"status": "ACTIVE", "max_uses": payload.max_uses, "expires_in_days": payload.expires_in_days},
-    )
-
-    from app.services.family_audit import write_family_audit
-
-    write_family_audit(
-        db,
-        family_id=str(family_id),
-        member_id=str(actor_member_id) if actor_member_id else None,
-        action_type="INVITE_CREATED",
-        entity_type="INVITE_CODE",
-        entity_id=str(invite_id),
-        title="Invite code created",
-        description=f"expires_in_days={payload.expires_in_days}",
-    )
-
-    db.commit()
-
-    return {
-        "hardened": True,
-        "invite_id": invite_id,
-        "family_id": family_id,
-        "invite_code": code,
-        "expires_in_days": payload.expires_in_days,
-        "max_uses": payload.max_uses,
-    }
+        return {
+            "hardened": True,
+            "invite_id": invite.id,
+            "family_id": family_id,
+            "invite_code": raw_code,
+            "code": raw_code,
+            "expires_in_days": payload.expires_in_days,
+            "max_uses": payload.max_uses,
+            "status": invite.status,
+            "invite_channel": channel,
+            "invitee_email": email,
+            "invite_link": link,
+            "email_sent": email_sent,
+            "email_reason": email_reason,
+        }
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _log_db_route_error(
+            "POST /invites/generate",
+            exc,
+            family_id=family_id,
+            user_id=user_id_value(current_user),
+        )
+        raise
 
 
 @router.post("/invites/join")
@@ -985,155 +980,145 @@ def join_invite_hardened(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    t = tables(db)
-    inv = t["invites"]
-    jr = t["join_requests"]
-    mem = t["members"]
+    try:
+        return _join_invite_hardened_impl(payload, db, current_user)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _log_db_route_error(
+            "POST /invites/join",
+            exc,
+            invite_code=payload.invite_code,
+            user_id=user_id_value(current_user),
+        )
+        raise
 
-    if inv is None or jr is None:
-        raise HTTPException(status_code=500, detail="Invite or join_requests table not found")
 
-    invite = get_invite_by_code(db, inv, payload.invite_code)
+def _join_invite_hardened_impl(
+    payload: JoinInviteRequest,
+    db: Session,
+    current_user: User,
+):
+    from app.api.v1.invites import hash_code, normalize_invite_code
+    from app.models.family_member import FamilyMember
+    from app.models.invite_code import InviteCode
+    from app.models.join_request import JoinRequest
+    from app.models.relationship_type import RelationshipType
+    from app.services.family_audit import write_family_audit
+
+    invite_code = normalize_invite_code(payload.invite_code)
+    raw_input = payload.invite_code.strip()
+
+    invite = (
+        db.query(InviteCode)
+        .filter(
+            InviteCode.code_hash == hash_code(invite_code),
+            InviteCode.status == "ACTIVE",
+            InviteCode.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not invite:
+        invite = (
+            db.query(InviteCode)
+            .filter(
+                InviteCode.invite_link_token == raw_input,
+                InviteCode.status == "ACTIVE",
+                InviteCode.deleted_at.is_(None),
+            )
+            .first()
+        )
     if not invite:
         raise HTTPException(status_code=400, detail="Invalid invite code")
 
-    exp_col = invite_expiry_col(inv)
-    if exp_col and invite.get(exp_col):
-        expires_at = invite.get(exp_col)
-        # DB may store timezone-aware datetimes; utc_now() is naive UTC.
-        if getattr(expires_at, "tzinfo", None) is not None:
-            expires_at = expires_at.replace(tzinfo=None)
-        if expires_at < utc_now():
-            raise HTTPException(status_code=400, detail="Invite code expired")
+    if invite.expires_at.replace(tzinfo=None) < utc_now():
+        invite.status = "EXPIRED"
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invite code expired")
 
-    active_col = first_col(inv, ["is_active", "active"])
-    if active_col and invite.get(active_col) is False:
-        raise HTTPException(status_code=400, detail="Invite code inactive")
-
-    status_col_inv = first_col(inv, ["status"])
-    if status_col_inv and str(invite.get(status_col_inv, "")).upper() not in {"ACTIVE", "OPEN", ""}:
-        raise HTTPException(status_code=400, detail="Invite code not active")
-
-    used_col = invite_used_col(inv)
-    max_col = invite_max_col(inv)
-    used = int(invite.get(used_col) or 0) if used_col else 0
-    max_uses = int(invite.get(max_col) or 1) if max_col else 1
-    if used >= max_uses:
+    if invite.used_count >= invite.max_uses:
+        invite.status = "USED"
+        db.commit()
         raise HTTPException(status_code=400, detail="Invite max uses reached")
 
-    family_col_inv = first_col(inv, ["family_id"])
-    family_id = invite.get(family_col_inv) if family_col_inv else None
-    if not family_id:
-        raise HTTPException(status_code=500, detail="Invite family_id missing")
-
-    family_col_mem = first_col(mem, ["family_id"])
-    user_col_mem = first_col(mem, ["user_id", "member_user_id"])
-
-    existing_member = query_one(db, mem, [mem.c[family_col_mem] == family_id, mem.c[user_col_mem] == user_id_value(current_user)])
-    if existing_member:
+    already_member = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.family_id == invite.family_id,
+            FamilyMember.user_id == current_user.id,
+            FamilyMember.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if already_member:
         raise HTTPException(status_code=409, detail="User is already a family member")
 
-    jr_family_col = first_col(jr, ["family_id"])
-    jr_user_col = first_col(jr, ["user_id", "requester_user_id", "requested_by_user_id"])
-    jr_status_col = first_col(jr, ["status", "request_status"])
-
-    pending_conditions = [jr.c[jr_family_col] == family_id, jr.c[jr_user_col] == user_id_value(current_user)]
-    if jr_status_col:
-        pending_conditions.append(jr.c[jr_status_col].in_(["PENDING", "APPROVED"]))
-
-    existing_request = query_one(db, jr, pending_conditions)
+    existing_request = (
+        db.query(JoinRequest)
+        .filter(
+            JoinRequest.family_id == invite.family_id,
+            JoinRequest.user_id == current_user.id,
+            JoinRequest.status == "PENDING",
+            JoinRequest.deleted_at.is_(None),
+        )
+        .first()
+    )
     if existing_request:
         raise HTTPException(status_code=409, detail="Join request already exists")
 
-    rel_name = payload.relationship_type or "Family Member"
-    from app.services.relationship_rules import validate_relationship_payload
+    rel_name = (payload.relationship_type or "Other").strip()
+    if not rel_name:
+        raise HTTPException(status_code=400, detail="Relationship type is required")
 
-    serial_raw = payload.relationship_serial
     serial_int: int | None = None
-    if serial_raw is not None and str(serial_raw).strip() != "":
+    if payload.relationship_serial is not None and str(payload.relationship_serial).strip() != "":
         try:
-            serial_int = int(str(serial_raw).strip())
+            serial_int = int(str(payload.relationship_serial).strip())
         except ValueError:
-            # allow ELDER/SECOND etc via serial_label; keep raw for legacy path
-            if not payload.serial_label:
-                payload.serial_label = str(serial_raw).strip()
+            serial_int = None
 
-    validated = validate_relationship_payload(
-        relationship_label=rel_name,
-        relationship_serial=serial_int,
-        serial_label=payload.serial_label,
-        linked_member_id=payload.linked_member_id,
-        relationship_note=payload.relationship_note,
+    relationship = (
+        db.query(RelationshipType)
+        .filter(
+            RelationshipType.name_en.ilike(rel_name),
+            RelationshipType.deleted_at.is_(None),
+        )
+        .first()
     )
-    rel_name = validated["label"]
-    rel_id = payload.relationship_type_id or get_or_create_relationship(
-        db, t["relationships"], rel_name, bool(validated["relationship_serial"] or payload.serial_label)
+    if not relationship:
+        relationship = RelationshipType(
+            name_bn=rel_name,
+            name_en=rel_name,
+            group_name="FAMILY",
+            needs_serial=serial_int is not None,
+            is_system=True,
+            is_active=True,
+        )
+        db.add(relationship)
+        db.flush()
+
+    join_req = JoinRequest(
+        family_id=invite.family_id,
+        user_id=current_user.id,
+        invite_code_id=invite.id,
+        requested_role="MEMBER",
+        status="PENDING",
+        requested_relationship_type_id=relationship.id,
+        requested_relationship_label=rel_name,
+        requested_relationship_serial=serial_int,
+        requested_serial_label=payload.serial_label,
+        requested_linked_member_id=payload.linked_member_id,
+        requested_relationship_note=payload.relationship_note,
     )
-
-    needs_serial = relationship_needs_serial(db, rel_id, t) or relationship_name_or_usage_needs_serial(
-        db,
-        family_id,
-        rel_id,
-        rel_name,
-        t,
-    )
-    # Prefer rule-resolved rank; fall back to legacy normalize for unknown groups
-    serial_value = validated["relationship_serial"]
-    if serial_value is None and needs_serial:
-        serial_value = normalize_relationship_serial(payload.relationship_serial, needs_serial)
-
-    if serial_value is not None:
-        mark_relationship_type_needs_serial(db, rel_id, t)
-
-    assert_relationship_serial_available(db, family_id, rel_id, serial_value, t)
-
-    req_values = {
-        "family_id": family_id,
-        "user_id": user_id_value(current_user),
-        "invite_code_id": invite.get(pk_name(inv)),
-        "requested_role": "MEMBER",
-        "status": "PENDING",
-        "requested_relationship_type_id": rel_id,
-        "requested_relationship_label": validated["relationship_display_label"] or rel_name,
-        "requested_relationship_serial": serial_value,
-    }
-
-    if has(jr, "requester_user_id"):
-        req_values["requester_user_id"] = user_id_value(current_user)
-    if has(jr, "requested_by_user_id"):
-        req_values["requested_by_user_id"] = user_id_value(current_user)
-    if has(jr, "invite_id"):
-        req_values["invite_id"] = invite.get(pk_name(inv))
-    if has(jr, "relationship_type_id"):
-        req_values["relationship_type_id"] = rel_id
-    if has(jr, "relationship_type"):
-        req_values["relationship_type"] = rel_name
-    if has(jr, "relationship_serial"):
-        req_values["relationship_serial"] = serial_value
-    if has(jr, "requested_linked_member_id"):
-        req_values["requested_linked_member_id"] = validated["linked_member_id"]
-    if has(jr, "linked_member_id"):
-        req_values["linked_member_id"] = validated["linked_member_id"]
-    if has(jr, "requested_relationship_note"):
-        req_values["requested_relationship_note"] = validated["relationship_note"]
-    if has(jr, "relationship_note"):
-        req_values["relationship_note"] = validated["relationship_note"]
-    if has(jr, "serial_label"):
-        req_values["serial_label"] = payload.serial_label
-    if has(jr, "request_status"):
-        req_values["request_status"] = "PENDING"
-
-    request_id = insert_dynamic(db, jr, req_values, context={"status": "PENDING", "name": rel_name, "role": "MEMBER"})
-
-    from app.services.family_audit import write_family_audit
+    db.add(join_req)
+    db.flush()
 
     write_family_audit(
         db,
-        family_id=str(family_id),
+        family_id=str(invite.family_id),
         member_id=None,
         action_type="JOIN_REQUESTED",
         entity_type="JOIN_REQUEST",
-        entity_id=str(request_id),
+        entity_id=str(join_req.id),
         title="Join request submitted",
         description=f"relationship={rel_name}",
     )
@@ -1142,9 +1127,10 @@ def join_invite_hardened(
 
     return {
         "hardened": True,
-        "request_id": request_id,
-        "family_id": family_id,
+        "request_id": join_req.id,
+        "family_id": invite.family_id,
         "status": "PENDING",
+        "message": "Join request sent",
     }
 
 

@@ -1,4 +1,8 @@
+import logging
+import sys
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,6 +21,13 @@ router = APIRouter(
     prefix="/join-requests",
     tags=["Join Requests"],
 )
+_log = logging.getLogger("s4.join_requests")
+
+
+def _log_db_route_error(route: str, exc: Exception, **context) -> None:
+    ctx = " ".join(f"{k}={v!r}" for k, v in context.items())
+    _log.exception("%s failed %s: %s", route, ctx, exc)
+    print(f"[S4 DB ERROR] {route} {ctx}: {exc!r}", file=sys.stderr, flush=True)
 
 
 @router.get("/family/{family_id}")
@@ -25,38 +36,48 @@ def get_pending_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_owner_or_admin(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-    )
-
-    expire_stale_join_requests(db, family_id)
-
-    requests = (
-        db.query(JoinRequest)
-        .filter(
-            JoinRequest.family_id == family_id,
-            JoinRequest.status == "PENDING",
-            JoinRequest.deleted_at.is_(None),
+    try:
+        require_owner_or_admin(
+            db=db,
+            family_id=family_id,
+            user_id=current_user.id,
         )
-        .order_by(JoinRequest.created_at.desc())
-        .all()
-    )
 
-    return [
-        {
-            "request_id": item.id,
-            "family_id": item.family_id,
-            "user_id": item.user_id,
-            "status": item.status,
-            "requested_role": item.requested_role,
-            "relationship": item.requested_relationship_label,
-            "relationship_serial": item.requested_relationship_serial,
-            "created_at": item.created_at,
-        }
-        for item in requests
-    ]
+        expire_stale_join_requests(db, family_id)
+
+        requests = (
+            db.query(JoinRequest)
+            .filter(
+                JoinRequest.family_id == family_id,
+                JoinRequest.status == "PENDING",
+                JoinRequest.deleted_at.is_(None),
+            )
+            .order_by(JoinRequest.created_at.desc())
+            .all()
+        )
+
+        return [
+            {
+                "request_id": item.id,
+                "family_id": item.family_id,
+                "user_id": item.user_id,
+                "status": item.status,
+                "requested_role": item.requested_role,
+                "relationship": item.requested_relationship_label,
+                "relationship_serial": item.requested_relationship_serial,
+                "created_at": item.created_at,
+            }
+            for item in requests
+        ]
+    except SQLAlchemyError as exc:
+        db.rollback()
+        _log_db_route_error(
+            "GET /join-requests/family",
+            exc,
+            family_id=family_id,
+            user_id=current_user.id,
+        )
+        raise
 
 
 @router.post("/{request_id}/cancel")

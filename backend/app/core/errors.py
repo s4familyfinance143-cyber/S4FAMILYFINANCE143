@@ -38,12 +38,18 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(SQLAlchemyError)
     async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
         import logging
+        import sys
 
         logging.getLogger("s4.db").exception(
             "SQLAlchemy error on %s %s: %s",
             request.method,
             request.url.path,
             exc,
+        )
+        print(
+            f"[S4 DB_001] {request.method} {request.url.path}: {exc!r}",
+            file=sys.stderr,
+            flush=True,
         )
         return JSONResponse(
             status_code=500,
