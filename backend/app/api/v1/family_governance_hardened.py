@@ -226,6 +226,15 @@ def default_value(col: Any, context: dict[str, Any]) -> Any:
     if low in {"group_name", "category"}:
         return context.get(col_name, "FAMILY")
 
+    if low in {"invite_channel", "channel"}:
+        return context.get(col_name, "CODE")
+
+    if low in {"invitee_email"}:
+        return context.get(col_name, None)
+
+    if low in {"invite_link_token", "raw_code_hint"}:
+        return context.get(col_name, None)
+
     if low.endswith("_at"):
         return utc_now()
 
@@ -933,6 +942,10 @@ def generate_invite_hardened(
         values[max_col] = payload.max_uses
     if exp_col:
         values[exp_col] = utc_now() + timedelta(days=payload.expires_in_days)
+    if has(inv, "invite_channel"):
+        values["invite_channel"] = "CODE"
+    if has(inv, "raw_code_hint"):
+        values["raw_code_hint"] = code[-8:]
 
     invite_id = insert_dynamic(
         db,
@@ -985,8 +998,13 @@ def join_invite_hardened(
         raise HTTPException(status_code=400, detail="Invalid invite code")
 
     exp_col = invite_expiry_col(inv)
-    if exp_col and invite.get(exp_col) and invite.get(exp_col) < utc_now():
-        raise HTTPException(status_code=400, detail="Invite code expired")
+    if exp_col and invite.get(exp_col):
+        expires_at = invite.get(exp_col)
+        # DB may store timezone-aware datetimes; utc_now() is naive UTC.
+        if getattr(expires_at, "tzinfo", None) is not None:
+            expires_at = expires_at.replace(tzinfo=None)
+        if expires_at < utc_now():
+            raise HTTPException(status_code=400, detail="Invite code expired")
 
     active_col = first_col(inv, ["is_active", "active"])
     if active_col and invite.get(active_col) is False:
