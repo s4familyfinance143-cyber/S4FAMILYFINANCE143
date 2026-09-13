@@ -22,6 +22,11 @@ echo "    APP_ROOT=$APP_ROOT"
 echo "    SITE_ROOT=$SITE_ROOT"
 echo "    DEPLOY_APP=$DEPLOY_APP DEPLOY_WEBSITE=$DEPLOY_WEBSITE"
 
+if [[ -f "$APP_ROOT/deploy/scripts/vps_server_cleanup.sh" ]]; then
+  echo "==> Server cleanup (remove dev-only files)"
+  APP_ROOT="$APP_ROOT" SITE_ROOT="$SITE_ROOT" bash "$APP_ROOT/deploy/scripts/vps_server_cleanup.sh"
+fi
+
 if [[ "$DEPLOY_APP" == "1" ]]; then
   if [[ ! -f "$APP_ROOT/deploy/docker/.env.production" ]]; then
     echo "ERROR: missing $APP_ROOT/deploy/docker/.env.production (keep secrets on server)"

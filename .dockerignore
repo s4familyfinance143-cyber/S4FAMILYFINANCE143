@@ -1,0 +1,21 @@
+# Slim Docker build context on VPS (backend + frontend images).
+.git
+.github
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/node_modules
+**/dist
+**/.next
+mobile
+desktop
+sales-website
+deploy/dist
+backend/tests
+*.md
+*.db
+*.sqlite
+*.sqlite3
+*.apk
+*.exe
+secrets

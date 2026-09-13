@@ -45,13 +45,15 @@ if [[ "$DEPLOY_APP" == "1" ]]; then
   # Preserve production env + secrets on server
   rsync_ssh \
     --exclude '.git/' \
+    --exclude '.github/' \
     --exclude 'node_modules/' \
     --exclude 'frontend/node_modules/' \
     --exclude 'frontend/dist/' \
-    --exclude 'mobile/node_modules/' \
-    --exclude 'desktop/node_modules/' \
-    --exclude 'desktop/src-tauri/target/' \
+    --exclude 'mobile/' \
+    --exclude 'desktop/' \
     --exclude 'backend/.venv/' \
+    --exclude 'backend/tests/' \
+    --exclude 'backend/.pytest_cache/' \
     --exclude 'backend/**/__pycache__/' \
     --exclude 'deploy/dist/' \
     --exclude 'deploy/docker/.env.production' \
@@ -61,6 +63,9 @@ if [[ "$DEPLOY_APP" == "1" ]]; then
     --exclude '.env' \
     --exclude '*.apk' \
     --exclude '*.exe' \
+    --exclude '*.db' \
+    --exclude '*.sqlite' \
+    --exclude '*.sqlite3' \
     --exclude 'deploy/scripts/_tmp*' \
     ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${APP_REMOTE_PATH}/"
 fi
