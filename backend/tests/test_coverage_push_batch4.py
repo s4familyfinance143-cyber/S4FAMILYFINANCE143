@@ -776,11 +776,11 @@ def test_recurring_wallet_helpers():
     assert rec.can_use_wallet(member, wallet) is True
 
     db = Db()
-    db.get = lambda model, key: wallet if key == "w1" else None
+    db.get = lambda model, key, **kw: wallet if key == "w1" else None
     got = rec.get_wallet(db, "f1", "w1", member)
     assert got.id == "w1"
 
-    db.get = lambda model, key: None
+    db.get = lambda model, key, **kw: None
     with pytest.raises(HTTPException):
         rec.get_wallet(db, "f1", "missing", member)
 
@@ -793,7 +793,7 @@ def test_recurring_wallet_helpers():
         is_shared_family=False,
         is_owner_wallet=False,
     )
-    db.get = lambda model, key: inactive
+    db.get = lambda model, key, **kw: inactive
     with pytest.raises(HTTPException):
         rec.get_wallet(db, "f1", "w2", member)
 
@@ -804,7 +804,7 @@ def test_recurring_wallet_helpers():
         is_active=True,
         category_type="EXPENSE",
     )
-    db.get = lambda model, key: cat if key == "c1" else None
+    db.get = lambda model, key, **kw: cat if key == "c1" else None
     assert rec.get_category(db, "f1", "c1", "EXPENSE").id == "c1"
     assert rec.get_category(db, "f1", None, "EXPENSE") is None
 

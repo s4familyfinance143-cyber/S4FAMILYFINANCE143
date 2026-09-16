@@ -55,7 +55,12 @@ def can_use_wallet(member: FamilyMember, wallet: Account) -> bool:
 
 
 def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember):
-    wallet = db.get(Account, wallet_id)
+    # Locked -- established convention this session (savings.py, goals.py,
+    # loans.py, transactions.py). accounting_service re-locks the wallet
+    # again before actually mutating its balance, but nothing else here
+    # protected the initial current_balance read used for the
+    # insufficient-balance pre-check below.
+    wallet = db.get(Account, wallet_id, populate_existing=True, with_for_update=True)
 
     if not wallet or wallet.family_id != family_id or wallet.deleted_at is not None:
         raise HTTPException(404, "Wallet not found")
@@ -88,7 +93,19 @@ def get_category(db: Session, family_id: str, category_id: str | None, expected_
 
 
 def get_recurring(db: Session, recurring_id: str):
-    recurring = db.get(RecurringTransaction, recurring_id)
+    # Locked: next_due_date/status/last_posted_at are mutated directly by
+    # this file's own code (post_recurring/auto_post_due_recurring below)
+    # with NO downstream re-lock anywhere in accounting_service
+    # (RecurringTransaction isn't part of create_transaction's account-
+    # locking loop) and no idempotency guard otherwise. A plain db.get()
+    # here meant two concurrent posts for the same recurring_id (a
+    # double-click, or a race between the Celery scheduler and a manual
+    # click) could both pass the ACTIVE status check and each post a
+    # separate real transaction -- duplicate money movement, not just a
+    # lost cache update.
+    recurring = db.get(
+        RecurringTransaction, recurring_id, populate_existing=True, with_for_update=True
+    )
 
     if not recurring or recurring.deleted_at is not None:
         raise HTTPException(404, "Recurring transaction not found")
