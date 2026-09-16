@@ -83,6 +83,8 @@ def can_use_wallet(member: FamilyMember, wallet: Account) -> bool:
 
 
 def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember) -> Account:
+    # populate_existing() alongside with_for_update() -- established convention
+    # this session (accounting_service.py, transactions.py, savings.py, goals.py).
     wallet = (
         db.query(Account)
         .filter(
@@ -90,6 +92,7 @@ def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember
             Account.family_id == family_id,
             Account.deleted_at.is_(None),
         )
+        .populate_existing()
         .with_for_update()
         .first()
     )
@@ -114,7 +117,12 @@ def get_loan(db: Session, family_id: str, loan_id: str, lock: bool = True) -> Lo
     )
 
     if lock:
-        query = query.with_for_update()
+        # populate_existing() required: paid_amount/remaining_amount/status
+        # are mutated directly by this file's own code (loan_payment below)
+        # with no downstream re-lock in accounting_service (Loan isn't part
+        # of create_transaction's account-locking loop) -- this lock is the
+        # ONLY guard against a lost update under concurrency.
+        query = query.populate_existing().with_for_update()
 
     loan = query.first()
 

@@ -39,6 +39,9 @@ class Query:
     def with_for_update(self):
         return self
 
+    def populate_existing(self, *args, **kwargs):
+        return self
+
     def limit(self, *args, **kwargs):
         return self
 
