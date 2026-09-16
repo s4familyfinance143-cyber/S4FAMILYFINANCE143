@@ -162,17 +162,30 @@ def dashboard_summary(
     # are a supported feature), so summing raw amounts across entities would silently
     # add e.g. USD and BDT values together. Convert each item to the family's base
     # currency before summing — same approach already used by dashboard_currency_summary.
-    total_wallet_balance = sum(
-        (Decimal(account.current_balance or 0) * get_rate_to_base(db, account.currency, base_currency))
-        for account in accounts
-    )
+    #
+    # get_rate_to_base() returns Decimal("0") when no exchange rate is configured
+    # for a currency pair -- treating that as a real rate would silently fold a
+    # real balance into the totals as if it were worth nothing (a wallet just
+    # "vanishing" from net worth with no indication why). Skip unconverted items
+    # instead, matching currency.py's family_currency_summary.
+    total_wallet_balance = Decimal("0")
+    unconverted_wallet_count = 0
+    for account in accounts:
+        rate = get_rate_to_base(db, account.currency, base_currency)
+        if rate <= 0:
+            unconverted_wallet_count += 1
+            continue
+        total_wallet_balance += Decimal(account.current_balance or 0) * rate
 
     total_income = Decimal("0")
     total_expense = Decimal("0")
     total_transfer = Decimal("0")
 
     for tx in transactions:
-        amount = Decimal(tx.amount or 0) * get_rate_to_base(db, tx.currency, base_currency)
+        rate = get_rate_to_base(db, tx.currency, base_currency)
+        if rate <= 0:
+            continue
+        amount = Decimal(tx.amount or 0) * rate
 
         if tx.transaction_type == "INCOME":
             total_income += amount
@@ -181,35 +194,42 @@ def dashboard_summary(
         elif tx.transaction_type == "TRANSFER":
             total_transfer += amount
 
-    total_savings_target = sum(
-        (Decimal(goal.target_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
-        for goal in savings_goals
-    )
-
-    total_savings_current = sum(
-        (Decimal(goal.current_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
-        for goal in savings_goals
-    )
+    total_savings_target = Decimal("0")
+    total_savings_current = Decimal("0")
+    unconverted_savings_count = 0
+    for goal in savings_goals:
+        rate = get_rate_to_base(db, goal.currency, base_currency)
+        if rate <= 0:
+            unconverted_savings_count += 1
+            continue
+        total_savings_target += Decimal(goal.target_amount or 0) * rate
+        total_savings_current += Decimal(goal.current_amount or 0) * rate
 
     loan_given_remaining = Decimal("0")
     loan_taken_remaining = Decimal("0")
+    unconverted_loan_count = 0
 
     for loan in loans:
-        converted_remaining = Decimal(loan.remaining_amount or 0) * get_rate_to_base(db, loan.currency, base_currency)
+        rate = get_rate_to_base(db, loan.currency, base_currency)
+        if rate <= 0:
+            unconverted_loan_count += 1
+            continue
+        converted_remaining = Decimal(loan.remaining_amount or 0) * rate
         if loan.loan_type == "GIVEN":
             loan_given_remaining += converted_remaining
         elif loan.loan_type == "TAKEN":
             loan_taken_remaining += converted_remaining
 
-    total_goal_target = sum(
-        (Decimal(goal.target_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
-        for goal in goals
-    )
-
-    total_goal_current = sum(
-        (Decimal(goal.current_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
-        for goal in goals
-    )
+    total_goal_target = Decimal("0")
+    total_goal_current = Decimal("0")
+    unconverted_goal_count = 0
+    for goal in goals:
+        rate = get_rate_to_base(db, goal.currency, base_currency)
+        if rate <= 0:
+            unconverted_goal_count += 1
+            continue
+        total_goal_target += Decimal(goal.target_amount or 0) * rate
+        total_goal_current += Decimal(goal.current_amount or 0) * rate
 
     active_budget_count = 0
     over_budget_count = 0
@@ -233,6 +253,7 @@ def dashboard_summary(
         "summary": {
             "wallet_count": len(accounts),
             "total_wallet_balance": money(total_wallet_balance),
+            "unconverted_wallet_count": unconverted_wallet_count,
             "total_income": money(total_income),
             "total_expense": money(total_expense),
             "net_income_expense": money(total_income - total_expense),
@@ -243,6 +264,7 @@ def dashboard_summary(
             "goal_count": len(savings_goals),
             "total_target_amount": money(total_savings_target),
             "total_current_amount": money(total_savings_current),
+            "unconverted_savings_count": unconverted_savings_count,
             "overall_progress_percent": percent(
                 total_savings_current,
                 total_savings_target,
@@ -252,6 +274,7 @@ def dashboard_summary(
             "loan_count": len(loans),
             "loan_given_remaining": money(loan_given_remaining),
             "loan_taken_remaining": money(loan_taken_remaining),
+            "unconverted_loan_count": unconverted_loan_count,
             "net_loan_position": money(
                 loan_given_remaining - loan_taken_remaining
             ),
@@ -260,6 +283,7 @@ def dashboard_summary(
             "goal_count": len(goals),
             "total_target_amount": money(total_goal_target),
             "total_current_amount": money(total_goal_current),
+            "unconverted_goal_count": unconverted_goal_count,
             "overall_progress_percent": percent(
                 total_goal_current,
                 total_goal_target,
@@ -328,6 +352,7 @@ def dashboard_currency_summary(
     )
 
     total_balance = Decimal("0")
+    unconverted_wallet_count = 0
 
     wallets = []
 
@@ -340,22 +365,31 @@ def dashboard_currency_summary(
             base_currency,
         )
 
-        converted = balance * rate
+        # rate == 0 means no exchange rate is configured for this currency
+        # pair, not that the wallet is worth nothing -- exclude it from the
+        # total instead of silently folding it in as zero.
+        rate_available = rate > 0
+        converted = balance * rate if rate_available else None
 
-        total_balance += converted
+        if rate_available:
+            total_balance += converted
+        else:
+            unconverted_wallet_count += 1
 
         wallets.append({
             "wallet_name": account.name,
             "currency": account.currency,
             "balance": money(balance),
-            "rate": money(rate),
-            "converted_balance": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_balance": money(converted) if rate_available else None,
         })
 
     return {
         "family_id": family_id,
         "base_currency": base_currency,
         "total_balance": money(total_balance),
+        "unconverted_wallet_count": unconverted_wallet_count,
         "wallets": wallets,
     }
 
@@ -401,56 +435,75 @@ def networth_currency_summary(
     savings_total = Decimal("0")
     loan_given_total = Decimal("0")
     loan_taken_total = Decimal("0")
+    unconverted_count = 0
 
     wallet_items = []
     savings_items = []
     loan_items = []
 
+    # rate == 0 means no exchange rate is configured for that currency pair --
+    # exclude the item from totals instead of silently folding it in as zero
+    # (same fix as dashboard_summary/dashboard_currency_summary above).
     for account in accounts:
         amount = Decimal(account.current_balance or 0)
         rate = get_rate_to_base(db, account.currency, base_currency)
-        converted = amount * rate
-        wallet_total += converted
+        rate_available = rate > 0
+        converted = amount * rate if rate_available else None
+        if rate_available:
+            wallet_total += converted
+        else:
+            unconverted_count += 1
 
         wallet_items.append({
             "name": account.name,
             "currency": account.currency,
             "amount": money(amount),
-            "rate": money(rate),
-            "converted_amount": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_amount": money(converted) if rate_available else None,
         })
 
     for saving in savings_goals:
         amount = Decimal(saving.current_amount or 0)
         rate = get_rate_to_base(db, saving.currency, base_currency)
-        converted = amount * rate
-        savings_total += converted
+        rate_available = rate > 0
+        converted = amount * rate if rate_available else None
+        if rate_available:
+            savings_total += converted
+        else:
+            unconverted_count += 1
 
         savings_items.append({
             "name": saving.name,
             "currency": saving.currency,
             "amount": money(amount),
-            "rate": money(rate),
-            "converted_amount": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_amount": money(converted) if rate_available else None,
         })
 
     for loan in loans:
         amount = Decimal(loan.remaining_amount or 0)
         rate = get_rate_to_base(db, loan.currency, base_currency)
-        converted = amount * rate
+        rate_available = rate > 0
+        converted = amount * rate if rate_available else None
 
-        if loan.loan_type == "GIVEN":
-            loan_given_total += converted
-        elif loan.loan_type == "TAKEN":
-            loan_taken_total += converted
+        if rate_available:
+            if loan.loan_type == "GIVEN":
+                loan_given_total += converted
+            elif loan.loan_type == "TAKEN":
+                loan_taken_total += converted
+        else:
+            unconverted_count += 1
 
         loan_items.append({
             "person_name": loan.person_name,
             "loan_type": loan.loan_type,
             "currency": loan.currency,
             "remaining_amount": money(amount),
-            "rate": money(rate),
-            "converted_remaining_amount": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_remaining_amount": money(converted) if rate_available else None,
         })
 
     net_worth = wallet_total + savings_total + loan_given_total - loan_taken_total
@@ -464,6 +517,7 @@ def networth_currency_summary(
             "loan_given_remaining": money(loan_given_total),
             "loan_taken_remaining": money(loan_taken_total),
             "net_worth": money(net_worth),
+            "unconverted_item_count": unconverted_count,
         },
         "wallets": wallet_items,
         "savings": savings_items,
@@ -537,13 +591,21 @@ def full_currency_dashboard(
 
     wallet_rows = []
     recent_rows = []
+    unconverted_count = 0
 
+    # rate == 0 means no exchange rate is configured for that currency pair --
+    # exclude the item from totals instead of silently folding it in as zero
+    # (same fix as the other dashboard endpoints above).
     for account in accounts:
         amount = Decimal(account.current_balance or 0)
         rate = get_rate_to_base(db, account.currency, base_currency)
-        converted = amount * rate
+        rate_available = rate > 0
+        converted = amount * rate if rate_available else None
 
-        wallet_balance_base += converted
+        if rate_available:
+            wallet_balance_base += converted
+        else:
+            unconverted_count += 1
 
         wallet_rows.append({
             "id": account.id,
@@ -551,14 +613,18 @@ def full_currency_dashboard(
             "account_type": account.account_type,
             "currency": account.currency,
             "balance": money(amount),
-            "rate": money(rate),
-            "converted_balance": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_balance": money(converted) if rate_available else None,
             "base_currency": base_currency,
         })
 
     for tx in transactions:
         amount = Decimal(tx.amount or 0)
         rate = get_rate_to_base(db, tx.currency, base_currency, tx.created_at.date())
+        if rate <= 0:
+            unconverted_count += 1
+            continue
         converted = amount * rate
 
         if tx.transaction_type == "INCOME":
@@ -570,17 +636,26 @@ def full_currency_dashboard(
 
     for saving in savings_goals:
         rate = get_rate_to_base(db, saving.currency, base_currency)
+        if rate <= 0:
+            unconverted_count += 1
+            continue
         savings_target_base += Decimal(saving.target_amount or 0) * rate
         savings_current_base += Decimal(saving.current_amount or 0) * rate
 
     for goal in goals:
         goal_currency = getattr(goal, "currency", base_currency)
         rate = get_rate_to_base(db, goal_currency, base_currency)
+        if rate <= 0:
+            unconverted_count += 1
+            continue
         goal_target_base += Decimal(goal.target_amount or 0) * rate
         goal_current_base += Decimal(goal.current_amount or 0) * rate
 
     for loan in loans:
         rate = get_rate_to_base(db, loan.currency, base_currency)
+        if rate <= 0:
+            unconverted_count += 1
+            continue
         converted_remaining = Decimal(loan.remaining_amount or 0) * rate
 
         if loan.loan_type == "GIVEN":
@@ -607,15 +682,17 @@ def full_currency_dashboard(
     for tx in recent_transactions:
         amount = Decimal(tx.amount or 0)
         rate = get_rate_to_base(db, tx.currency, base_currency, tx.created_at.date())
-        converted = amount * rate
+        rate_available = rate > 0
+        converted = amount * rate if rate_available else None
 
         recent_rows.append({
             "id": tx.id,
             "transaction_type": tx.transaction_type,
             "amount": money(amount),
             "currency": tx.currency,
-            "rate": money(rate),
-            "converted_amount": money(converted),
+            "rate_available": rate_available,
+            "rate": money(rate) if rate_available else None,
+            "converted_amount": money(converted) if rate_available else None,
             "base_currency": base_currency,
             "description": tx.description,
             "created_at": tx.created_at,
@@ -633,6 +710,7 @@ def full_currency_dashboard(
             "total_transfer": money(transfer_base),
             "transaction_count": len(transactions),
             "net_worth": money(net_worth),
+            "unconverted_item_count": unconverted_count,
         },
         "savings": {
             "goal_count": len(savings_goals),

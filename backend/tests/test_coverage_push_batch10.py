@@ -669,6 +669,61 @@ def test_dashboard_summary_cache_miss(patch_dashboard):
     assert out["budgets"]["over_budget_count"] == 1
 
 
+def test_dashboard_summary_excludes_unconverted_wallet_from_total(patch_dashboard):
+    """get_rate_to_base() returns Decimal(0) when no exchange rate is
+    configured -- previously that silently zeroed a real wallet's
+    contribution to total_wallet_balance instead of excluding it. A wallet
+    in an unconfigured currency must not vanish from net worth totals."""
+    from app.models.account import Account
+    from app.models.budget import Budget
+    from app.models.goal import FinancialGoal
+    from app.models.loan import Loan
+    from app.models.savings import SavingsGoal
+    from app.models.transaction import Transaction
+
+    d = patch_dashboard
+    bdt_wallet = SimpleNamespace(
+        id="a1", name="Cash", account_type="CASH", current_balance=Decimal("500"),
+        currency="BDT", is_owner_wallet=True, is_shared_family=False, is_active=True, deleted_at=None,
+    )
+    unconverted_wallet = SimpleNamespace(
+        id="a2", name="Foreign", account_type="BANK", current_balance=Decimal("300"),
+        currency="XYZ", is_owner_wallet=True, is_shared_family=False, is_active=True, deleted_at=None,
+    )
+    db = Db(
+        query_map={
+            Account: Query(rows=[bdt_wallet, unconverted_wallet]),
+            Transaction: Query(rows=[]),
+            SavingsGoal: Query(rows=[]),
+            Loan: Query(rows=[]),
+            FinancialGoal: Query(rows=[]),
+            Budget: Query(rows=[]),
+        }
+    )
+    out = d.dashboard_summary("fam1", db=db, current_user=USER)
+    assert out["summary"]["wallet_count"] == 2
+    # Only the BDT wallet contributes -- the unconverted one is excluded,
+    # not folded in as zero.
+    assert out["summary"]["total_wallet_balance"] == "500.0000"
+    assert out["summary"]["unconverted_wallet_count"] == 1
+
+
+def test_dashboard_currency_summary_flags_unconverted_wallet(patch_dashboard):
+    from app.models.account import Account
+
+    d = patch_dashboard
+    account = SimpleNamespace(
+        name="Foreign Wallet", currency="XYZ", current_balance=Decimal("300"),
+        is_active=True, deleted_at=None,
+    )
+    db = Db(query_map={Account: Query(rows=[account])}, got={"fam1": FAMILY})
+    out = d.dashboard_currency_summary("fam1", db=db, current_user=USER)
+    assert out["total_balance"] == "0.0000"
+    assert out["unconverted_wallet_count"] == 1
+    assert out["wallets"][0]["rate_available"] is False
+    assert out["wallets"][0]["converted_balance"] is None
+
+
 def test_dashboard_summary_cache_hit(patch_dashboard, monkeypatch):
     from app.api.v1 import dashboard as d
 
