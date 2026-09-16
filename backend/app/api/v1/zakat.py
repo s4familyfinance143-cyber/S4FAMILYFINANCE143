@@ -129,7 +129,13 @@ def calculate_zakat(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, current_user.id, "report.read")
+    # calculate_zakat() creates/overwrites a ZakatRecord (a write action,
+    # audit-logged, visible to other family members) -- "report.read" is
+    # held by VIEWER too, which is supposed to be a read-only role. Gate on
+    # budget.create instead, matching the permission already used for the
+    # closest analogous action (creating/editing a financial planning
+    # record); VIEWER/CHILD correctly lack it.
+    member = require_permission(db, payload.family_id, current_user.id, "budget.create")
 
     gold_value, silver_value, nisab_amount = resolve_metal_values(db, payload)
 
