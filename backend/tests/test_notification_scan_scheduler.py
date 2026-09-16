@@ -120,3 +120,46 @@ def test_run_family_notification_scan_creates_due_loan_installment_notification(
         assert "Test Lender" in notification.message
     finally:
         db.close()
+
+
+def test_savings_low_progress_notification_dedups_across_deposits_not_by_exact_message():
+    """SAVINGS_LOW_PROGRESS embeds a live-recomputed percent, so create_notification's
+    default exact-message dedup would spam a fresh unread notification on every
+    deposit that still leaves the goal under 25%. dedup_prefix must suppress that."""
+    from app.api.v1.notifications import create_template_notification
+
+    db = SessionLocal()
+    try:
+        goal_name = f"Emergency Fund {uuid4().hex[:8]}"
+        family_id = _uid()
+
+        first = create_template_notification(
+            db,
+            family_id,
+            "SAVINGS_LOW_PROGRESS",
+            dedup_prefix=f"{goal_name} is only ",
+            name=goal_name,
+            percent="10.00",
+        )
+        db.commit()
+        assert first is not None
+
+        second = create_template_notification(
+            db,
+            family_id,
+            "SAVINGS_LOW_PROGRESS",
+            dedup_prefix=f"{goal_name} is only ",
+            name=goal_name,
+            percent="15.00",
+        )
+        db.commit()
+        assert second is None
+
+        count = (
+            db.query(Notification)
+            .filter(Notification.family_id == family_id, Notification.notification_type == "SAVINGS_LOW_PROGRESS")
+            .count()
+        )
+        assert count == 1
+    finally:
+        db.close()

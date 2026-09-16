@@ -132,19 +132,28 @@ def create_notification(
     *,
     user_id: str | None = None,
     member_id: str | None = None,
+    dedup_prefix: str | None = None,
 ):
-    exists = (
+    query = (
         db.query(Notification)
         .filter(
             Notification.family_id == family_id,
             Notification.notification_type == notification_type,
             Notification.title == title,
-            Notification.message == message,
             Notification.is_read.is_(False),
             Notification.deleted_at.is_(None),
         )
-        .first()
     )
+    if dedup_prefix is not None:
+        # Same reasoning as notification_scan_service._create_template_notification:
+        # a message that embeds a live value (e.g. SAVINGS_LOW_PROGRESS's percent)
+        # shifts on every scan even though the situation ("still under 25%") hasn't
+        # materially changed. Matching on the full message would defeat dedup and
+        # spam a fresh unread notification on every deposit.
+        query = query.filter(Notification.message.startswith(dedup_prefix))
+    else:
+        query = query.filter(Notification.message == message)
+    exists = query.first()
 
     if exists:
         return None
@@ -172,7 +181,9 @@ def create_notification(
     return item
 
 
-def create_template_notification(db: Session, family_id: str, notification_type: str, **values):
+def create_template_notification(
+    db: Session, family_id: str, notification_type: str, *, dedup_prefix: str | None = None, **values
+):
     rendered = render_template(notification_type, **values)
     return create_notification(
         db=db,
@@ -181,6 +192,7 @@ def create_template_notification(db: Session, family_id: str, notification_type:
         title=f"{rendered['title']} | {rendered['title_bn']}",
         message=f"{rendered['message']} | {rendered['message_bn']}",
         severity=rendered["severity"],
+        dedup_prefix=dedup_prefix,
     )
 
 
@@ -233,6 +245,7 @@ def scan_notifications(
                 db=db,
                 family_id=family_id,
                 notification_type="SAVINGS_LOW_PROGRESS",
+                dedup_prefix=f"{goal.name} is only ",
                 name=goal.name,
                 percent=str(progress),
             )
