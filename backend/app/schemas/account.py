@@ -15,6 +15,16 @@ class AccountCreateRequest(BaseModel):
     is_owner_wallet: bool = False
 
 
+class AccountUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    account_type: str | None = Field(default=None, min_length=2, max_length=40)
+    currency: str | None = Field(default=None, max_length=10)
+    institution_name: str | None = Field(default=None, max_length=160)
+    account_number_masked: str | None = Field(default=None, max_length=80)
+    is_shared_family: bool | None = Field(default=None)
+    is_owner_wallet: bool | None = Field(default=None)
+
+
 class AccountResponse(BaseModel):
     id: str
     family_id: str

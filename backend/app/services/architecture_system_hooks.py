@@ -1,13 +1,12 @@
-"""Helpers to persist architecture sync_logs / device_registry / rate_limits / sync_queue."""
+"""Helpers to persist architecture sync_logs / device_registry / rate_limits."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.architecture_system import DeviceRegistry, RateLimit, SyncLog, SyncQueue
+from app.models.architecture_system import DeviceRegistry, RateLimit, SyncLog
 
 
 def _now() -> datetime:
@@ -33,65 +32,6 @@ def record_sync_log(
     )
     db.add(row)
     return row
-
-
-def enqueue_architecture_sync_queue(
-    db: Session,
-    *,
-    device_id: str,
-    family_id: str | None,
-    entity_type: str,
-    entity_id: str | None,
-    action: str,
-    payload: Any = None,
-    legacy_outbox_id: str | None = None,
-    status: str = "PENDING",
-) -> SyncQueue:
-    """Dual-write architecture sync_queue alongside legacy sync_outbox."""
-    import json
-
-    if payload is None:
-        payload_text = None
-    elif isinstance(payload, str):
-        payload_text = payload
-    else:
-        payload_text = json.dumps(payload, default=str)
-
-    row = SyncQueue(
-        device_id=(device_id or "default-device")[:120],
-        family_id=family_id,
-        entity_type=(entity_type or "unknown")[:80],
-        entity_id=(str(entity_id)[:80] if entity_id else None),
-        action=(action or "UPSERT")[:40],
-        payload=payload_text,
-        status=(status or "PENDING")[:30],
-        retry_count=0,
-        last_error=None,
-        legacy_outbox_id=legacy_outbox_id,
-    )
-    db.add(row)
-    return row
-
-
-def finalize_architecture_sync_queue(
-    db: Session,
-    *,
-    legacy_outbox_id: str,
-    status: str,
-    last_error: str | None = None,
-) -> None:
-    row = (
-        db.query(SyncQueue)
-        .filter(SyncQueue.legacy_outbox_id == legacy_outbox_id, SyncQueue.deleted_at.is_(None))
-        .first()
-    )
-    if not row:
-        return
-    row.status = (status or row.status)[:30]
-    if last_error:
-        row.last_error = last_error[:2000]
-        row.retry_count = int(row.retry_count or 0) + 1
-    row.updated_at = _now()
 
 
 def upsert_device_registry(

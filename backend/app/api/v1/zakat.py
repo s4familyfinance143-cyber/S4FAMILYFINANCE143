@@ -206,7 +206,20 @@ def zakat_summary(
     )
 
     total_due = sum(Decimal(record.zakat_due or 0) for record in records)
-    latest = max(records, key=lambda record: record.created_at) if records else None
+
+    def _year_sort_key(record: ZakatRecord):
+        year = str(record.calculation_year or "").strip()
+        try:
+            return (0, int(year))
+        except ValueError:
+            # Non-numeric calculation_year — sort after all numeric years
+            # rather than crashing, keeping created_at as a tiebreak.
+            return (1, year, record.created_at)
+
+    # "latest" must mean the most recent calculation_year, not whichever row
+    # happens to have been inserted last — a user can backfill an older
+    # year's record after already having a more recent one on file.
+    latest = max(records, key=_year_sort_key) if records else None
 
 
     return {

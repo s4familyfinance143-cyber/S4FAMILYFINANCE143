@@ -10,7 +10,7 @@ from app.models.audit_log import AuditLog
 from app.models.family_member import FamilyMember
 from app.models.notification import Notification
 from app.models.recurring import RecurringTransaction
-from app.models.transaction import Transaction
+from app.services import accounting_service
 
 
 def _add_months(value: date, months: int = 1) -> date:
@@ -171,23 +171,41 @@ def process_recurring_transactions() -> None:
                     db.commit()
                     continue
 
-                transaction = Transaction(
-                    family_id=item.family_id,
-                    created_by_member_id=created_by_member_id,
-                    transaction_type=item.transaction_type,
-                    amount=amount,
-                    currency=item.currency,
-                    description=f"Auto recurring: {item.title}",
-                    category_id=item.category_id,
-                    status="POSTED",
-                )
-
-                db.add(transaction)
-
-                if item.transaction_type == "EXPENSE":
-                    account.current_balance = current_balance - amount
-                elif item.transaction_type == "INCOME":
-                    account.current_balance = current_balance + amount
+                # Must go through accounting_service so this posts balanced
+                # TransactionLine rows — account.current_balance is always
+                # recomputed from those lines elsewhere (e.g. serialize_wallet),
+                # so a bare Transaction + manual balance edit here would get
+                # silently erased on the next wallet read.
+                # Same description recurring.py's own endpoints use (not a
+                # "Auto recurring: " prefix) — recurring_history() matches
+                # transactions back to this item by (type, amount, currency,
+                # description) equality, since Transaction has no recurring_id.
+                if item.transaction_type == "INCOME":
+                    accounting_service.post_income(
+                        db,
+                        family_id=item.family_id,
+                        member_id=created_by_member_id,
+                        account=account,
+                        category_id=item.category_id,
+                        amount=amount,
+                        currency=item.currency,
+                        description=item.description,
+                        income_account_name="Salary Income",
+                        commit=False,
+                    )
+                else:
+                    accounting_service.post_expense(
+                        db,
+                        family_id=item.family_id,
+                        member_id=created_by_member_id,
+                        account=account,
+                        category_id=item.category_id,
+                        amount=amount,
+                        currency=item.currency,
+                        description=item.description,
+                        expense_account_name="General Expense",
+                        commit=False,
+                    )
 
                 db.add(
                     AuditLog(

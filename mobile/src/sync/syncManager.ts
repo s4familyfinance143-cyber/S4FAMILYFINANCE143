@@ -2,12 +2,11 @@
  * Sync manager — primary offline replay engine (used by app index).
  */
 
-import { getApiBaseUrl } from "../services/api";
+import { getApiBaseUrl, getOrCreateDeviceId } from "../services/api";
 import {
   mapDomainOutboxRow,
   mapFinanceIntentToChange,
   mapGroceryRowToChanges,
-  MOBILE_SYNC_DEVICE_ID,
   pullPhase10b,
   pushPhase10bChanges,
   type Phase10bChange,
@@ -103,7 +102,8 @@ async function followUpGroceryDraftItem(
   if (row.action !== "CREATE_DRAFT" || !String(payload.item_name || "").trim()) return;
   const apiBase = getApiBaseUrl();
   const headers = tunnelHeaders(apiBase);
-  const pull = await pullPhase10b(apiBase, token, familyId, headers, MOBILE_SYNC_DEVICE_ID);
+  const deviceId = await getOrCreateDeviceId();
+  const pull = await pullPhase10b(apiBase, token, familyId, headers, deviceId);
   await applyPullChanges(familyId, pull.changes as any);
   const mobileSyncId = payload.mobile_sync_id || row.entity_id;
   const remoteList = (pull.changes?.grocery_lists || []).find((l) => l.mobile_sync_key === mobileSyncId);
@@ -125,15 +125,13 @@ async function followUpGroceryDraftItem(
       },
     },
   ];
-  const itemPush = await pushPhase10bChanges(apiBase, token, familyId, itemChanges, headers, MOBILE_SYNC_DEVICE_ID);
+  const itemPush = await pushPhase10bChanges(apiBase, token, familyId, itemChanges, headers, deviceId);
   if (conflictResolver.hasConflict(itemPush)) throw new Error("SYNC_CONFLICT");
   const itemFail = conflictResolver.failedMessage(itemPush);
   if (itemFail) throw new Error(itemFail);
 }
 
 export const syncManager = {
-  deviceId: MOBILE_SYNC_DEVICE_ID,
-
   async pull(token: string, familyId: string, sinceToken?: string | null) {
     const apiBase = getApiBaseUrl();
     const result = await pullPhase10b(
@@ -141,7 +139,7 @@ export const syncManager = {
       token,
       familyId,
       tunnelHeaders(apiBase),
-      MOBILE_SYNC_DEVICE_ID,
+      await getOrCreateDeviceId(),
       sinceToken
     );
     const applied = await applyPullChanges(familyId, (result as any)?.changes);
@@ -150,7 +148,7 @@ export const syncManager = {
 
   async pushChanges(token: string, familyId: string, changes: Phase10bChange[]) {
     const apiBase = getApiBaseUrl();
-    return pushPhase10bChanges(apiBase, token, familyId, changes, tunnelHeaders(apiBase), MOBILE_SYNC_DEVICE_ID);
+    return pushPhase10bChanges(apiBase, token, familyId, changes, tunnelHeaders(apiBase), await getOrCreateDeviceId());
   },
 
   async listDuePending(limit = 20): Promise<(SyncQueueRow & { entity_type?: string })[]> {

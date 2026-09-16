@@ -22,6 +22,7 @@ from app.schemas.goal import (
     GoalWithdrawRequest,
 )
 from app.services.audit_service import write_audit_log
+from app.services.finance_posting import find_by_client_request_id
 from app.services.permission_service import normalize_role, require_permission
 
 router = APIRouter(prefix="/goals", tags=["Financial Goals"])
@@ -536,6 +537,22 @@ def contribute_to_goal(
     wallet_id = get_payload_wallet_id(payload)
     wallet = get_wallet(db, payload.family_id, wallet_id, member)
 
+    if payload.client_request_id:
+        existing = find_by_client_request_id(db, payload.family_id, payload.client_request_id)
+        if existing:
+            return {
+                "success": True,
+                "transaction_id": existing.id,
+                "goal_id": goal.id,
+                "goal_name": goal.goal_name,
+                "current_amount": money(goal.current_amount),
+                "target_amount": money(goal.target_amount),
+                "progress_percent": progress_percent(goal.current_amount, goal.target_amount),
+                "wallet_balance": money(wallet.current_balance),
+                "status": goal.status,
+                "idempotent_replay": True,
+            }
+
     if wallet.current_balance < payload.amount:
         raise HTTPException(400, "Insufficient wallet balance")
 
@@ -552,6 +569,7 @@ def contribute_to_goal(
         currency=payload.currency.upper(),
         goal_id=goal.id,
         description=payload.description,
+        client_request_id=payload.client_request_id,
     )
 
     goal.current_amount += payload.amount
@@ -612,6 +630,22 @@ def withdraw_from_goal(
     wallet_id = get_payload_wallet_id(payload)
     wallet = get_wallet(db, payload.family_id, wallet_id, member)
 
+    if payload.client_request_id:
+        existing = find_by_client_request_id(db, payload.family_id, payload.client_request_id)
+        if existing:
+            return {
+                "success": True,
+                "transaction_id": existing.id,
+                "goal_id": goal.id,
+                "goal_name": goal.goal_name,
+                "current_amount": money(goal.current_amount),
+                "target_amount": money(goal.target_amount),
+                "progress_percent": progress_percent(goal.current_amount, goal.target_amount),
+                "wallet_balance": money(wallet.current_balance),
+                "status": goal.status,
+                "idempotent_replay": True,
+            }
+
     if Decimal(goal.current_amount) < payload.amount:
         raise HTTPException(400, "Insufficient goal balance")
 
@@ -631,6 +665,7 @@ def withdraw_from_goal(
         currency=payload.currency.upper(),
         goal_id=goal.id,
         description=payload.description,
+        client_request_id=payload.client_request_id,
     )
 
     goal.current_amount -= payload.amount

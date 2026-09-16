@@ -49,6 +49,41 @@ function tunnelHeaders(): Record<string, string> {
   return runtimeBase.includes("loca.lt") ? { "bypass-tunnel-reminder": "true" } : {};
 }
 
+// Backend's new-device security-alert email (auth_security_service.py's
+// _upsert_device_session, via auth.py's get_device_label) falls back to
+// sha256(User-Agent) when no X-Device-Id header is sent. React Native's
+// default fetch/axios User-Agent is near-identical across all installs of
+// the same app/OS version, so that fallback isn't actually per-device on
+// mobile — a stolen-credential login from a different phone on the same OS
+// could go undetected. A random id persisted in SecureStore makes the
+// fingerprint unique per install.
+//
+// Also reused as the offline-sync device_id (phase10bSync.ts /
+// syncManager.ts) in place of the old hardcoded MOBILE_SYNC_DEVICE_ID =
+// "mobile-expo" literal, which every install sent identically — colliding
+// in the backend's sync_devices/sync_state rows (UniqueConstraint on
+// family_id+device_id) whenever a family had 2+ phones, each overwriting
+// the other's last_sync_token/last_seen bookkeeping.
+let cachedDeviceId: string | null = null;
+
+export async function getOrCreateDeviceId(): Promise<string> {
+  if (cachedDeviceId) return cachedDeviceId;
+  const fallback = () => `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const SecureStore = require("expo-secure-store") as typeof import("expo-secure-store");
+    let id = await SecureStore.getItemAsync("s4_device_id");
+    if (!id) {
+      id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : fallback();
+      await SecureStore.setItemAsync("s4_device_id", id);
+    }
+    cachedDeviceId = id;
+  } catch {
+    cachedDeviceId = cachedDeviceId || fallback();
+  }
+  return cachedDeviceId;
+}
+
 function detailMessage(data: any, fallback: string) {
   if (!data) return fallback;
   if (typeof data.detail === "string") return data.detail;
@@ -139,6 +174,7 @@ async function request<T = any>(path: string, opts: RequestOpts = {}): Promise<T
   const token = opts.token !== undefined ? opts.token : authToken;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Device-Id": await getOrCreateDeviceId(),
     ...tunnelHeaders(),
     ...(opts.headers || {}),
   };

@@ -56,7 +56,14 @@ export default function VerifyPage() {
       method: "POST",
       body: { email },
     });
-    if (res.ok) setInfo(c.verResent);
+    if (res.ok) {
+      setInfo(c.verResent);
+    } else {
+      // This had no else branch — a failed resend (rate-limited, unknown
+      // email, server error) showed nothing at all, leaving the user
+      // stuck wondering why no new code arrived.
+      setError(res.error ?? "Failed to resend code.");
+    }
   }
 
   return (

@@ -6,12 +6,10 @@ from app.api.v1.architecture_api_contract import router as architecture_api_cont
 from app.api.v1.architecture_features_api import router as architecture_features_router
 from app.api.v1.architecture_modules_api import router as architecture_modules_router
 from app.api.v1.architecture_system_api import router as architecture_system_router
-from app.api.v1.audit_logs import router as audit_logs_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.backup import router as backup_router
 from app.api.v1.budgets import router as budgets_router
 from app.api.v1.categories import router as category_router
-from app.api.v1.compat_aliases import router as compat_alias_router
 from app.api.v1.currency import router as currency_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.families import router as family_router
@@ -24,8 +22,6 @@ from app.api.v1.life_planner import router as life_planner_router
 from app.api.v1.loans import router as loans_router
 from app.api.v1.missing_features_api import router as missing_features_router
 from app.api.v1.notifications import router as notifications_router
-from app.api.v1.phase15 import router as phase15_router
-from app.api.v1.phase16 import router as phase16_router
 from app.api.v1.permissions import router as permission_router
 from app.api.v1.recurring import router as recurring_router
 from app.api.v1.reports import router as reports_router
@@ -47,7 +43,6 @@ api_router.include_router(accounting_router)
 api_router.include_router(transaction_router)
 api_router.include_router(missing_features_router)
 api_router.include_router(category_router)
-api_router.include_router(compat_alias_router)
 api_router.include_router(currency_router)
 api_router.include_router(reports_router)
 api_router.include_router(savings_router)
@@ -57,11 +52,8 @@ api_router.include_router(budgets_router)
 api_router.include_router(notifications_router)
 api_router.include_router(goals_router)
 api_router.include_router(grocery_router)
-api_router.include_router(audit_logs_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(zakat_router)
-api_router.include_router(phase15_router)
-api_router.include_router(phase16_router)
 api_router.include_router(architecture_modules_router)
 api_router.include_router(architecture_features_router)
 api_router.include_router(architecture_system_router)

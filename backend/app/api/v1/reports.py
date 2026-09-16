@@ -20,6 +20,7 @@ from app.models.family import Family
 from app.models.currency import ExchangeRate
 from app.models.audit_log import AuditLog
 from app.services.permission_service import require_permission
+from app.api.v1.budgets import calculate_spent
 from io import BytesIO
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
@@ -709,6 +710,12 @@ def wallet_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Wallets can each carry their own currency — convert to the family's base
+    # currency before summing (see wallets_currency_report; this endpoint used to
+    # add balances across currencies as if they were the same).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     wallets = (
         db.query(Account)
         .filter(
@@ -738,7 +745,8 @@ def wallet_report(
 
         opening_balance = Decimal(wallet.opening_balance or 0)
         balance = opening_balance + inflow - outflow
-        total_balance += balance
+        rate = report_currency_rate(db, wallet.currency, base_currency)
+        total_balance += balance * rate
 
         rows.append(
             {
@@ -755,6 +763,7 @@ def wallet_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "wallet_count": len(rows),
             "total_balance": money(total_balance),
@@ -776,6 +785,13 @@ def family_summary_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Transactions/goals/loans/savings can each carry their own currency — convert
+    # to the family's base currency before summing (same fix applied earlier to
+    # net_worth_report/loan_report/wallet_report/cashflow_report/budget_report/
+    # savings_trend_report/report_dashboard/category_wise_report).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     income_total = Decimal("0")
     expense_total = Decimal("0")
     savings_total = Decimal("0")
@@ -786,7 +802,7 @@ def family_summary_report(
     transactions = get_posted_transactions(db, family_id, None, None)
 
     for tx in transactions:
-        amount = Decimal(tx.amount or 0)
+        amount = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             income_total += amount
@@ -803,8 +819,9 @@ def family_summary_report(
     )
 
     for goal in goals:
-        goal_target_total += Decimal(goal.target_amount or 0)
-        goal_current_total += Decimal(goal.current_amount or 0)
+        rate = report_currency_rate(db, goal.currency, base_currency)
+        goal_target_total += Decimal(goal.target_amount or 0) * rate
+        goal_current_total += Decimal(goal.current_amount or 0) * rate
 
     loans = (
         db.query(Loan)
@@ -816,7 +833,7 @@ def family_summary_report(
     )
 
     for loan in loans:
-        loan_total += Decimal(loan.remaining_amount or 0)
+        loan_total += Decimal(loan.remaining_amount or 0) * report_currency_rate(db, loan.currency, base_currency)
 
     savings = (
         db.query(SavingsGoal)
@@ -828,7 +845,7 @@ def family_summary_report(
     )
 
     for item in savings:
-        savings_total += Decimal(item.current_amount or 0)
+        savings_total += Decimal(item.current_amount or 0) * report_currency_rate(db, item.currency, base_currency)
 
     net_worth = (
         income_total
@@ -840,6 +857,7 @@ def family_summary_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "total_income": money(income_total),
             "total_expense": money(expense_total),
@@ -929,6 +947,11 @@ def savings_trend_report(
 ):
     """Named savings trend surface for Reports charts."""
     require_report_access(db, family_id, current_user.id)
+    # Each savings goal can carry its own currency — convert to the family's base
+    # currency before accumulating (same fix as net_worth_report/loan_report/etc.
+    # above; this endpoint used to sum raw amounts across currencies).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
     savings = (
         db.query(SavingsGoal)
         .filter(SavingsGoal.family_id == family_id, SavingsGoal.deleted_at.is_(None))
@@ -938,7 +961,9 @@ def savings_trend_report(
     points = []
     cumulative = Decimal("0")
     for item in savings:
-        saved = Decimal(item.current_amount or 0)
+        rate = report_currency_rate(db, item.currency, base_currency)
+        saved = Decimal(item.current_amount or 0) * rate
+        target = Decimal(item.target_amount or 0) * rate
         cumulative += saved
         points.append(
             {
@@ -946,12 +971,13 @@ def savings_trend_report(
                 "label": item.name,
                 "goal_type": item.goal_type,
                 "saved": money(saved),
-                "target": money(item.target_amount),
+                "target": money(target),
                 "cumulative_saved": money(cumulative),
             }
         )
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "point_count": len(points),
         "total_saved": money(cumulative),
         "trend": points,
@@ -1054,10 +1080,18 @@ def loan_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Each loan can carry its own currency; convert to the family's base currency
+    # before summing (see loan_currency_report, which already does this correctly —
+    # this endpoint used to add e.g. USD and BDT loan amounts together). Also match
+    # loan_currency_report's deleted_at filter, which this endpoint was missing.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     loans = (
         db.query(Loan)
         .filter(
             Loan.family_id == family_id,
+            Loan.deleted_at.is_(None),
         )
         .all()
     )
@@ -1069,18 +1103,25 @@ def loan_report(
     rows = []
 
     for loan in loans:
+        rate = report_currency_rate(db, loan.currency, base_currency)
         loan_amount = Decimal(loan.principal_amount or 0)
         remaining_amount = Decimal(loan.remaining_amount or 0)
-        paid_amount = loan_amount - remaining_amount
+        # loan.paid_amount is the field of record — deriving it as
+        # loan_amount - remaining_amount only worked back when
+        # remaining_amount tracked principal alone; it now also carries
+        # interest (see loans.py create_loan), so that subtraction would
+        # under-report paid_amount by the interest total.
+        paid_amount = Decimal(loan.paid_amount or 0)
+        total_payoff_amount = paid_amount + remaining_amount
 
-        total_loan_amount += loan_amount
-        total_remaining_amount += remaining_amount
-        total_paid_amount += paid_amount
+        total_loan_amount += loan_amount * rate
+        total_remaining_amount += remaining_amount * rate
+        total_paid_amount += paid_amount * rate
 
         progress = Decimal("0")
 
-        if loan_amount > 0:
-            progress = (paid_amount / loan_amount) * Decimal("100")
+        if total_payoff_amount > 0:
+            progress = (paid_amount / total_payoff_amount) * Decimal("100")
 
         rows.append(
             {
@@ -1098,6 +1139,7 @@ def loan_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "total_loans": len(rows),
             "total_loan_amount": money(total_loan_amount),
@@ -1201,6 +1243,14 @@ def budget_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Each budget can carry its own currency — convert to the family's base currency
+    # before summing into active_total_budget/active_total_spent, same pattern as
+    # net_worth_report/loan_report/wallet_report/cashflow_report above. Per-row
+    # budget_amount/spent_amount stay in the budget's own currency (correct for a
+    # per-item display).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     budgets = (
         db.query(Budget)
         .filter(
@@ -1219,29 +1269,12 @@ def budget_report(
 
     counted_active_categories = set()
 
-    def calculate_category_spent(category_id: str) -> Decimal:
-        total = Decimal("0")
-
-        transactions = (
-            db.query(Transaction)
-            .filter(
-                Transaction.family_id == family_id,
-                Transaction.category_id == category_id,
-                Transaction.transaction_type == "EXPENSE",
-                Transaction.status == "POSTED",
-                Transaction.deleted_at.is_(None),
-            )
-            .all()
-        )
-
-        for tx in transactions:
-            total += Decimal(tx.amount or 0)
-
-        return total
-
     for budget in budgets:
         budget_amount = Decimal(budget.budget_amount or 0)
-        spent_amount = calculate_category_spent(budget.category_id)
+        # Must match budgets.py's own calculation — period-scoped (WEEKLY/
+        # MONTHLY/YEARLY), not an all-time sum, or this report disagrees
+        # with the Budgets screen and never resets like a real budget should.
+        spent_amount = calculate_spent(db, family_id, budget.category_id, budget.period_type)
         remaining_amount = budget_amount - spent_amount
 
         used_percent = Decimal("0")
@@ -1268,8 +1301,9 @@ def budget_report(
             active_rows.append(row)
 
             if budget.category_id not in counted_active_categories:
-                active_total_budget += budget_amount
-                active_total_spent += spent_amount
+                rate = report_currency_rate(db, budget.currency, base_currency)
+                active_total_budget += budget_amount * rate
+                active_total_spent += spent_amount * rate
                 counted_active_categories.add(budget.category_id)
 
         else:
@@ -1285,6 +1319,7 @@ def budget_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "active_budget_count": len(active_rows),
             "closed_budget_count": len(closed_rows),
@@ -1425,6 +1460,13 @@ def net_worth_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Wallets/savings/loans/goals can each carry their own currency (multi-currency
+    # is a supported feature — see net_worth_currency_report's per-item conversion,
+    # which this endpoint previously skipped, silently adding e.g. USD and BDT
+    # amounts together). Convert everything to the family's base currency first.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     wallet_balance = Decimal("0")
     savings_amount = Decimal("0")
     goal_saved_amount = Decimal("0")
@@ -1440,20 +1482,9 @@ def net_worth_report(
     )
 
     for wallet in wallets:
-        inflow = Decimal("0")
-        outflow = Decimal("0")
-
-        lines = (
-            db.query(TransactionLine)
-            .filter(TransactionLine.account_id == wallet.id)
-            .all()
+        wallet_balance += Decimal(wallet.current_balance or 0) * report_currency_rate(
+            db, wallet.currency, base_currency
         )
-
-        for line in lines:
-            inflow += Decimal(line.debit or 0)
-            outflow += Decimal(line.credit or 0)
-
-        wallet_balance += (inflow - outflow)
 
     savings = (
         db.query(SavingsGoal)
@@ -1464,7 +1495,9 @@ def net_worth_report(
     )
 
     for item in savings:
-        savings_amount += Decimal(item.current_amount or 0)
+        savings_amount += Decimal(item.current_amount or 0) * report_currency_rate(
+            db, item.currency, base_currency
+        )
 
     goals = (
         db.query(FinancialGoal)
@@ -1475,7 +1508,9 @@ def net_worth_report(
     )
 
     for goal in goals:
-        goal_saved_amount += Decimal(goal.current_amount or 0)
+        goal_saved_amount += Decimal(goal.current_amount or 0) * report_currency_rate(
+            db, goal.currency, base_currency
+        )
 
     loans = (
         db.query(Loan)
@@ -1486,13 +1521,16 @@ def net_worth_report(
     )
 
     for loan in loans:
-        loan_remaining += Decimal(loan.remaining_amount or 0)
+        loan_remaining += Decimal(loan.remaining_amount or 0) * report_currency_rate(
+            db, loan.currency, base_currency
+        )
 
     total_assets = wallet_balance + savings_amount + goal_saved_amount
     net_worth = total_assets - loan_remaining
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "wallet_balance": money(wallet_balance),
             "savings_amount": money(savings_amount),
@@ -2197,13 +2235,21 @@ def report_dashboard(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Transactions/savings/goals/loans/wallets can each carry their own currency —
+    # convert to the family's base currency before summing (same fix as
+    # net_worth_report/loan_report/wallet_report/cashflow_report/budget_report/
+    # savings_trend_report above; this endpoint used to sum raw amounts across
+    # currencies).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     income = Decimal("0")
     expense = Decimal("0")
 
     txs = get_posted_transactions(db, family_id, None, None)
 
     for tx in txs:
-        amt = Decimal(tx.amount or 0)
+        amt = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             income += amt
@@ -2212,15 +2258,15 @@ def report_dashboard(
 
     savings_total = Decimal("0")
     for s in db.query(SavingsGoal).filter(SavingsGoal.family_id == family_id).all():
-        savings_total += Decimal(s.current_amount or 0)
+        savings_total += Decimal(s.current_amount or 0) * report_currency_rate(db, s.currency, base_currency)
 
     goal_saved = Decimal("0")
     for g in db.query(FinancialGoal).filter(FinancialGoal.family_id == family_id).all():
-        goal_saved += Decimal(g.current_amount or 0)
+        goal_saved += Decimal(g.current_amount or 0) * report_currency_rate(db, g.currency, base_currency)
 
     loan_remaining = Decimal("0")
     for l in db.query(Loan).filter(Loan.family_id == family_id).all():
-        loan_remaining += Decimal(l.remaining_amount or 0)
+        loan_remaining += Decimal(l.remaining_amount or 0) * report_currency_rate(db, l.currency, base_currency)
 
     wallet_balance = Decimal("0")
 
@@ -2247,12 +2293,13 @@ def report_dashboard(
             inflow += Decimal(line.debit or 0)
             outflow += Decimal(line.credit or 0)
 
-        wallet_balance += inflow - outflow
+        wallet_balance += (inflow - outflow) * report_currency_rate(db, wallet.currency, base_currency)
 
     net_worth = wallet_balance + savings_total + goal_saved - loan_remaining
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "dashboard": {
             "total_income": money(income),
             "total_expense": money(expense),
@@ -2276,6 +2323,12 @@ def category_wise_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Transactions can each carry their own currency — convert to the family's base
+    # currency before summing (same fix as the other reports above; this endpoint
+    # used to sum raw amounts across currencies).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     transactions = get_posted_transactions(db, family_id, start_date, end_date)
 
     income_map = {}
@@ -2288,7 +2341,7 @@ def category_wise_report(
         if not tx.category_id:
             continue
 
-        amount = Decimal(tx.amount or 0)
+        amount = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             total_income += amount
@@ -2327,6 +2380,7 @@ def category_wise_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "filters": {
             "start_date": start_date,
             "end_date": end_date,
@@ -2352,6 +2406,11 @@ def monthly_trend_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Transactions can each carry their own currency — convert to the family's base
+    # currency before summing (same fix as the other reports above).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     transactions = get_posted_transactions(db, family_id, None, None)
 
     monthly = {}
@@ -2365,7 +2424,7 @@ def monthly_trend_report(
                 "expense": Decimal("0"),
             }
 
-        amount = Decimal(tx.amount or 0)
+        amount = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             monthly[month_key]["income"] += amount
@@ -2390,6 +2449,7 @@ def monthly_trend_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "months": rows,
     }
 
@@ -2402,6 +2462,11 @@ def yearly_trend_report(
     current_user: User = Depends(get_current_user),
 ):
     require_report_access(db, family_id, current_user.id)
+
+    # Transactions can each carry their own currency — convert to the family's base
+    # currency before summing (same fix as the other reports above).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
 
     transactions = get_posted_transactions(db, family_id, None, None)
 
@@ -2416,7 +2481,7 @@ def yearly_trend_report(
                 "expense": Decimal("0"),
             }
 
-        amount = Decimal(tx.amount or 0)
+        amount = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             yearly[year_key]["income"] += amount
@@ -2441,6 +2506,7 @@ def yearly_trend_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "years": rows,
     }
 
@@ -2453,6 +2519,12 @@ def member_wise_report(
     current_user: User = Depends(get_current_user),
 ):
     require_report_access(db, family_id, current_user.id)
+
+    # Transactions/savings/goals/loans can each carry their own currency — convert
+    # to the family's base currency before summing (same fix as the other reports
+    # above).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
 
     members = (
         db.query(FamilyMember)
@@ -2484,7 +2556,7 @@ def member_wise_report(
         )
 
         for tx in txs:
-            amount = Decimal(tx.amount or 0)
+            amount = Decimal(tx.amount or 0) * report_currency_rate(db, tx.currency, base_currency)
 
             if tx.transaction_type == "INCOME":
                 income += amount
@@ -2502,7 +2574,7 @@ def member_wise_report(
         )
 
         for item in member_savings:
-            savings += Decimal(item.current_amount or 0)
+            savings += Decimal(item.current_amount or 0) * report_currency_rate(db, item.currency, base_currency)
 
         member_goals = (
             db.query(FinancialGoal)
@@ -2514,7 +2586,7 @@ def member_wise_report(
         )
 
         for item in member_goals:
-            goals += Decimal(item.current_amount or 0)
+            goals += Decimal(item.current_amount or 0) * report_currency_rate(db, item.currency, base_currency)
 
         member_loans = (
             db.query(Loan)
@@ -2526,7 +2598,7 @@ def member_wise_report(
         )
 
         for item in member_loans:
-            loans += Decimal(item.remaining_amount or 0)
+            loans += Decimal(item.remaining_amount or 0) * report_currency_rate(db, item.currency, base_currency)
 
         rows.append(
             {
@@ -2547,6 +2619,7 @@ def member_wise_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "member_count": len(rows),
         "members": rows,
     }
@@ -2560,6 +2633,12 @@ def goal_analytics_report(
     current_user: User = Depends(get_current_user),
 ):
     require_report_access(db, family_id, current_user.id)
+
+    # Each goal can carry its own currency — convert to the family's base currency
+    # before summing into the aggregate totals (same fix as the other reports
+    # above). Per-row target_amount/saved_amount stay in the goal's own currency.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
 
     goals = (
         db.query(FinancialGoal)
@@ -2582,9 +2661,10 @@ def goal_analytics_report(
     for goal in goals:
         target = Decimal(goal.target_amount or 0)
         saved = Decimal(goal.current_amount or 0)
+        rate = report_currency_rate(db, goal.currency, base_currency)
 
-        total_target += target
-        total_saved += saved
+        total_target += target * rate
+        total_saved += saved * rate
 
         progress = Decimal("0")
         if target > 0:
@@ -2617,6 +2697,7 @@ def goal_analytics_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "total_goals": len(goals),
             "active_goals": active_count,
@@ -2803,6 +2884,13 @@ def loan_analytics_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Each loan can carry its own currency — convert to the family's base currency
+    # before summing into the aggregate totals (same fix as the other reports
+    # above). Per-row principal_amount/paid_amount/remaining_amount stay in the
+    # loan's own currency.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     loans = (
         db.query(Loan)
         .filter(
@@ -2816,6 +2904,7 @@ def loan_analytics_report(
 
     given_remaining = Decimal("0")
     taken_remaining = Decimal("0")
+    total_paid_actual = Decimal("0")
 
     active_count = 0
     closed_count = 0
@@ -2827,13 +2916,16 @@ def loan_analytics_report(
         principal = Decimal(loan.principal_amount or 0)
         paid = Decimal(loan.paid_amount or 0)
         remaining = Decimal(loan.remaining_amount or 0)
+        rate = report_currency_rate(db, loan.currency, base_currency)
+
+        total_paid_actual += paid * rate
 
         if loan.loan_type == "GIVEN":
-            given_total += principal
-            given_remaining += remaining
+            given_total += principal * rate
+            given_remaining += remaining * rate
         else:
-            taken_total += principal
-            taken_remaining += remaining
+            taken_total += principal * rate
+            taken_remaining += remaining * rate
 
         if loan.status == "ACTIVE":
             active_count += 1
@@ -2861,13 +2953,17 @@ def loan_analytics_report(
     overall_recovery = Decimal("0")
 
     total_principal = given_total + taken_total
-    total_paid = total_principal - (given_remaining + taken_remaining)
+    # total_paid_actual is the sum of loan.paid_amount — deriving it as
+    # total_principal - remaining would under-report by total interest now
+    # that remaining_amount is interest-inclusive (see loans.py create_loan).
+    total_paid = total_paid_actual
 
     if total_principal > 0:
         overall_recovery = (total_paid / total_principal) * Decimal("100")
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "total_loans": len(loans),
             "active_loans": active_count,
@@ -2928,6 +3024,12 @@ def transaction_register_report(
         .all()
     )
 
+    # Transactions can each carry their own currency — convert to the family's base
+    # currency before summing into total_amount (same fix as the other reports
+    # above). Per-row amount/currency stay native, correct for a register listing.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     total_amount = Decimal("0")
 
     rows = []
@@ -2935,7 +3037,7 @@ def transaction_register_report(
     for tx in transactions:
 
         amount = Decimal(tx.amount or 0)
-        total_amount += amount
+        total_amount += amount * report_currency_rate(db, tx.currency, base_currency)
 
         wallet_info = transaction_wallet_info(db, tx)
 
@@ -2963,6 +3065,7 @@ def transaction_register_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "filters": {
             "start_date": start_date,
             "end_date": end_date,
@@ -3117,6 +3220,14 @@ def executive_dashboard_report(
 
     active_budgets = len(active_budget_rows)
 
+    # Each budget can carry its own currency — convert to the family's base
+    # currency before summing (same fix as budget_report above, which this
+    # local re-query doesn't go through).
+    _executive_family = db.get(Family, family_id)
+    _executive_base_currency = (
+        _executive_family.default_currency if _executive_family and _executive_family.default_currency else "BDT"
+    ).upper()
+
     total_budget_amount = Decimal("0")
     total_budget_spent = Decimal("0")
     over_budget_count = 0
@@ -3124,9 +3235,10 @@ def executive_dashboard_report(
     for budget in active_budget_rows:
         budget_amount = safe_decimal(getattr(budget, "budget_amount", "0"))
         spent_amount = safe_decimal(getattr(budget, "spent_amount", "0"))
+        _rate = report_currency_rate(db, getattr(budget, "currency", _executive_base_currency), _executive_base_currency)
 
-        total_budget_amount += budget_amount
-        total_budget_spent += spent_amount
+        total_budget_amount += budget_amount * _rate
+        total_budget_spent += spent_amount * _rate
 
         is_over_budget = bool(getattr(budget, "is_over_budget", False))
         if is_over_budget or (budget_amount > 0 and spent_amount > budget_amount):
@@ -3344,6 +3456,7 @@ def executive_dashboard_report(
 
     return {
         "family_id": family_id,
+        "base_currency": _executive_base_currency,
         "metadata": {
             "report_name": "Executive Dashboard Report",
             "scope": "family_lifetime",
@@ -3406,6 +3519,14 @@ def cashflow_report(
 ):
     require_report_access(db, family_id, current_user.id)
 
+    # Transactions can each carry their own currency; convert every amount to the
+    # family's base currency right here so every downstream accumulation (totals,
+    # monthly buckets, category/wallet maps) stays consistent — this endpoint used
+    # to sum raw amounts across currencies (see cash_flow_currency_report for the
+    # already-correct sibling this mirrors).
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     transactions = get_posted_transactions(db, family_id, start_date, end_date)
 
     total_inflow = Decimal("0")
@@ -3416,7 +3537,7 @@ def cashflow_report(
     wallet_map = {}
 
     for tx in transactions:
-        amount = Decimal(tx.amount)
+        amount = Decimal(tx.amount) * report_currency_rate(db, tx.currency, base_currency)
         month_key = tx.created_at.strftime("%Y-%m")
 
         if month_key not in monthly:
@@ -3550,6 +3671,7 @@ def cashflow_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "filters": {
             "start_date": start_date,
             "end_date": end_date,
@@ -3617,6 +3739,12 @@ def transaction_report(
             if tx.id in wallet_tx_ids
         ]
 
+    # Transactions can each carry their own currency — convert to the family's base
+    # currency before summing into totals (same fix as the other reports above).
+    # Per-row amount/currency below stay native, correct for a transaction listing.
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     totals = {
         "income": Decimal("0"),
         "expense": Decimal("0"),
@@ -3631,7 +3759,7 @@ def transaction_report(
     }
 
     for tx in transactions:
-        amount = Decimal(tx.amount)
+        amount = Decimal(tx.amount) * report_currency_rate(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             totals["income"] += amount
@@ -3678,6 +3806,7 @@ def transaction_report(
 
     return {
         "family_id": family_id,
+        "base_currency": base_currency,
         "filters": {
             "start_date": start_date,
             "end_date": end_date,

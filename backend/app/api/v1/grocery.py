@@ -9,7 +9,6 @@ from app.core.database import SessionLocal, get_db
 from app.core.dependencies import get_current_user
 from app.core.security import decode_token
 from app.models.grocery import GroceryItem, GroceryList, GroceryVendor
-from app.models.architecture_feature import GroceryListItem, VendorContact
 from app.models.audit_log import AuditLog
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -114,56 +113,6 @@ def vendor_response(row: GroceryVendor) -> dict:
     }
 
 
-def _dual_write_vendor(db: Session, vendor: GroceryVendor) -> None:
-    """Mirror a newly created GroceryVendor into architecture checklist vendor_contacts."""
-    existing = (
-        db.query(VendorContact)
-        .filter(VendorContact.legacy_grocery_vendor_id == vendor.id, VendorContact.deleted_at.is_(None))
-        .first()
-    )
-    if existing:
-        return
-    db.add(
-        VendorContact(
-            family_id=vendor.family_id,
-            name=vendor.name,
-            phone=vendor.phone,
-            address=vendor.address,
-            category=vendor.category or "GENERAL",
-            notes=vendor.note,
-            is_active=vendor.is_active,
-            legacy_grocery_vendor_id=vendor.id,
-        )
-    )
-
-
-def _dual_write_grocery_item(db: Session, item: GroceryItem) -> None:
-    """Mirror a newly created GroceryItem into architecture checklist grocery_list_items."""
-    existing = (
-        db.query(GroceryListItem)
-        .filter(GroceryListItem.legacy_grocery_item_id == item.id, GroceryListItem.deleted_at.is_(None))
-        .first()
-    )
-    if existing:
-        return
-    db.add(
-        GroceryListItem(
-            family_id=item.family_id,
-            list_id=item.grocery_list_id,
-            created_by_member_id=item.created_by_member_id,
-            name=item.name,
-            qty=item.quantity,
-            unit=item.unit,
-            unit_price=item.actual_price or item.estimated_price or Decimal("0"),
-            is_bought=item.is_bought,
-            barcode=item.barcode,
-            category=item.category or "GENERAL",
-            mobile_sync_key=item.mobile_sync_key,
-            legacy_grocery_item_id=item.id,
-        )
-    )
-
-
 def get_list(db: Session, family_id: str, list_id: str) -> GroceryList:
     row = (
         db.query(GroceryList)
@@ -233,7 +182,6 @@ def create_grocery_vendor(
     )
     db.add(row)
     db.flush()
-    _dual_write_vendor(db, row)
     write_audit_log(
         db=db,
         family_id=payload.family_id,
@@ -495,7 +443,6 @@ def create_grocery_item(
     )
     db.add(row)
     db.flush()
-    _dual_write_grocery_item(db, row)
     write_audit_log(
         db=db,
         family_id=payload.family_id,

@@ -20,6 +20,7 @@ from app.schemas.savings import (
     SavingsWithdrawRequest,
 )
 from app.services.audit_service import write_audit_log
+from app.services.finance_posting import find_by_client_request_id
 from app.services.permission_service import normalize_role, require_permission
 
 router = APIRouter(prefix="/savings", tags=["Savings"])
@@ -435,6 +436,21 @@ def deposit_to_savings(
 
     wallet = get_wallet(db, payload.family_id, get_payload_wallet_id(payload), member)
 
+    if payload.client_request_id:
+        existing = find_by_client_request_id(db, payload.family_id, payload.client_request_id)
+        if existing:
+            return {
+                "success": True,
+                "transaction_id": existing.id,
+                "savings_goal_id": goal.id,
+                "current_amount": money(goal.current_amount),
+                "target_amount": money(goal.target_amount),
+                "progress_percent": percent(goal.current_amount, goal.target_amount),
+                "wallet_balance": money(wallet.current_balance),
+                "status": goal.status,
+                "idempotent_replay": True,
+            }
+
     if wallet.currency.upper() != currency:
         raise HTTPException(400, f"Currency mismatch. Wallet currency is {wallet.currency}")
 
@@ -460,6 +476,7 @@ def deposit_to_savings(
         currency=currency,
         goal_id=goal.id,
         description=description,
+        client_request_id=payload.client_request_id,
     )
     goal.current_amount = Decimal(goal.current_amount or 0) + amount
 
@@ -506,6 +523,21 @@ def withdraw_from_savings(
 
     wallet = get_wallet(db, payload.family_id, get_payload_wallet_id(payload), member)
 
+    if payload.client_request_id:
+        existing = find_by_client_request_id(db, payload.family_id, payload.client_request_id)
+        if existing:
+            return {
+                "success": True,
+                "transaction_id": existing.id,
+                "savings_goal_id": goal.id,
+                "current_amount": money(goal.current_amount),
+                "target_amount": money(goal.target_amount),
+                "progress_percent": percent(goal.current_amount, goal.target_amount),
+                "wallet_balance": money(wallet.current_balance),
+                "status": goal.status,
+                "idempotent_replay": True,
+            }
+
     if wallet.currency.upper() != currency:
         raise HTTPException(400, f"Currency mismatch. Wallet currency is {wallet.currency}")
 
@@ -531,6 +563,7 @@ def withdraw_from_savings(
         currency=currency,
         goal_id=goal.id,
         description=description,
+        client_request_id=payload.client_request_id,
     )
     goal.current_amount = savings_balance - amount
 

@@ -16,8 +16,28 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
             return await call_next(request)
-        except Exception:
+        except Exception as exc:
+            import logging
+            import sys
+
             from fastapi.responses import JSONResponse
+
+            # Reached only when an exception escapes register_exception_handlers()
+            # entirely — e.g. raised inside another middleware (AuditLogMiddleware,
+            # AuthContextMiddleware, ...) positioned outside RequestLoggerMiddleware
+            # in the stack, so that middleware's status-only log line never fires
+            # either. Without this, such an exception was traced nowhere.
+            logging.getLogger("s4.error").exception(
+                "Exception escaped exception handlers on %s %s: %s",
+                request.method,
+                request.url.path,
+                exc,
+            )
+            print(
+                f"[S4 SERVER_ERROR] {request.method} {request.url.path}: {exc!r}",
+                file=sys.stderr,
+                flush=True,
+            )
 
             request_id = getattr(request.state, "request_id", None)
             return JSONResponse(

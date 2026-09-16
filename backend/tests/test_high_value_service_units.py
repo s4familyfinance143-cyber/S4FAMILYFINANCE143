@@ -280,13 +280,18 @@ def test_replace_schedule_skips_zero_installments():
     assert replace_loan_schedule(db, SimpleNamespace(installment_count=0)) == []
 
 
-def test_notification_scan_covers_all_templates_and_skips_invalid_installments():
+def test_notification_scan_covers_all_templates_and_skips_invalid_installments(monkeypatch):
     today = date.today()
     budgets = [
-        SimpleNamespace(name="Zero", budget_amount=0, spent_amount=10),
-        SimpleNamespace(name="Warning", budget_amount=100, spent_amount=85),
-        SimpleNamespace(name="Over", budget_amount=100, spent_amount=110),
+        SimpleNamespace(name="Zero", budget_amount=0, category_id="cat-zero", period_type="MONTHLY"),
+        SimpleNamespace(name="Warning", budget_amount=100, category_id="cat-warn", period_type="MONTHLY"),
+        SimpleNamespace(name="Over", budget_amount=100, category_id="cat-over", period_type="MONTHLY"),
     ]
+    spent_by_category = {"cat-warn": Decimal("85"), "cat-over": Decimal("110")}
+    monkeypatch.setattr(
+        "app.services.notification_scan_service.calculate_spent",
+        lambda db, family_id, category_id, period_type: spent_by_category[category_id],
+    )
     recurring = [SimpleNamespace(title="Rent", next_due_date=today + timedelta(days=2))]
     loan = SimpleNamespace(
         id="loan", person_name="Lender", remaining_amount=Decimal("50.5"), currency="BDT"

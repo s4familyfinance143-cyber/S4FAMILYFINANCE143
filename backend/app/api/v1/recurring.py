@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -105,19 +106,25 @@ def next_due_date(current_due: date, frequency: str) -> date:
         return date.fromordinal(current_due.toordinal() + 7)
 
     if frequency == "MONTHLY":
-        month = current_due.month + 1
-        year = current_due.year
-
-        if month > 12:
-            month = 1
-            year += 1
-
-        return date(year, month, min(current_due.day, 28))
+        return _add_months(current_due, 1)
 
     if frequency == "YEARLY":
-        return date(current_due.year + 1, current_due.month, min(current_due.day, 28))
+        return _add_months(current_due, 12)
 
     raise HTTPException(400, "Invalid frequency")
+
+
+def _add_months(value: date, months: int) -> date:
+    """Matches app.workers.recurring_scheduler._add_months — both mechanisms
+    (this API's manual/auto-post endpoints, and the background scheduler)
+    advance the same next_due_date field, so they must agree on month math.
+    Clamps to the target month's real last day instead of a hardcoded 28,
+    which previously lost up to 3 days on every 29th/30th/31st due date."""
+    month = value.month - 1 + months
+    year = value.year + month // 12
+    month = month % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 def serialize_recurring(item: RecurringTransaction):

@@ -36,6 +36,7 @@ class GoalContributionRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     currency: str = "BDT"
     description: str | None = None
+    client_request_id: str | None = None
 
 
 class GoalWithdrawRequest(BaseModel):
@@ -45,3 +46,4 @@ class GoalWithdrawRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     currency: str = "BDT"
     description: str | None = None
+    client_request_id: str | None = None

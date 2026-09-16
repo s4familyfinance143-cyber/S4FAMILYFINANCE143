@@ -99,6 +99,9 @@ def dashboard_summary(
 
     _ensure_client_request_id_column(db)
 
+    family = db.get(Family, family_id)
+    base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
+
     accounts = (
         db.query(Account)
         .filter(
@@ -155,8 +158,12 @@ def dashboard_summary(
         .all()
     )
 
+    # Every entity here can carry its own currency (multi-currency wallets/goals/loans
+    # are a supported feature), so summing raw amounts across entities would silently
+    # add e.g. USD and BDT values together. Convert each item to the family's base
+    # currency before summing — same approach already used by dashboard_currency_summary.
     total_wallet_balance = sum(
-        Decimal(account.current_balance or 0)
+        (Decimal(account.current_balance or 0) * get_rate_to_base(db, account.currency, base_currency))
         for account in accounts
     )
 
@@ -165,7 +172,7 @@ def dashboard_summary(
     total_transfer = Decimal("0")
 
     for tx in transactions:
-        amount = Decimal(tx.amount or 0)
+        amount = Decimal(tx.amount or 0) * get_rate_to_base(db, tx.currency, base_currency)
 
         if tx.transaction_type == "INCOME":
             total_income += amount
@@ -175,12 +182,12 @@ def dashboard_summary(
             total_transfer += amount
 
     total_savings_target = sum(
-        Decimal(goal.target_amount or 0)
+        (Decimal(goal.target_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
         for goal in savings_goals
     )
 
     total_savings_current = sum(
-        Decimal(goal.current_amount or 0)
+        (Decimal(goal.current_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
         for goal in savings_goals
     )
 
@@ -188,18 +195,19 @@ def dashboard_summary(
     loan_taken_remaining = Decimal("0")
 
     for loan in loans:
+        converted_remaining = Decimal(loan.remaining_amount or 0) * get_rate_to_base(db, loan.currency, base_currency)
         if loan.loan_type == "GIVEN":
-            loan_given_remaining += Decimal(loan.remaining_amount or 0)
+            loan_given_remaining += converted_remaining
         elif loan.loan_type == "TAKEN":
-            loan_taken_remaining += Decimal(loan.remaining_amount or 0)
+            loan_taken_remaining += converted_remaining
 
     total_goal_target = sum(
-        Decimal(goal.target_amount or 0)
+        (Decimal(goal.target_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
         for goal in goals
     )
 
     total_goal_current = sum(
-        Decimal(goal.current_amount or 0)
+        (Decimal(goal.current_amount or 0) * get_rate_to_base(db, goal.currency, base_currency))
         for goal in goals
     )
 
@@ -221,6 +229,7 @@ def dashboard_summary(
 
     payload = {
         "family_id": family_id,
+        "base_currency": base_currency,
         "summary": {
             "wallet_count": len(accounts),
             "total_wallet_balance": money(total_wallet_balance),

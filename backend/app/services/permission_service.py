@@ -129,6 +129,22 @@ def member_permission_override_map(overrides: list) -> dict[str, bool]:
     return resolved
 
 
+# Permissions that can never be granted to a non-owner via a member_permission
+# override, no matter what the override row says — single source of truth, also
+# used by app/api/v1/permissions.py so the two never drift apart.
+PROTECTED_OWNER_PERMISSIONS = {
+    "member.permission",
+    "member.approve",
+    "member.invite",
+    "settings.manage",
+    "audit.read",
+    "backup.create",
+    "backup.read",
+    "backup.download",
+    "backup.restore",
+}
+
+
 def effective_permission_keys(db: Session, member: FamilyMember) -> set[str]:
     from app.models.member_permission import MemberPermission
 
@@ -148,22 +164,11 @@ def effective_permission_keys(db: Session, member: FamilyMember) -> set[str]:
     denied = {key for key, allowed in override_map.items() if not allowed}
 
     role = normalize_role(getattr(member, "role", None))
-    protected_denied = {
-        "member.permission",
-        "member.approve",
-        "member.invite",
-        "settings.manage",
-        "audit.read",
-        "backup.create",
-        "backup.read",
-        "backup.download",
-        "backup.restore",
-    }
 
     if role == "OWNER":
         return base_permissions | allowed_extra
 
-    return (base_permissions | allowed_extra) - denied - protected_denied
+    return (base_permissions | allowed_extra) - denied - PROTECTED_OWNER_PERMISSIONS
 
 
 def has_permission(member: FamilyMember, permission: str, db: Session | None = None) -> bool:

@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { tMobile, type MobileLang } from "../../i18n";
 import {
   JOIN_RELATIONSHIPS,
@@ -296,7 +296,7 @@ export function MobileGovernancePanel({
     }
   }
 
-  async function deactivateFamily() {
+  async function doDeactivateFamily() {
     setDeactivateBusy(true);
     try {
       await apiPost(`/api/v1/families/${familyId}/deactivate`, {}, token);
@@ -307,6 +307,20 @@ export function MobileGovernancePanel({
     } finally {
       setDeactivateBusy(false);
     }
+  }
+
+  function deactivateFamily() {
+    // This was a single un-confirmed tap for a family-wide, disruptive action
+    // (locks out every member) — every other destructive action in this app
+    // (e.g. MobileFinancePanel's confirmClose) gates behind Alert.alert first.
+    Alert.alert(
+      tm("deactivateFamily") || "Deactivate family",
+      tm("deactivateFamilyConfirm") || "This deactivates the family for every member. Continue?",
+      [
+        { text: tm("cancel") || "Cancel", style: "cancel" },
+        { text: tm("deactivateFamily") || "Deactivate", style: "destructive", onPress: () => void doDeactivateFamily() },
+      ]
+    );
   }
 
   async function requestOwnershipTransfer() {

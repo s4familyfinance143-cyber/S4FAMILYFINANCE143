@@ -890,8 +890,13 @@ def _apply_module_update(row, payload: ModuleUpdateIn) -> None:
     elif "note" in data and hasattr(row, "notes"):
         row.notes = data.pop("note")
     for key, val in data.items():
-        if val is None:
-            continue
+        # NOTE: do not skip val is None here — the web/mobile edit forms
+        # always resend the full field set for a module type (buildCreatePayload
+        # in lifeArchitectureApi.js), using null to mean "field cleared" (e.g.
+        # rate, member_id, dates). hasattr(row, key) already scopes this to
+        # attributes that actually belong to this row type, so honoring None
+        # here lets users clear an optional field instead of it silently
+        # sticking at its old value while the UI reports success.
         if hasattr(row, key):
             if key == "type" and isinstance(val, str):
                 setattr(row, key, val.upper())

@@ -100,7 +100,7 @@ def test_accounting_api_create_journal(monkeypatch):
     from app.api.v1 import accounting as mod
 
     member = _member()
-    monkeypatch.setattr(mod, "require_permission", lambda **k: member)
+    monkeypatch.setattr(mod, "require_owner_or_admin", lambda **k: member)
     tx = SimpleNamespace(
         id="tx-1",
         status="POSTED",
@@ -125,6 +125,31 @@ def test_accounting_api_create_journal(monkeypatch):
     assert out["id"] == "tx-1"
     assert out["currency"] == "BDT"
     assert db.commit_count == 1
+
+
+def test_accounting_api_create_journal_rejects_plain_member():
+    """Raw journal posting bypasses the wallet-ownership and balance checks
+    that /transactions/expense|income|transfer enforce, so it must require
+    owner/admin — not plain "transaction.create", which a MEMBER role also
+    holds and could otherwise use to move money in/out of any wallet in the
+    family via a crafted debit/credit line."""
+    from app.api.v1 import accounting as mod
+    from app.models.family_member import FamilyMember
+
+    member_row = FamilyMember(id="m1", family_id="fam-1", user_id="u1", role="MEMBER", status="ACTIVE")
+    db = Db(query_map={FamilyMember: member_row})
+    payload = mod.CreateJournalRequest(
+        family_id="fam-1",
+        amount="100",
+        currency="bdt",
+        lines=[
+            mod.AccountingLineIn(account_id="a1", debit="100", credit="0"),
+            mod.AccountingLineIn(account_id="a2", debit="0", credit="100"),
+        ],
+    )
+    with pytest.raises(HTTPException) as exc:
+        mod.create_transaction(payload=payload, db=db, current_user=_user())
+    assert exc.value.status_code == 403
 
 
 def test_accounting_api_reports_and_balance(monkeypatch):
@@ -589,3 +614,48 @@ def test_redis_cache_connected_path(monkeypatch):
     assert rc.cache_get("rk") == {"ok": True}
     rc.cache_delete("rk")
     assert rc.cache_get("rk") is None
+
+
+def test_redis_cache_retries_after_cooldown_not_forever(monkeypatch):
+    """A failed connection used to permanently pin _client to a falsy value
+    with no retry — any transient Redis blip meant this process fell back to
+    the in-memory cache for its whole lifetime, silently breaking OTP
+    verification and JWT blacklist checks across other workers once Redis
+    recovered. It must retry after a short cooldown instead."""
+    from app.services import redis_cache as rc
+
+    class FakeRedis:
+        def ping(self):
+            return True
+
+    attempts = {"n": 0}
+
+    def flaky_from_url(*a, **k):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ConnectionError("down")
+        return FakeRedis()
+
+    fake_redis_mod = SimpleNamespace(Redis=SimpleNamespace(from_url=flaky_from_url))
+    monkeypatch.setitem(__import__("sys").modules, "redis", fake_redis_mod)
+    monkeypatch.setattr(rc.settings, "REDIS_URL", "redis://localhost:6379/0")
+    rc._client = None
+    rc._last_failure_at = 0.0
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr("time.time", lambda: clock["t"])
+
+    # First call fails and connects nothing.
+    assert rc._redis() is None
+    assert attempts["n"] == 1
+
+    # Immediately retrying (well inside the cooldown) must not hit from_url again.
+    clock["t"] += 1.0
+    assert rc._redis() is None
+    assert attempts["n"] == 1
+
+    # Past the cooldown, it must actually retry — and succeed here.
+    clock["t"] += rc._RETRY_COOLDOWN_SECONDS + 1
+    client = rc._redis()
+    assert client is not None
+    assert attempts["n"] == 2

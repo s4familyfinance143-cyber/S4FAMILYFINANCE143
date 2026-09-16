@@ -652,22 +652,6 @@ def phase10b_sync_push(
                 "payload": _phase10b_json_text(payload),
             },
         )
-        try:
-            from app.services.architecture_system_hooks import enqueue_architecture_sync_queue
-
-            enqueue_architecture_sync_queue(
-                db,
-                device_id=device_id,
-                family_id=family_id,
-                entity_type=entity_type,
-                entity_id=str(entity_id) if entity_id is not None else None,
-                action=operation,
-                payload=payload,
-                legacy_outbox_id=outbox_id,
-                status="PENDING",
-            )
-        except Exception:
-            pass
         accepted_ids.append(outbox_id)
 
         # Client-flagged conflict still recorded; auto conflicts also created during apply.
@@ -700,24 +684,6 @@ def phase10b_sync_push(
         outbox_ids=accepted_ids,
     )
     conflict_ids.extend(apply_result.get("conflict_ids") or [])
-
-    # Mirror final statuses onto architecture sync_queue
-    try:
-        from app.services.architecture_system_hooks import finalize_architecture_sync_queue
-
-        for oid in apply_result.get("synced") or []:
-            finalize_architecture_sync_queue(db, legacy_outbox_id=str(oid), status="DONE")
-        for fail in apply_result.get("failed") or []:
-            finalize_architecture_sync_queue(
-                db,
-                legacy_outbox_id=str(fail.get("outbox_id") or ""),
-                status="FAILED",
-                last_error=str(fail.get("error") or "apply failed"),
-            )
-        for oid in apply_result.get("conflicted_outbox_ids") or []:
-            finalize_architecture_sync_queue(db, legacy_outbox_id=str(oid), status="CONFLICT")
-    except Exception:
-        pass
 
     # de-dupe while preserving order
     seen: set[str] = set()

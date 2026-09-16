@@ -23,12 +23,19 @@ scrape_configs:
         labels:
           service: s4-backend
 
-  # Uncomment on Linux VPS after: docker compose ... --profile host-metrics up -d
-  # - job_name: node
-  #   static_configs:
-  #     - targets: ["node-exporter:9100"]
-  #       labels:
-  #         service: host
+  # node-exporter always runs in production (docker-compose.monitoring.prod.yml
+  # has no profile gate on it), so this must stay active for HighDiskUsage /
+  # HighMemoryUsage (alerts.yml) to ever fire there. It was previously
+  # commented out here with instructions that only matched the *local* dev
+  # compose's opt-in `--profile host-metrics` — production ran node-exporter
+  # but Prometheus never scraped it, so those two alerts could never fire.
+  # Local dev: harmless if node-exporter isn't started (--profile host-metrics
+  # to opt in) — this target just shows as down, no alert rule depends on it.
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: host
 
   - job_name: postgres
     static_configs:

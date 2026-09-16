@@ -144,8 +144,6 @@ def _send_whatsapp(phone_e164: str, otp: str) -> MobileSendResult:
             }
         ).encode("utf-8")
         req = urllib.request.Request(url, data=form, method="POST")
-        auth = urllib.request._HTTPPasswordMgrWithDefaultRealm()  # type: ignore[attr-defined]
-        # Basic auth via header
         import base64
 
         basic = base64.b64encode(f"{sid}:{token}".encode("utf-8")).decode("ascii")

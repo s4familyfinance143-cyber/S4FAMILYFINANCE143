@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.architecture_feature import ExpenseCategory, IncomeCategory
 from app.models.category import Category
 from app.models.family_member import FamilyMember
 from app.models.user import User
@@ -38,34 +37,6 @@ DEFAULT_CATEGORIES = [
     {"name_bn": "দান/সদকা", "name_en": "Charity", "category_type": "EXPENSE", "icon": "heart", "color": "#059669"},
     {"name_bn": "অন্যান্য খরচ", "name_en": "Other Expense", "category_type": "EXPENSE", "icon": "other", "color": "#64748B"},
 ]
-
-
-def _dual_write_category(db: Session, category: Category) -> None:
-    """Mirror a newly created Category into the architecture checklist split tables
-    (expense_categories / income_categories) keyed by legacy_category_id."""
-    is_expense = "EXPENSE" in (category.category_type or "").upper()
-    model = ExpenseCategory if is_expense else IncomeCategory
-    existing = (
-        db.query(model)
-        .filter(model.legacy_category_id == category.id, model.deleted_at.is_(None))
-        .first()
-    )
-    if existing:
-        return
-    kwargs = dict(
-        family_id=category.family_id,
-        name=category.name_en or category.name_bn,
-        name_bn=category.name_bn,
-        name_en=category.name_en,
-        icon=category.icon,
-        color=category.color,
-        is_system=category.is_system,
-        is_active=category.is_active,
-        legacy_category_id=category.id,
-    )
-    if is_expense:
-        kwargs["parent_id"] = category.parent_id
-    db.add(model(**kwargs))
 
 
 def get_active_member(db: Session, family_id: str, user_id: str) -> FamilyMember | None:
@@ -121,7 +92,6 @@ def seed_default_categories(
         )
         db.add(category)
         db.flush()
-        _dual_write_category(db, category)
         created += 1
 
     db.commit()
@@ -177,7 +147,6 @@ def create_category(
 
     db.add(category)
     db.flush()
-    _dual_write_category(db, category)
     db.commit()
     db.refresh(category)
 

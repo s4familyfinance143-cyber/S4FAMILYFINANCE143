@@ -18,6 +18,8 @@ class BudgetUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     budget_amount: Decimal = Field(gt=0)
     note: str | None = None
+    category_id: str | None = None
+    period_type: str | None = None
 
 
 class BudgetCloseRequest(BaseModel):

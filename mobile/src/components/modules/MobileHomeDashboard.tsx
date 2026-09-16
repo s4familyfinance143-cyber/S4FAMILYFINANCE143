@@ -504,7 +504,6 @@ const styles = StyleSheet.create({
   moduleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   moduleTile: {
     width: "47%",
-    flexGrow: 1,
     minWidth: 140,
     borderWidth: 1,
     borderColor: "#dce7e3",
@@ -521,7 +520,6 @@ const styles = StyleSheet.create({
   quick: {
     width: "23%",
     minWidth: 70,
-    flexGrow: 1,
     borderWidth: 1,
     borderColor: "#dce7e3",
     backgroundColor: "#f8fbfa",

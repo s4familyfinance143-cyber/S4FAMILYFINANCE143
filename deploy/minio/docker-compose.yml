@@ -1,6 +1,8 @@
 services:
   s4-minio:
-    image: minio/minio:latest
+    # Docker Hub's minio/minio now blocks anonymous pulls — see
+    # deploy/docker/docker-compose.production.yml's comment on the same fix.
+    image: quay.io/minio/minio:latest
     container_name: s4-family-finance-minio-local
     restart: unless-stopped
     command: server /data --console-address ":9001"

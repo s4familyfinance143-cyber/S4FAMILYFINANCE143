@@ -184,6 +184,20 @@ class Settings(BaseSettings):
                 "Production safety error: JWT_SECRET_KEY must be at least 32 characters."
             )
 
+        # field_encryption.py silently derives the AES-256-GCM key from
+        # JWT_SECRET_KEY when this is unset — that breaks key separation (a
+        # JWT secret leak also exposes encrypted PII) and, worse, means any
+        # future JWT_SECRET_KEY rotation silently changes the encryption key
+        # too, permanently breaking decryption of every already-encrypted
+        # field (phone numbers) with no error until someone reads one back.
+        if not (self.FIELD_ENCRYPTION_KEY or "").strip():
+            raise ValueError(
+                "Production safety error: FIELD_ENCRYPTION_KEY must be set before "
+                "production (32-byte urlsafe-base64). Do not rely on the JWT-derived "
+                "fallback — rotating JWT_SECRET_KEY later would break decryption of "
+                "already-encrypted fields."
+            )
+
         if (self.JWT_ALGORITHM or "").upper().startswith("RS"):
             has_inline = bool(
                 (self.JWT_PRIVATE_KEY or "").strip() and (self.JWT_PUBLIC_KEY or "").strip()

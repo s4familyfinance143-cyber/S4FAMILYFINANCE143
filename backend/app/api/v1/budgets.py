@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.timeutil import utc_now
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -118,7 +120,23 @@ def get_budget(db: Session, family_id: str, budget_id: str) -> Budget:
     return budget
 
 
-def calculate_spent(db: Session, family_id: str, category_id: str) -> Decimal:
+def current_period_start(period_type: str, now: datetime | None = None) -> datetime:
+    """Start of the current calendar WEEKLY/MONTHLY/YEARLY period (naive UTC,
+    matching Transaction.created_at) — the window budget spend is measured over."""
+    now = now or utc_now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    period = (period_type or "MONTHLY").strip().upper()
+    if period == "WEEKLY":
+        return today_start - timedelta(days=today_start.weekday())
+    if period == "YEARLY":
+        return today_start.replace(month=1, day=1)
+    return today_start.replace(day=1)
+
+
+def calculate_spent(db: Session, family_id: str, category_id: str, period_type: str) -> Decimal:
+    period_start = current_period_start(period_type)
+
     txs = (
         db.query(Transaction)
         .filter(
@@ -127,6 +145,7 @@ def calculate_spent(db: Session, family_id: str, category_id: str) -> Decimal:
             Transaction.transaction_type == "EXPENSE",
             Transaction.status == "POSTED",
             Transaction.deleted_at.is_(None),
+            Transaction.created_at >= period_start,
         )
         .all()
     )
@@ -170,6 +189,7 @@ def budget_response(db: Session, budget: Budget):
         db=db,
         family_id=budget.family_id,
         category_id=budget.category_id,
+        period_type=budget.period_type,
     )
 
     budget.spent_amount = spent_amount
@@ -237,6 +257,7 @@ def create_budget(
         db=db,
         family_id=payload.family_id,
         category_id=payload.category_id,
+        period_type=period_type,
     )
 
     budget = Budget(
@@ -291,6 +312,35 @@ def update_budget(
     if budget.status != "ACTIVE":
         raise HTTPException(400, "Only active budget can be edited")
 
+    new_category_id = budget.category_id
+    if payload.category_id is not None:
+        new_category_id = get_category(db, payload.family_id, payload.category_id).id
+
+    new_period_type = budget.period_type
+    if payload.period_type is not None:
+        new_period_type = clean_period_type(payload.period_type)
+
+    if new_category_id != budget.category_id or new_period_type != budget.period_type:
+        duplicate = (
+            db.query(Budget)
+            .filter(
+                Budget.id != budget.id,
+                Budget.family_id == payload.family_id,
+                Budget.category_id == new_category_id,
+                Budget.period_type == new_period_type,
+                Budget.status == "ACTIVE",
+                Budget.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=400,
+                detail="Active budget already exists for this category and period",
+            )
+        budget.category_id = new_category_id
+        budget.period_type = new_period_type
+
     budget.name = clean_text(payload.name, "Budget name")
     budget.budget_amount = validate_amount(payload.budget_amount)
     budget.note = clean_optional_text(payload.note)
@@ -309,7 +359,13 @@ def update_budget(
     db.commit()
     db.refresh(budget)
 
-    return budget_response(db, budget)
+    # budget_response() recomputes spent_amount for the current period and
+    # assigns it onto `budget` — commit again so the refreshed value is
+    # actually persisted, not just reflected in this one response (dashboard
+    # reads budget.spent_amount straight from the DB without recalculating).
+    resp = budget_response(db, budget)
+    db.commit()
+    return resp
 
 
 @router.post("/{budget_id}/close")
@@ -347,7 +403,9 @@ def close_budget(
     db.commit()
     db.refresh(budget)
 
-    return budget_response(db, budget)
+    resp = budget_response(db, budget)
+    db.commit()
+    return resp
 
 
 @router.get("/status/{family_id}")

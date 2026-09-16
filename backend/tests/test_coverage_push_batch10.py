@@ -260,15 +260,16 @@ def test_family_summary_report_totals(patch_report_access):
     db = Db(
         query_map={
             Transaction: Query(rows=[_tx("i", "INCOME", 1000), _tx("e", "EXPENSE", 200)]),
-            FinancialGoal: Query(rows=[SimpleNamespace(target_amount=500, current_amount=100, deleted_at=None)]),
-            Loan: Query(rows=[SimpleNamespace(remaining_amount=50, deleted_at=None)]),
-            SavingsGoal: Query(rows=[SimpleNamespace(current_amount=75, deleted_at=None)]),
+            FinancialGoal: Query(rows=[SimpleNamespace(target_amount=500, current_amount=100, currency="BDT", deleted_at=None)]),
+            Loan: Query(rows=[SimpleNamespace(remaining_amount=50, currency="BDT", deleted_at=None)]),
+            SavingsGoal: Query(rows=[SimpleNamespace(current_amount=75, currency="BDT", deleted_at=None)]),
         }
     )
     out = r.family_summary_report("fam1", db=db, current_user=USER)
     assert out["summary"]["total_income"] == "1000.0000"
     assert out["summary"]["total_expense"] == "200.0000"
     assert out["counts"]["goals"] == 1
+    assert out["base_currency"] == "BDT"
 
 
 def test_report_dashboard_net_worth(patch_report_access):
@@ -280,13 +281,13 @@ def test_report_dashboard_net_worth(patch_report_access):
     from app.models.transaction_line import TransactionLine
 
     r = patch_report_access
-    wallet = SimpleNamespace(id="w1", deleted_at=None)
+    wallet = SimpleNamespace(id="w1", currency="BDT", deleted_at=None)
     db = Db(
         query_map={
             Transaction: Query(rows=[_tx("i", "INCOME", 300), _tx("e", "EXPENSE", 100)]),
-            SavingsGoal: Query(rows=[SimpleNamespace(current_amount=50)]),
-            FinancialGoal: Query(rows=[SimpleNamespace(current_amount=25)]),
-            Loan: Query(rows=[SimpleNamespace(remaining_amount=10)]),
+            SavingsGoal: Query(rows=[SimpleNamespace(current_amount=50, currency="BDT")]),
+            FinancialGoal: Query(rows=[SimpleNamespace(current_amount=25, currency="BDT")]),
+            Loan: Query(rows=[SimpleNamespace(remaining_amount=10, currency="BDT")]),
             Account: Query(rows=[wallet]),
             TransactionLine: Query(rows=[_line(debit=40, credit=10)]),
         }
@@ -295,6 +296,7 @@ def test_report_dashboard_net_worth(patch_report_access):
     dash = out["dashboard"]
     assert dash["total_income"] == "300.0000"
     assert dash["cashflow"] == "200.0000"
+    assert out["base_currency"] == "BDT"
     assert dash["wallet_balance"] == "30.0000"
     assert dash["net_worth"] == "95.0000"
 
@@ -409,6 +411,7 @@ def test_savings_trend_report_chart(patch_report_access):
             goal_type="X",
             target_amount=Decimal("100"),
             current_amount=Decimal("10"),
+            currency="BDT",
             deleted_at=None,
             created_at=NOW,
         ),
@@ -418,6 +421,7 @@ def test_savings_trend_report_chart(patch_report_access):
             goal_type="Y",
             target_amount=Decimal("200"),
             current_amount=Decimal("20"),
+            currency="BDT",
             deleted_at=None,
             created_at=NOW,
         ),
@@ -427,6 +431,7 @@ def test_savings_trend_report_chart(patch_report_access):
     assert out["point_count"] == 2
     assert out["total_saved"] == "30.0000"
     assert len(out["chart"]["bar"]) == 2
+    assert out["base_currency"] == "BDT"
 
 
 def test_loan_report_progress(patch_report_access):
@@ -438,6 +443,7 @@ def test_loan_report_progress(patch_report_access):
         person_name="Ali",
         loan_type="GIVEN",
         principal_amount=Decimal("1000"),
+        paid_amount=Decimal("600"),
         remaining_amount=Decimal("400"),
         currency="BDT",
         status="ACTIVE",
@@ -646,14 +652,14 @@ def test_dashboard_summary_cache_miss(patch_dashboard):
         created_at=NOW,
     )
     budget = SimpleNamespace(status="ACTIVE", spent_amount=Decimal("600"), budget_amount=Decimal("500"), deleted_at=None)
-    loan = SimpleNamespace(loan_type="GIVEN", remaining_amount=Decimal("50"), deleted_at=None)
+    loan = SimpleNamespace(loan_type="GIVEN", remaining_amount=Decimal("50"), currency="BDT", deleted_at=None)
     db = Db(
         query_map={
             Account: Query(rows=[account]),
             Transaction: Query(rows=[tx]),
-            SavingsGoal: Query(rows=[SimpleNamespace(target_amount=100, current_amount=25, deleted_at=None)]),
+            SavingsGoal: Query(rows=[SimpleNamespace(target_amount=100, current_amount=25, currency="BDT", deleted_at=None)]),
             Loan: Query(rows=[loan]),
-            FinancialGoal: Query(rows=[SimpleNamespace(target_amount=200, current_amount=50, deleted_at=None)]),
+            FinancialGoal: Query(rows=[SimpleNamespace(target_amount=200, current_amount=50, currency="BDT", deleted_at=None)]),
             Budget: Query(rows=[budget]),
         }
     )

@@ -152,7 +152,7 @@ def test_redis_session_helpers_with_memory_backend(monkeypatch):
     assert redis_session.redis_stack_status()["connected"] is False
 
 
-def test_architecture_sync_rows_and_finalization():
+def test_architecture_sync_log_record():
     db = Db()
     log = hooks.record_sync_log(
         db,
@@ -163,37 +163,6 @@ def test_architecture_sync_rows_and_finalization():
         error_msg="x" * 2100,
     )
     assert len(log.device_id) == 120 and len(log.error_msg) == 2000
-
-    queued = hooks.enqueue_architecture_sync_queue(
-        db,
-        device_id="",
-        family_id="family",
-        entity_type="expense",
-        entity_id=123,
-        action="CREATE",
-        payload={"amount": 5},
-        legacy_outbox_id="legacy",
-    )
-    assert queued.device_id == "default-device"
-    assert queued.payload == '{"amount": 5}'
-    assert hooks.enqueue_architecture_sync_queue(
-        db,
-        device_id="d",
-        family_id=None,
-        entity_type="x",
-        entity_id=None,
-        action="",
-        payload="raw",
-    ).payload == "raw"
-
-    existing = SimpleNamespace(status="PENDING", last_error=None, retry_count=0, updated_at=None)
-    hooks.finalize_architecture_sync_queue(
-        Db([existing]), legacy_outbox_id="legacy", status="FAILED", last_error="boom"
-    )
-    assert existing.status == "FAILED" and existing.retry_count == 1
-    hooks.finalize_architecture_sync_queue(
-        Db([None]), legacy_outbox_id="missing", status="DONE"
-    )
 
 
 def test_device_registry_create_and_update():

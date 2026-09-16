@@ -128,7 +128,17 @@ else:
     print('SMTP_KEYS_OK')
 PY
 """
-    run(client, ensure_smtp, timeout=60)
+    code, text = run(client, ensure_smtp, timeout=60)
+    if code != 0 or "SMTP_KEYS_ADDED" not in text and "SMTP_KEYS_OK" not in text:
+        # This step's result was previously discarded entirely — if
+        # .env.production didn't exist yet (e.g. a first-time sync onto a
+        # fresh VM, before any staging env was ever created), the heredoc's
+        # Path.read_text() would raise, but the script kept going straight
+        # into `docker compose up --env-file .env.production` with that file
+        # still missing.
+        print("SMTP env-key injection failed — aborting before rebuild", file=sys.stderr)
+        client.close()
+        return code or 1
 
     rebuild_inner = f"""
 cd /home/{USER}/s4/deploy/docker

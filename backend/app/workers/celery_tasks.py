@@ -17,7 +17,16 @@ def process_recurring_task() -> dict:
 
 @celery_app.task(name="app.workers.celery_tasks.process_auto_backup_task")
 def process_auto_backup_task() -> dict:
-    result = process_auto_backup()
+    # process_auto_backup() raises RuntimeError on any non-SQLite DATABASE_URL
+    # (PostgreSQL isn't supported yet). beat_schedule now only registers this
+    # task when ENABLE_AUTO_BACKUP_WORKER is set, but catch here too in case
+    # it's ever enqueued directly — a raised exception in a Celery task is
+    # silent to end users and easy to miss in worker logs; a clean {"ok":
+    # False} result at least shows up in whatever consumes task results.
+    try:
+        result = process_auto_backup()
+    except RuntimeError as exc:
+        return {"ok": False, "task": "auto_backup", "error": str(exc)}
     return {"ok": True, "task": "auto_backup", "result": result}
 
 
@@ -109,10 +118,48 @@ def generate_report_task(family_id: str, report_type: str = "overview") -> dict:
         db.close()
 
 
+def _fallback_member_id(db, family_id: str) -> "str | None":
+    """Best-effort actor for outbox rows this sweep applies with no request context
+    (owner preferred, else any active member) — same fallback recurring_scheduler.py
+    uses when a recurring item has no created_by_member_id of its own."""
+    from app.models.family_member import FamilyMember
+
+    owner = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.family_id == family_id,
+            FamilyMember.role == "OWNER",
+            FamilyMember.status == "ACTIVE",
+            FamilyMember.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if owner:
+        return owner.id
+    member = (
+        db.query(FamilyMember)
+        .filter(
+            FamilyMember.family_id == family_id,
+            FamilyMember.status == "ACTIVE",
+            FamilyMember.deleted_at.is_(None),
+        )
+        .first()
+    )
+    return member.id if member else None
+
+
 @celery_app.task(name="app.workers.celery_tasks.process_sync_outbox_task")
 def process_sync_outbox_task(limit: int = 50) -> dict:
+    """Safety-net sweep for outbox rows that never got a terminal status from the
+    synchronous apply in offline_sync_hardened.py's push endpoint (e.g. the request
+    crashed mid-batch). This used to just stamp every PENDING row "PROCESSED"
+    without ever calling the real apply logic — silently discarding the change
+    while looking successful. Now actually applies via sync_apply.process_pending_outbox,
+    per family (outbox rows carry no member_id, so a fallback actor is resolved
+    per family for attribution)."""
     from app.core.database import SessionLocal
     from app.models.sync_tables import SyncOutbox
+    from app.services.sync_apply import process_pending_outbox
 
     db = SessionLocal()
     try:
@@ -123,12 +170,35 @@ def process_sync_outbox_task(limit: int = 50) -> dict:
             .limit(max(1, min(limit, 200)))
             .all()
         )
-        updated_at = datetime.now(timezone.utc)
+
+        by_family: dict[str, list[str]] = {}
         for row in rows:
-            row.status = "PROCESSED"
-            row.updated_at = updated_at
-        db.commit()
-        return {"ok": True, "task": "sync_processor", "processed": len(rows)}
+            by_family.setdefault(row.family_id, []).append(row.id)
+
+        processed = 0
+        failed = 0
+        conflicted = 0
+        for family_id, outbox_ids in by_family.items():
+            member_id = _fallback_member_id(db, family_id)
+            result = process_pending_outbox(
+                db,
+                family_id=family_id,
+                member_id=member_id,
+                outbox_ids=outbox_ids,
+            )
+            processed += result.get("synced_count", 0)
+            failed += result.get("failed_count", 0)
+            conflicted += result.get("conflict_count", 0)
+            db.commit()
+
+        return {
+            "ok": True,
+            "task": "sync_processor",
+            "processed": processed,
+            "failed": failed,
+            "conflicted": conflicted,
+            "total_rows": len(rows),
+        }
     except Exception as exc:
         db.rollback()
         return {"ok": False, "task": "sync_processor", "error": str(exc)}

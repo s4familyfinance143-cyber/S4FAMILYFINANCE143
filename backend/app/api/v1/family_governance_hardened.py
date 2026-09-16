@@ -7,7 +7,7 @@ import hashlib
 import logging
 import sys
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import MetaData, Table, and_, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import JOIN_REQUEST_LIMIT, limiter
 from app.core.timeutil import utc_now
 from app.models.user import User
 from app.services.permission_service import PERMISSIONS, normalize_role
@@ -976,7 +977,9 @@ def generate_invite_hardened(
 
 
 @router.post("/invites/join")
+@limiter.limit(JOIN_REQUEST_LIMIT)
 def join_invite_hardened(
+    request: Request,
     payload: JoinInviteRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -1254,24 +1257,13 @@ def list_family_members_hardened(
 
 # === PHASE 5B RBAC / MEMBER PERMISSION HARDENING START ===
 from datetime import datetime as _phase5b_datetime
-from uuid import uuid4 as _phase5b_uuid4
 from typing import Any as _Phase5BAny
 
 from fastapi import Depends as _Phase5BDepends
 from fastapi import HTTPException as _Phase5BHTTPException
-from pydantic import BaseModel as _Phase5BBaseModel, Field as _Phase5BField
 from sqlalchemy import text as _phase5b_text
 from sqlalchemy import inspect as _phase5b_inspect
 from sqlalchemy.orm import Session as _Phase5BSession
-
-
-class Phase5BPermissionSetRequest(_Phase5BBaseModel):
-    allow: bool = _Phase5BField(...)
-    scope: str | None = _Phase5BField(default="FAMILY")
-
-
-class Phase5BPermissionCheckRequest(_Phase5BBaseModel):
-    permission_key: str = _Phase5BField(..., min_length=1, max_length=120)
 
 
 def _phase5b_now() -> str:
@@ -1484,264 +1476,4 @@ def _phase5b_require_permission(
     return member
 
 
-def _phase5b_set_permission(
-    db: _Phase5BSession,
-    member_id: str,
-    permission_key: str,
-    allow: bool,
-    scope: str | None = "FAMILY",
-) -> dict[str, _Phase5BAny]:
-    if not _phase5b_table_exists(db, "member_permissions"):
-        raise _Phase5BHTTPException(status_code=500, detail="member_permissions table missing")
-
-    cols = _phase5b_columns(db, "member_permissions")
-    member_col = "member_id" if "member_id" in cols else ("family_member_id" if "family_member_id" in cols else None)
-    key_col = "permission_key" if "permission_key" in cols else None
-    allow_col = "allow" if "allow" in cols else None
-    scope_col = "scope" if "scope" in cols else None
-
-    if not member_col or not key_col or not allow_col:
-        raise _Phase5BHTTPException(status_code=500, detail="member_permissions schema incomplete")
-
-    existing = db.execute(
-        _phase5b_text(f"""
-            SELECT id
-            FROM member_permissions
-            WHERE {member_col} = :member_id
-              AND {key_col} = :permission_key
-            LIMIT 1
-        """),
-        {"member_id": member_id, "permission_key": permission_key},
-    ).mappings().first()
-
-    now = _phase5b_now()
-
-    if existing:
-        set_parts = [f"{allow_col} = :allow"]
-        values: dict[str, _Phase5BAny] = {
-            "id": existing["id"],
-            "allow": bool(allow),
-            "permission_key": permission_key,
-            "member_id": member_id,
-        }
-
-        if scope_col:
-            set_parts.append(f"{scope_col} = :scope")
-            values["scope"] = scope or "FAMILY"
-
-        if "updated_at" in cols:
-            set_parts.append("updated_at = :updated_at")
-            values["updated_at"] = now
-
-        if "deleted_at" in cols:
-            set_parts.append("deleted_at = NULL")
-
-        db.execute(
-            _phase5b_text(f"""
-                UPDATE member_permissions
-                SET {", ".join(set_parts)}
-                WHERE id = :id
-            """),
-            values,
-        )
-    else:
-        insert_cols = []
-        insert_vals = []
-        values = {}
-
-        if "id" in cols:
-            insert_cols.append("id")
-            insert_vals.append(":id")
-            values["id"] = str(_phase5b_uuid4())
-
-        insert_cols.extend([member_col, key_col, allow_col])
-        insert_vals.extend([":member_id", ":permission_key", ":allow"])
-        values.update({
-            "member_id": member_id,
-            "permission_key": permission_key,
-            "allow": bool(allow),
-        })
-
-        if scope_col:
-            insert_cols.append(scope_col)
-            insert_vals.append(":scope")
-            values["scope"] = scope or "FAMILY"
-
-        if "created_at" in cols:
-            insert_cols.append("created_at")
-            insert_vals.append(":created_at")
-            values["created_at"] = now
-
-        if "updated_at" in cols:
-            insert_cols.append("updated_at")
-            insert_vals.append(":updated_at")
-            values["updated_at"] = now
-
-        db.execute(
-            _phase5b_text(f"""
-                INSERT INTO member_permissions ({", ".join(insert_cols)})
-                VALUES ({", ".join(insert_vals)})
-            """),
-            values,
-        )
-
-    db.commit()
-
-    row = _phase5b_permission_row(db, member_id, permission_key)
-    if not row:
-        raise _Phase5BHTTPException(status_code=500, detail="Permission row not saved")
-
-    return row
-
-
-@router.get("/families/{family_id}/permissions/me")
-def phase5b_my_family_permissions(
-    family_id: str,
-    db: _Phase5BSession = _Phase5BDepends(get_db),
-    current_user: _Phase5BAny = _Phase5BDepends(get_current_user),
-):
-    member = _phase5b_require_family_member(db, family_id, current_user)
-    cols = _phase5b_columns(db, "member_permissions")
-    member_col = "member_id" if "member_id" in cols else ("family_member_id" if "family_member_id" in cols else None)
-
-    rows = []
-    if member_col:
-        rows = db.execute(
-            _phase5b_text(f"""
-                SELECT *
-                FROM member_permissions
-                WHERE {member_col} = :member_id
-                ORDER BY permission_key
-            """),
-            {"member_id": member["id"]},
-        ).mappings().all()
-
-    permissions = {}
-    for row in rows:
-        d = dict(row)
-        permissions[str(d.get("permission_key"))] = _phase5b_bool(d.get("allow"))
-
-    return {
-        "hardened": True,
-        "phase": "5B",
-        "family_id": family_id,
-        "member_id": member["id"],
-        "role": member.get("role"),
-        "is_owner": _phase5b_is_owner(member),
-        "permissions": permissions,
-    }
-
-
-@router.get("/families/{family_id}/members/{member_id}/permissions")
-def phase5b_get_member_permissions(
-    family_id: str,
-    member_id: str,
-    db: _Phase5BSession = _Phase5BDepends(get_db),
-    current_user: _Phase5BAny = _Phase5BDepends(get_current_user),
-):
-    _phase5b_require_owner(db, family_id, current_user)
-
-    target_member = _phase5b_member_by_id(db, family_id, member_id)
-    if not target_member:
-        raise _Phase5BHTTPException(status_code=404, detail="Family member not found")
-
-    cols = _phase5b_columns(db, "member_permissions")
-    member_col = "member_id" if "member_id" in cols else ("family_member_id" if "family_member_id" in cols else None)
-
-    rows = []
-    if member_col:
-        rows = db.execute(
-            _phase5b_text(f"""
-                SELECT *
-                FROM member_permissions
-                WHERE {member_col} = :member_id
-                ORDER BY permission_key
-            """),
-            {"member_id": member_id},
-        ).mappings().all()
-
-    return {
-        "hardened": True,
-        "phase": "5B",
-        "family_id": family_id,
-        "member_id": member_id,
-        "count": len(rows),
-        "permissions": [dict(r) for r in rows],
-    }
-
-
-@router.put("/families/{family_id}/members/{member_id}/permissions/{permission_key}")
-def phase5b_set_member_permission(
-    family_id: str,
-    member_id: str,
-    permission_key: str,
-    payload: Phase5BPermissionSetRequest,
-    db: _Phase5BSession = _Phase5BDepends(get_db),
-    current_user: _Phase5BAny = _Phase5BDepends(get_current_user),
-):
-    _phase5b_require_owner(db, family_id, current_user)
-
-    target_member = _phase5b_member_by_id(db, family_id, member_id)
-    if not target_member:
-        raise _Phase5BHTTPException(status_code=404, detail="Family member not found")
-
-    row = _phase5b_set_permission(
-        db=db,
-        member_id=member_id,
-        permission_key=permission_key,
-        allow=payload.allow,
-        scope=payload.scope,
-    )
-
-    return {
-        "hardened": True,
-        "phase": "5B",
-        "family_id": family_id,
-        "member_id": member_id,
-        "permission_key": permission_key,
-        "allow": _phase5b_bool(row.get("allow")),
-        "scope": row.get("scope"),
-    }
-
-
-@router.post("/families/{family_id}/permissions/check")
-def phase5b_check_permission(
-    family_id: str,
-    payload: Phase5BPermissionCheckRequest,
-    db: _Phase5BSession = _Phase5BDepends(get_db),
-    current_user: _Phase5BAny = _Phase5BDepends(get_current_user),
-):
-    member = _phase5b_require_family_member(db, family_id, current_user)
-    allowed = _phase5b_has_permission(db, family_id, member, payload.permission_key)
-
-    return {
-        "hardened": True,
-        "phase": "5B",
-        "family_id": family_id,
-        "member_id": member["id"],
-        "permission_key": payload.permission_key,
-        "allowed": allowed,
-        "is_owner": _phase5b_is_owner(member),
-    }
-
-
-@router.post("/families/{family_id}/permissions/protected-action")
-def phase5b_protected_action(
-    family_id: str,
-    payload: Phase5BPermissionCheckRequest,
-    db: _Phase5BSession = _Phase5BDepends(get_db),
-    current_user: _Phase5BAny = _Phase5BDepends(get_current_user),
-):
-    member = _phase5b_require_permission(db, family_id, current_user, payload.permission_key)
-
-    return {
-        "hardened": True,
-        "phase": "5B",
-        "family_id": family_id,
-        "member_id": member["id"],
-        "permission_key": payload.permission_key,
-        "allowed": True,
-    }
-
-# === PHASE 5B RBAC / MEMBER PERMISSION HARDENING END ===
 

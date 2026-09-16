@@ -4,8 +4,42 @@ import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
 const INSTALLER_FILE = /\.(apk|exe)$/i;
 
+// In-memory best-effort throttle for the admin login endpoint, which had no
+// rate limiting at all — scrypt slows brute force somewhat, but nothing
+// capped attempt *count* per IP. Fixed window is fine at this app's scale
+// (single admin account, one instance); resets on redeploy.
+const LOGIN_ATTEMPT_LIMIT = 8;
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; windowStart: number }>();
+
+function clientIp(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return req.headers.get("x-real-ip") || "unknown";
+}
+
+function isLoginRateLimited(req: NextRequest): boolean {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.windowStart >= LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > LOGIN_ATTEMPT_LIMIT;
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (pathname === "/api/admin/login" && req.method === "POST" && isLoginRateLimited(req)) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Try again later." },
+      { status: 429 },
+    );
+  }
+
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token);
 

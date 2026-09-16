@@ -350,12 +350,17 @@ export default function SupportPage() {
 
   async function closeTicket() {
     if (!selected) return;
+    setTicketErr("");
     const res = await authFetch(`/support/tickets/${selected.id}/close`, {
       method: "POST",
     });
     if (res.ok) {
       await loadTicket(selected.id);
       await loadTickets();
+    } else {
+      // Same missing-else pattern as createTicket/sendReply just above —
+      // a failed close silently left the ticket open with no explanation.
+      setTicketErr(res.error ?? "Failed to close ticket.");
     }
   }
 
@@ -588,6 +593,9 @@ export default function SupportPage() {
                           </button>
                         )}
                       </div>
+                      {ticketErr && (
+                        <p className="mt-3 text-sm font-semibold text-danger">{ticketErr}</p>
+                      )}
                       <div className="mt-4 flex max-h-56 flex-col gap-3 overflow-auto pr-1">
                         {selected.messages.map((item) => (
                           <div

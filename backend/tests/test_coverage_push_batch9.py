@@ -1,5 +1,5 @@
 """Batch-9 coverage push: backup helpers, grocery utils, missing_features utils,
-   phase15/16 helpers, recurring_scheduler helpers, celery_tasks helpers."""
+   recurring_scheduler helpers, celery_tasks helpers."""
 
 from __future__ import annotations
 
@@ -234,85 +234,6 @@ class TestMissingFeaturesHelpers:
     def test_silver_nisab_grams_constant(self):
         from app.api.v1.missing_features_api import SILVER_NISAB_GRAMS
         assert SILVER_NISAB_GRAMS == Decimal("612.36")
-
-
-# ===========================================================================
-# 4. phase15.py — pure helpers
-# ===========================================================================
-
-class TestPhase15Helpers:
-    def test_clean_module_valid(self):
-        from app.api.v1.phase15 import clean_module
-        assert clean_module("investment") == "INVESTMENT"
-
-    def test_clean_module_invalid_raises(self):
-        from app.api.v1.phase15 import clean_module
-        with pytest.raises(HTTPException) as exc_info:
-            clean_module("INVALID")
-        assert exc_info.value.status_code == 400
-
-    def test_parse_date_valid(self):
-        from app.api.v1.phase15 import parse_date
-        result = parse_date("2026-06-15")
-        assert result == date(2026, 6, 15)
-
-    def test_parse_date_none(self):
-        from app.api.v1.phase15 import parse_date
-        assert parse_date(None) is None
-
-    def test_parse_date_invalid_string(self):
-        from app.api.v1.phase15 import parse_date
-        assert parse_date("not-a-date") is None
-
-    def test_is_due_soon_true(self):
-        from app.api.v1.phase15 import is_due_soon
-        soon = (date.today() + timedelta(days=5)).isoformat()
-        assert is_due_soon(soon) is True
-
-    def test_is_due_soon_false_past(self):
-        from app.api.v1.phase15 import is_due_soon
-        past = (date.today() - timedelta(days=1)).isoformat()
-        assert is_due_soon(past) is False
-
-    def test_money_phase15(self):
-        from app.api.v1.phase15 import money
-        assert money("99.9999") == "99.9999"
-
-    def test_clean_currency_phase15(self):
-        from app.api.v1.phase15 import clean_currency
-        assert clean_currency("eur") == "EUR"
-
-
-# ===========================================================================
-# 5. phase16.py — pure helpers
-# ===========================================================================
-
-class TestPhase16Helpers:
-    def test_clean_module_valid(self):
-        from app.api.v1.phase16 import clean_module
-        assert clean_module("subscription") == "SUBSCRIPTION"
-
-    def test_clean_module_invalid_raises(self):
-        from app.api.v1.phase16 import clean_module
-        with pytest.raises(HTTPException):
-            clean_module("BOGUS")
-
-    def test_clean_billing_cycle_monthly(self):
-        from app.api.v1.phase16 import clean_billing_cycle
-        assert clean_billing_cycle("monthly") == "MONTHLY"
-
-    def test_clean_billing_cycle_invalid_raises(self):
-        from app.api.v1.phase16 import clean_billing_cycle
-        with pytest.raises(HTTPException):
-            clean_billing_cycle("WEEKLY")
-
-    def test_clean_billing_cycle_none(self):
-        from app.api.v1.phase16 import clean_billing_cycle
-        assert clean_billing_cycle(None) is None
-
-    def test_money_phase16(self):
-        from app.api.v1.phase16 import money
-        assert money(0) == "0.0000"
 
 
 # ===========================================================================

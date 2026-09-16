@@ -177,8 +177,19 @@ export default function AdminPostsPage() {
 
   async function remove(id: string) {
     if (!window.confirm(c.deleteConfirm)) return;
-    await fetch(`/api/posts/${id}`, { method: "DELETE" });
-    await load();
+    try {
+      // fetch() does not reject on a non-2xx response — this never checked
+      // res.ok, so a failed delete (404, 401 if the session expired, a 500)
+      // silently fell through to load() and just looked like it worked.
+      const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to delete post");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete post");
+    }
   }
 
   async function logout() {

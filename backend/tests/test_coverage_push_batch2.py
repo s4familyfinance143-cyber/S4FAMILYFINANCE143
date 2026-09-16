@@ -1266,69 +1266,6 @@ def test_notification_helper_email_and_tokens():
 
 
 # ---------------------------------------------------------------------------
-# architecture_system_hooks edges
-# ---------------------------------------------------------------------------
-
-
-def test_architecture_hooks_enqueue_finalize_variants():
-    from app.services import architecture_system_hooks as hooks
-    from app.models.architecture_system import SyncQueue
-
-    db = Db()
-    row = hooks.enqueue_architecture_sync_queue(
-        db,
-        device_id="d",
-        family_id="f",
-        entity_type="account",
-        entity_id="a1",
-        action="UPSERT",
-        payload={"x": 1},
-    )
-    assert '"x"' in row.payload
-
-    row2 = hooks.enqueue_architecture_sync_queue(
-        db,
-        device_id="",
-        family_id=None,
-        entity_type="",
-        entity_id=None,
-        action="",
-        payload="raw-string",
-        status="PENDING",
-    )
-    assert row2.payload == "raw-string"
-    assert row2.device_id == "default-device"
-
-    row3 = hooks.enqueue_architecture_sync_queue(
-        db,
-        device_id="d",
-        family_id="f",
-        entity_type="x",
-        entity_id="1",
-        action="DEL",
-        payload=None,
-    )
-    assert row3.payload is None
-
-    # finalize missing
-    hooks.finalize_architecture_sync_queue(db, legacy_outbox_id="missing", status="DONE")
-
-    existing = SimpleNamespace(
-        status="PENDING",
-        last_error=None,
-        retry_count=0,
-        updated_at=None,
-        deleted_at=None,
-    )
-    db2 = Db(query_map={SyncQueue: existing})
-    hooks.finalize_architecture_sync_queue(
-        db2, legacy_outbox_id="o1", status="FAILED", last_error="boom"
-    )
-    assert existing.status == "FAILED"
-    assert existing.retry_count == 1
-
-
-# ---------------------------------------------------------------------------
 # celery send_push_task (no redis)
 # ---------------------------------------------------------------------------
 

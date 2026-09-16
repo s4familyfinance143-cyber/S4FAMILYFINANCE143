@@ -62,6 +62,25 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
+        import logging
+        import sys
+
+        # Without this, any bug that isn't HTTPException/RequestValidationError/
+        # SQLAlchemyError (a KeyError, TypeError, AttributeError, ...) produced a
+        # silent 500 with zero server-side trace: RequestLoggerMiddleware only
+        # logs the resulting status code, not the exception, and SENTRY_DSN is
+        # optional and unset by default. Mirrors the SQLAlchemy handler above.
+        logging.getLogger("s4.error").exception(
+            "Unhandled exception on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+        )
+        print(
+            f"[S4 SERVER_ERROR] {request.method} {request.url.path}: {exc!r}",
+            file=sys.stderr,
+            flush=True,
+        )
         return JSONResponse(
             status_code=500,
             content=error_response(

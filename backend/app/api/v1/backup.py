@@ -265,12 +265,7 @@ def download_backup(
         permission="backup.download",
     )
 
-    if not file_name.startswith(f"s4_backup_{family_id}_") or not file_name.endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Invalid backup file")
-
-    path = BACKUP_DIR / file_name
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Backup file not found")
+    path = _validate_backup_name(family_id, file_name)
 
     return FileResponse(
         path=path,
@@ -317,7 +312,13 @@ def database_integrity_check(
 def _validate_backup_name(family_id: str, file_name: str) -> Path:
     if not file_name.startswith(f"s4_backup_{family_id}_") or not file_name.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Invalid backup file")
-    zip_path = BACKUP_DIR / file_name
+    # file_name is attacker-controlled input; the prefix/suffix check above is not
+    # sufficient by itself since "/" or "\" segments (e.g. "..\\..\\secrets.zip")
+    # would still pass it and let BACKUP_DIR / file_name resolve outside BACKUP_DIR.
+    resolved_backup_dir = BACKUP_DIR.resolve()
+    zip_path = (BACKUP_DIR / file_name).resolve()
+    if resolved_backup_dir not in zip_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid backup file")
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="Backup file not found")
     return zip_path
@@ -387,38 +388,6 @@ def _prepare_payload(family_id: str, file_name: str) -> dict:
         "extracted_sql_files": extracted_sql,
         "next_step": next_step,
     }
-
-
-@router.get("/restore/preview/{family_id}/{file_name}")
-def preview_restore_backup(
-    family_id: str,
-    file_name: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_permission(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-        permission="backup.restore",
-    )
-    return _preview_payload(family_id, file_name)
-
-
-@router.post("/restore/prepare/{family_id}/{file_name}")
-def prepare_restore_backup(
-    family_id: str,
-    file_name: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_permission(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-        permission="backup.restore",
-    )
-    return _prepare_payload(family_id, file_name)
 
 
 @router.get("/restore/preview-file/{family_id}")

@@ -381,6 +381,7 @@ def family_currency_summary(
 
     total_base = Decimal("0")
     items = []
+    unconverted_count = 0
 
     for wallet in wallets:
         balance = Decimal(wallet.current_balance or 0)
@@ -388,6 +389,7 @@ def family_currency_summary(
         if wallet.currency == base_currency:
             converted = balance
             rate_used = Decimal("1")
+            rate_available = True
         else:
             try:
                 rate_used = get_latest_rate(
@@ -396,25 +398,35 @@ def family_currency_summary(
                     to_currency=base_currency,
                 )
                 converted = balance * rate_used
+                rate_available = True
             except Exception:
-                rate_used = Decimal("0")
-                converted = Decimal("0")
+                # No exchange rate configured — do NOT silently fold this
+                # wallet's real balance into the total as if it were worth
+                # zero. Exclude it from total_base and flag it so callers
+                # can distinguish "converted to 0" from "not converted".
+                rate_used = None
+                converted = None
+                rate_available = False
+                unconverted_count += 1
 
-        total_base += converted
+        if rate_available:
+            total_base += converted
 
         items.append({
             "wallet_id": wallet.id,
             "wallet_name": wallet.name,
             "wallet_currency": wallet.currency,
             "balance": money(balance),
-            "rate_used": money(rate_used),
-            "converted_balance": money(converted),
+            "rate_available": rate_available,
+            "rate_used": money(rate_used) if rate_available else None,
+            "converted_balance": money(converted) if rate_available else None,
         })
 
     return {
         "family_id": family_id,
         "base_currency": base_currency,
         "wallet_count": len(items),
+        "unconverted_wallet_count": unconverted_count,
         "total_converted_balance": money(total_base),
         "wallets": items,
     }

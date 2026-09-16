@@ -23,7 +23,6 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.invite import InviteCodeCreateRequest, JoinByCodeRequest
 from app.schemas.join_request import JoinRequestDecisionRequest
-from app.schemas.loan import LoanPaymentRequest
 from app.services.chart_of_accounts import is_spend_wallet
 from app.services.permission_service import (
     get_active_member_or_403,
@@ -196,30 +195,6 @@ def architecture_relationship_types(
     ]
 
 
-@router.put("/families/members/{member_id}/role")
-def architecture_put_member_role(
-    member_id: str,
-    role: str = Query(...),
-    family_id: str | None = Query(default=None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    target = db.get(FamilyMember, member_id)
-    if not target or target.deleted_at is not None:
-        raise HTTPException(404, "Member not found")
-    fid = family_id or target.family_id
-    require_owner_or_admin(db, fid, current_user.id)
-    new_role = role.strip().upper()
-    if new_role not in {"ADMIN", "MEMBER", "CHILD", "VIEWER"}:
-        raise HTTPException(422, "Invalid role")
-    if normalize_role(target.role) == "OWNER":
-        raise HTTPException(422, "Cannot demote owner via role update — use ownership transfer")
-    target.role = new_role
-    db.commit()
-    db.refresh(target)
-    return {"id": target.id, "role": target.role, "family_id": fid}
-
-
 # ---------------------------------------------------------------------------
 # Complete catalog — exact paths
 # ---------------------------------------------------------------------------
@@ -275,96 +250,6 @@ def architecture_accounts_balance(
             }
         )
     return {"family_id": family_id, "accounts": rows}
-
-
-@router.get("/transactions")
-def architecture_list_transactions(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.transactions import list_transactions
-
-    return list_transactions(family_id=family_id, db=db, current_user=current_user)
-
-
-@router.post("/transactions")
-def architecture_create_transaction(
-    payload: dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """POST /transactions — routes by transaction_type to income/expense/transfer/journal."""
-    ttype = str(payload.get("transaction_type") or payload.get("type") or "").upper()
-    if ttype == "INCOME":
-        from app.api.v1.transactions import create_income
-        from app.schemas.transaction import IncomeCreateRequest
-
-        return create_income(payload=IncomeCreateRequest(**payload), db=db, current_user=current_user)
-    if ttype == "EXPENSE":
-        from app.api.v1.transactions import create_expense
-        from app.schemas.transaction import ExpenseCreateRequest
-
-        return create_expense(payload=ExpenseCreateRequest(**payload), db=db, current_user=current_user)
-    if ttype == "TRANSFER":
-        from app.api.v1.transactions import create_transfer
-        from app.schemas.transaction import TransferCreateRequest
-
-        return create_transfer(payload=TransferCreateRequest(**payload), db=db, current_user=current_user)
-    # Generic journal via accounting engine
-    from app.api.v1.accounting import CreateJournalRequest, create_transaction as acct_create
-
-    return acct_create(
-        payload=CreateJournalRequest(**payload), db=db, current_user=current_user
-    )
-
-
-@router.get("/loans")
-def architecture_list_loans(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.loans import list_loans
-
-    return list_loans(family_id=family_id, db=db, current_user=current_user)
-
-
-@router.post("/loans/{loan_id}/pay")
-def architecture_loan_pay(
-    loan_id: str,
-    payload: LoanPaymentRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.loans import loan_payment
-
-    # Ensure path loan_id wins
-    data = payload.model_dump()
-    data["loan_id"] = loan_id
-    return loan_payment(payload=LoanPaymentRequest(**data), db=db, current_user=current_user)
-
-
-@router.get("/budgets")
-def architecture_list_budgets(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.budgets import list_budgets
-
-    return list_budgets(family_id=family_id, db=db, current_user=current_user)
-
-
-@router.get("/budgets/status")
-def architecture_budget_status(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.budgets import get_budget_status
-
-    return get_budget_status(family_id=family_id, db=db, current_user=current_user)
 
 
 @router.post("/sync/push")
@@ -474,110 +359,3 @@ def architecture_reports_net_worth(
     return net_worth_report(family_id=family_id, db=db, current_user=current_user)
 
 
-@router.get("/zakat/calculate")
-def architecture_zakat_calculate_get(
-    family_id: str = Query(...),
-    calculation_year: str = Query(...),
-    currency: str = Query(default="BDT"),
-    cash_amount: Decimal = Query(default=Decimal("0")),
-    gold_value: Decimal = Query(default=Decimal("0")),
-    silver_value: Decimal = Query(default=Decimal("0")),
-    investment_value: Decimal = Query(default=Decimal("0")),
-    business_assets: Decimal = Query(default=Decimal("0")),
-    receivables: Decimal = Query(default=Decimal("0")),
-    deductible_debts: Decimal = Query(default=Decimal("0")),
-    nisab_amount: Decimal = Query(default=Decimal("0")),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.zakat import calculate_zakat
-    from app.schemas.zakat import ZakatCalculateRequest
-
-    payload = ZakatCalculateRequest(
-        family_id=family_id,
-        calculation_year=calculation_year,
-        currency=currency,
-        cash_amount=cash_amount,
-        gold_value=gold_value,
-        silver_value=silver_value,
-        investment_value=investment_value,
-        business_assets=business_assets,
-        receivables=receivables,
-        deductible_debts=deductible_debts,
-        nisab_amount=nisab_amount,
-    )
-    return calculate_zakat(payload=payload, db=db, current_user=current_user)
-
-
-@router.get("/notifications")
-def architecture_list_notifications(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1 import notifications as notifications_api
-
-    # Prefer list by family if exists
-    for name in ("list_notifications", "get_notifications", "list_family_notifications"):
-        fn = getattr(notifications_api, name, None)
-        if callable(fn):
-            try:
-                return fn(family_id=family_id, db=db, current_user=current_user)
-            except TypeError:
-                continue
-    # Direct query fallback
-    from app.models.notification import Notification
-
-    require_permission(db, family_id, current_user.id, "notification.read")
-    rows = (
-        db.query(Notification)
-        .filter(Notification.family_id == family_id, Notification.deleted_at.is_(None))
-        .order_by(Notification.created_at.desc())
-        .limit(100)
-        .all()
-    )
-    return [
-        {
-            "id": n.id,
-            "family_id": n.family_id,
-            "title": n.title,
-            "message": n.message,
-            "severity": n.severity,
-            "is_read": n.is_read,
-            "created_at": n.created_at,
-        }
-        for n in rows
-    ]
-
-
-@router.get("/grocery/lists")
-def architecture_grocery_lists(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.grocery import list_grocery_lists
-
-    return list_grocery_lists(family_id=family_id, db=db, current_user=current_user)
-
-
-@router.get("/income")
-def architecture_list_income(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.compat_aliases import list_income_alias
-
-    return list_income_alias(family_id=family_id, db=db, current_user=current_user)
-
-
-@router.get("/expenses")
-def architecture_list_expenses(
-    family_id: str = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.api.v1.compat_aliases import list_expense_alias
-
-    return list_expense_alias(family_id=family_id, db=db, current_user=current_user)

@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Mapping, Sequence
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
@@ -221,6 +222,13 @@ def create_transaction(
                 Account.family_id == family_id,
                 Account.deleted_at.is_(None),
             )
+            # populate_existing() needed alongside with_for_update() — see
+            # _wallet_or_404's comment. This is the actual balance-mutation
+            # lock (_apply_line_to_account below reads account.current_balance
+            # as its base), so a stale cached object here wouldn't just bypass
+            # a check — it would silently corrupt the wallet's cached balance
+            # by applying the delta on top of a stale base value.
+            .populate_existing()
             .with_for_update()
             .first()
         )
@@ -243,8 +251,38 @@ def create_transaction(
         status=status,
         client_request_id=client_request_id,
     )
-    db.add(tx)
-    db.flush()
+    if client_request_id:
+        # finance_posting.find_by_client_request_id already checked for an
+        # existing row before calling in, but that check-then-insert has a
+        # race window (concurrent retry / double-submit). The DB unique
+        # constraint on (family_id, client_request_id) is the real guard.
+        # db.add(tx) + flush happen inside a SAVEPOINT (not a plain
+        # db.rollback(), which would discard the whole session's uncommitted
+        # work — this function runs inside larger batches, e.g.
+        # sync_apply.py processing many items in one session) so a conflict
+        # only undoes this insert; fall back to the sibling row instead of
+        # surfacing a raw 500 for what is actually a successful duplicate
+        # submission. tx must be added *inside* the nested block: entering
+        # begin_nested() flushes any already-pending state first, so adding
+        # tx beforehand would let its conflict fire outside the savepoint.
+        try:
+            with db.begin_nested():
+                db.add(tx)
+                db.flush()
+        except IntegrityError:
+            existing = (
+                db.query(Transaction)
+                .filter(
+                    Transaction.family_id == family_id,
+                    Transaction.client_request_id == client_request_id,
+                )
+                .first()
+            )
+            if existing:
+                return existing
+            raise
+    else:
+        db.flush()
 
     created_lines: list[TransactionLine] = []
     for raw in lines:
@@ -562,6 +600,16 @@ def _wallet_or_404(db: Session, family_id: str, account_id: str) -> Account:
             Account.family_id == family_id,
             Account.deleted_at.is_(None),
         )
+        # populate_existing() is required alongside with_for_update(): if this
+        # Account was already loaded earlier in the same session (e.g. a
+        # caller pre-fetched it, unlocked, before passing it in), SQLAlchemy's
+        # identity map returns that SAME cached Python object by default and
+        # silently ignores the freshly queried row — with_for_update() alone
+        # still acquires the row lock at the SQL level, but the in-memory
+        # current_balance a caller reads right after can stay stale. Verified
+        # empirically: without populate_existing(), a concurrent committed
+        # balance change was invisible to this re-query.
+        .populate_existing()
         .with_for_update()
         .first()
     )
@@ -663,6 +711,12 @@ def post_expense(
     wallet = account or _wallet_or_404(db, family_id, str(account_id))
     if wallet.currency.upper() != currency:
         raise HTTPException(400, f"Currency mismatch. Wallet currency is {wallet.currency}")
+    # Re-lock even when the caller passed a pre-fetched `account` (e.g.
+    # recurring_scheduler.py does): create_transaction's own row lock only
+    # happens after this check, so reading current_balance off an unlocked
+    # object here would let two concurrent expenses on the same wallet both
+    # see "sufficient balance" and both deduct, driving it negative.
+    wallet = _wallet_or_404(db, family_id, wallet.id)
     if Decimal(wallet.current_balance or 0) < amount_d:
         raise HTTPException(status_code=400, detail="Insufficient wallet balance")
 
@@ -733,6 +787,8 @@ def post_transfer(
         raise HTTPException(400, "Cannot transfer to same wallet")
     if src.currency.upper() != currency or dst.currency.upper() != currency:
         raise HTTPException(400, "Currency mismatch")
+    # Re-lock src before the balance check — see post_expense for why.
+    src = _wallet_or_404(db, family_id, src.id)
     if Decimal(src.current_balance or 0) < amount_d:
         raise HTTPException(400, "Insufficient source wallet balance")
 
@@ -778,6 +834,7 @@ def post_loan_taken(
     currency: str,
     loan_id: str | None = None,
     description: str | None = None,
+    client_request_id: str | None = None,
 ) -> Transaction:
     """Loan taken: Dr Cash(ASSET), Cr Loan Payable(LIABILITY)."""
     amount_d = _money_pos(amount)
@@ -795,6 +852,7 @@ def post_loan_taken(
         currency=currency,
         loan_id=loan_id,
         description=description,
+        client_request_id=client_request_id,
         lines=[
             {
                 "account_id": wallet.id,
@@ -824,10 +882,15 @@ def post_loan_given(
     currency: str,
     loan_id: str | None = None,
     description: str | None = None,
+    client_request_id: str | None = None,
 ) -> Transaction:
     """Loan given: Dr Loan Receivable(ASSET), Cr Cash(ASSET)."""
     amount_d = _money_pos(amount)
     currency = currency.strip().upper()
+    # Re-lock before the balance check — see post_expense for why. This
+    # function only ever receives a pre-fetched `wallet`, with no id-based
+    # fallback, so without this it never locked at all.
+    wallet = _wallet_or_404(db, family_id, wallet.id)
     if Decimal(wallet.current_balance or 0) < amount_d:
         raise HTTPException(400, "Insufficient wallet balance")
     chart = ensure_family_chart(
@@ -843,6 +906,7 @@ def post_loan_given(
         currency=currency,
         loan_id=loan_id,
         description=description,
+        client_request_id=client_request_id,
         lines=[
             {
                 "account_id": receivable.id,
@@ -873,6 +937,7 @@ def post_loan_installment(
     loan_type: str,
     loan_id: str | None = None,
     description: str | None = None,
+    client_request_id: str | None = None,
 ) -> Transaction:
     """
     Loan installment:
@@ -887,6 +952,8 @@ def post_loan_installment(
     loan_type_u = loan_type.strip().upper()
 
     if loan_type_u == "TAKEN":
+        # Re-lock before the balance check — see post_expense for why.
+        wallet = _wallet_or_404(db, family_id, wallet.id)
         if Decimal(wallet.current_balance or 0) < amount_d:
             raise HTTPException(400, "Insufficient wallet balance")
         payable = chart["loan_payable"]
@@ -899,6 +966,7 @@ def post_loan_installment(
             currency=currency,
             loan_id=loan_id,
             description=description,
+            client_request_id=client_request_id,
             lines=[
                 {
                     "account_id": payable.id,
@@ -928,6 +996,7 @@ def post_loan_installment(
         currency=currency,
         loan_id=loan_id,
         description=description,
+        client_request_id=client_request_id,
         lines=[
             {
                 "account_id": wallet.id,
@@ -962,6 +1031,8 @@ def post_savings_deposit(
     """Savings deposit: Dr Savings Pool(ASSET), Cr Cash(ASSET)."""
     amount_d = _money_pos(amount)
     currency = currency.strip().upper()
+    # Re-lock before the balance check — see post_expense for why.
+    wallet = _wallet_or_404(db, family_id, wallet.id)
     if Decimal(wallet.current_balance or 0) < amount_d:
         raise HTTPException(400, "Insufficient wallet balance")
     chart = ensure_family_chart(
@@ -1060,6 +1131,8 @@ def post_goal_contribute(
     """Goal contribute: Dr Goal Pool(ASSET), Cr Cash(ASSET)."""
     amount_d = _money_pos(amount)
     currency = currency.strip().upper()
+    # Re-lock before the balance check — see post_expense for why.
+    wallet = _wallet_or_404(db, family_id, wallet.id)
     if Decimal(wallet.current_balance or 0) < amount_d:
         raise HTTPException(400, "Insufficient wallet balance")
     chart = ensure_family_chart(

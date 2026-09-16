@@ -136,15 +136,50 @@ def test_notification_scan_task_runs_in_eager_mode(monkeypatch):
     assert db.closed
 
 
-def test_sync_outbox_task_uses_orm_rows_in_eager_mode(monkeypatch):
+def test_sync_outbox_task_applies_pending_rows_per_family_in_eager_mode(monkeypatch):
+    """process_sync_outbox_task used to just stamp PENDING rows "PROCESSED"
+    without ever applying the change they describe (see celery_tasks.py) —
+    now it must actually call sync_apply.process_pending_outbox, grouped by
+    family since outbox rows carry no member_id of their own."""
+    import app.workers.celery_tasks as celery_tasks_module
+
     rows = [
-        SimpleNamespace(status="PENDING", updated_at=None),
-        SimpleNamespace(status="PENDING", updated_at=None),
+        SimpleNamespace(id="o1", family_id="fam-1", status="PENDING"),
+        SimpleNamespace(id="o2", family_id="fam-1", status="PENDING"),
+        SimpleNamespace(id="o3", family_id="fam-2", status="PENDING"),
     ]
     db = FakeSession(rows)
     monkeypatch.setattr(database_module, "SessionLocal", lambda: db)
-    result = process_sync_outbox_task.apply(kwargs={"limit": 2}).get()
-    assert result == {"ok": True, "task": "sync_processor", "processed": 2}
-    assert all(row.status == "PROCESSED" and row.updated_at is not None for row in rows)
-    assert db.commits == 1
+    monkeypatch.setattr(
+        celery_tasks_module,
+        "_fallback_member_id",
+        lambda _db, family_id: f"member-{family_id}",
+    )
+
+    calls = []
+
+    def fake_process_pending_outbox(_db, *, family_id, member_id=None, outbox_ids=None, **_kwargs):
+        calls.append((family_id, member_id, outbox_ids))
+        return {"synced_count": len(outbox_ids), "failed_count": 0, "conflict_count": 0}
+
+    monkeypatch.setattr(
+        "app.services.sync_apply.process_pending_outbox",
+        fake_process_pending_outbox,
+    )
+
+    result = process_sync_outbox_task.apply(kwargs={"limit": 3}).get()
+
+    assert result["ok"] is True
+    assert result["processed"] == 3
+    assert result["failed"] == 0
+    assert result["conflicted"] == 0
+    assert result["total_rows"] == 3
+    assert {c[0] for c in calls} == {"fam-1", "fam-2"}
+    fam1_call = next(c for c in calls if c[0] == "fam-1")
+    fam2_call = next(c for c in calls if c[0] == "fam-2")
+    assert set(fam1_call[2]) == {"o1", "o2"}
+    assert fam1_call[1] == "member-fam-1"
+    assert set(fam2_call[2]) == {"o3"}
+    assert fam2_call[1] == "member-fam-2"
+    assert db.commits == 2  # one commit per family group
     assert db.closed

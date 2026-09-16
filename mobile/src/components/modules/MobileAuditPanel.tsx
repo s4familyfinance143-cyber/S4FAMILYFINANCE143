@@ -38,14 +38,21 @@ export function MobileAuditPanel({ token, familyId, apiGet, onMessage, lang = "b
   const [entityFocus, setEntityFocus] = useState<{ type: string; id: string } | null>(null);
 
   const activityPath = useMemo(() => {
+    // Mobile's apiGet does NOT imply /api/v1 the way the web app's apiBase
+    // does (web's normalizeApiBase always forces an /api/v1 suffix onto the
+    // origin; mobile's normalizeApiBaseUrl does the opposite and strips it,
+    // so every mobile call must spell out /api/v1 itself). This file copied
+    // the web app's bare /families/... paths without that prefix, which
+    // 404s against the default backend config (ENABLE_LEGACY_UNVERSIONED_API
+    // defaults to false) — every load of this panel was failing.
     if (entityFocus) {
-      return `/families/${familyId}/audit-trail/entity/${encodeURIComponent(entityFocus.type)}/${encodeURIComponent(entityFocus.id)}?limit=${limit}`;
+      return `/api/v1/families/${familyId}/audit-trail/entity/${encodeURIComponent(entityFocus.type)}/${encodeURIComponent(entityFocus.id)}?limit=${limit}`;
     }
     const params = new URLSearchParams({ limit: String(limit) });
     if (filterAction) params.set("action_type", filterAction);
     if (filterEntity) params.set("entity_type", filterEntity);
     if (filterSeverity) params.set("severity", filterSeverity);
-    return `/families/${familyId}/audit-trail/activity?${params.toString()}`;
+    return `/api/v1/families/${familyId}/audit-trail/activity?${params.toString()}`;
   }, [entityFocus, familyId, filterAction, filterEntity, filterSeverity, limit]);
 
   const load = useCallback(async () => {
@@ -53,7 +60,7 @@ export function MobileAuditPanel({ token, familyId, apiGet, onMessage, lang = "b
     setLoading(true);
     try {
       const [sum, activity] = await Promise.all([
-        apiGet(`/families/${familyId}/audit-trail/summary`, token),
+        apiGet(`/api/v1/families/${familyId}/audit-trail/summary`, token),
         apiGet(activityPath, token),
       ]);
       setSummary(sum);

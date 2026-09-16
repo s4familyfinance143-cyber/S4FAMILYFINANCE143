@@ -563,7 +563,8 @@ export function MobileFinancePanel({
   }
 
   async function attachTagsToTransaction(transactionId: string) {
-    if (!transactionId || selectedTagIds.length === 0) return;
+    if (!transactionId || selectedTagIds.length === 0) return true;
+    let allOk = true;
     for (const tagId of selectedTagIds) {
       try {
         await apiPost(
@@ -572,9 +573,13 @@ export function MobileFinancePanel({
           token
         );
       } catch {
-        // ignore duplicate attach failures
+        // The backend already no-ops a true duplicate attach (returns 201 with
+        // already:true) rather than throwing, so anything caught here is a real
+        // failure (network, 403, 404) — surface it instead of swallowing it.
+        allOk = false;
       }
     }
+    return allOk;
   }
 
   async function createTransaction() {
@@ -674,10 +679,10 @@ export function MobileFinancePanel({
         );
       }
       const txId = created?.id || created?.transaction_id;
-      if (txId) await attachTagsToTransaction(String(txId));
+      const tagsOk = txId ? await attachTagsToTransaction(String(txId)) : true;
       setTxForm((current) => ({ ...current, amount: "", description: "" }));
       setSelectedTagIds([]);
-      await afterWrite(tm("transactionPosted"));
+      await afterWrite(tagsOk ? tm("transactionPosted") : "Transaction posted, but tags failed to attach");
     } catch (error) {
       const msg = error instanceof Error ? error.message : tm("transactionFailed");
       if (onQueueOffline && /failed to fetch|network|offline/i.test(msg)) {

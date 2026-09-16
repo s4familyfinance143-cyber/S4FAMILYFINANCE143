@@ -73,12 +73,15 @@ try:
 except Exception as _schema_exc:
     print("Schema guard error:", _schema_exc)
 
-try:
-    from app.core.audit_events import register_audit_listeners
-
-    register_audit_listeners(Base)
-except Exception as _audit_exc:
-    print("Audit event listeners not registered:", _audit_exc)
+# NOTE: app.core.audit_events.register_audit_listeners(Base) used to be called here,
+# firing a generic ORM after_insert/after_update/after_delete listener on every mapped
+# model. That duplicated the audit trail: every action already logged via the specific,
+# curated write_audit_log(...) calls throughout app/api/v1/*.py (e.g. "Wallet Created")
+# also produced a second, generic row from the listener (e.g. "CREATE accounts") for
+# the same entity in the same transaction — inflating /audit-trail/summary counts and
+# cluttering /audit-trail/activity with low-information duplicates. Verified: creating
+# one wallet produced 2 audit_logs rows. Removed; the manual write_audit_log() call
+# sites are the intentional, curated audit trail.
 
 
 async def recurring_worker():
@@ -280,34 +283,6 @@ def debug_ws_routes():
         for route in app.routes
         if "ws" in str(getattr(route, "path", ""))
     ]
-
-
-# === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE ===
-from app.api.v1.accounts_wallets_hardened import router as accounts_wallets_hardened_router
-_mount_versioned(accounts_wallets_hardened_router, include_legacy=True)
-# === PHASE 6B ACCOUNTS / WALLETS ROUTER INCLUDE END ===
-
-
-# === PHASE 7B DOUBLE-ENTRY TRANSACTIONS ROUTER INCLUDE ===
-from app.api.v1.double_entry_transactions_hardened import router as double_entry_transactions_hardened_router
-
-_phase7b_replace = {
-    ("/families/{family_id}/transactions", "GET"),
-    ("/families/{family_id}/transactions", "POST"),
-    ("/families/{family_id}/transactions/{transaction_id}", "GET"),
-    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "GET"),
-    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions", "POST"),
-    (f"{settings.API_V1_PREFIX}/families/{{family_id}}/transactions/{{transaction_id}}", "GET"),
-    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions", "GET"),
-    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions", "POST"),
-    (f"{settings.API_V2_PREFIX}/families/{{family_id}}/transactions/{{transaction_id}}", "GET"),
-}
-app.router.routes = [
-    r for r in app.router.routes
-    if not any((getattr(r, "path", "") == p and m in (getattr(r, "methods", set()) or set())) for p, m in _phase7b_replace)
-]
-_mount_versioned(double_entry_transactions_hardened_router, include_legacy=True)
-# === PHASE 7B DOUBLE-ENTRY TRANSACTIONS ROUTER INCLUDE END ===
 
 
 # === PHASE 8B REPORTS AUDIT INTEGRATION ROUTER INCLUDE ===

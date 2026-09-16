@@ -130,12 +130,20 @@ def ensure_system_account(
     if account_type not in COA_CLASSES:
         account_type = ledger_class(account_type)
 
-    # Match by name so legacy LOAN_PAYABLE rows upgrade to LIABILITY etc.
+    # Match by name so legacy LOAN_PAYABLE rows upgrade to LIABILITY etc. Must
+    # also require is_system=True: without it, a user's own wallet named
+    # e.g. "Salary Income" or "Savings Pool" (nothing stops a family member
+    # from picking that name in accounts.py's create_account, which has no
+    # reserved-name check) would be found here instead of a real system
+    # account, silently flipping its account_type and is_system flag and
+    # then reusing that hijacked wallet as the counterpart side of unrelated
+    # income/expense postings — corrupting the user's real wallet balance.
     row = (
         db.query(Account)
         .filter(
             Account.family_id == family_id,
             Account.name == name,
+            Account.is_system.is_(True),
             Account.deleted_at.is_(None),
         )
         .first()
@@ -143,8 +151,6 @@ def ensure_system_account(
     if row:
         if row.account_type != account_type:
             row.account_type = account_type
-        if hasattr(row, "is_system"):
-            row.is_system = True
         return row
 
     row = Account(
@@ -203,11 +209,16 @@ def ensure_named_coa_account(
     if account_type not in COA_CLASSES:
         account_type = ledger_class(account_type)
 
+    # Same is_system requirement as ensure_system_account above — this name is
+    # derived from the family's own category names (e.g. "Rent" → "Rent
+    # Expense" via finance_posting.py), so a collision with a user's own
+    # wallet name is realistic, not just theoretical.
     row = (
         db.query(Account)
         .filter(
             Account.family_id == family_id,
             Account.name == name,
+            Account.is_system.is_(True),
             Account.deleted_at.is_(None),
         )
         .first()
@@ -215,8 +226,6 @@ def ensure_named_coa_account(
     if row:
         if row.account_type != account_type:
             row.account_type = account_type
-        if hasattr(row, "is_system"):
-            row.is_system = True
         return row
     return ensure_system_account(
         db,

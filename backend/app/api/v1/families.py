@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -6,9 +6,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_role
 from app.models.family import Family
 from app.models.family_member import FamilyMember
-from app.models.relationship_type import RelationshipType
 from app.models.user import User
-from app.schemas.family import FamilyCreateRequest, FamilyResponse
 from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/families", tags=["Families"])
@@ -21,75 +19,6 @@ class FamilyCurrencyUpdate(BaseModel):
 class FamilySettingsUpdate(BaseModel):
     default_currency: str | None = None
     timezone: str | None = None
-
-
-@router.post("", response_model=FamilyResponse, status_code=status.HTTP_201_CREATED)
-def create_family(
-    payload: FamilyCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    # Architecture: multi-family support — owning a 2nd family is allowed.
-    relationship = (
-        db.query(RelationshipType)
-        .filter(
-            RelationshipType.name_en.ilike(payload.responsible_person_type)
-        )
-        .first()
-    )
-
-    if not relationship:
-        relationship = RelationshipType(
-            name_bn=payload.responsible_person_type,
-            name_en=payload.responsible_person_type,
-            group_name="RESPONSIBLE_PERSON",
-            needs_serial=False,
-            is_system=True,
-            is_active=True,
-        )
-        db.add(relationship)
-        db.flush()
-
-    family = Family(
-        name=payload.family_name.strip(),
-        owner_user_id=current_user.id,
-        default_currency=payload.currency,
-        timezone=payload.timezone,
-        is_active=True,
-    )
-
-    db.add(family)
-    db.flush()
-
-    owner_member = FamilyMember(
-        family_id=family.id,
-        user_id=current_user.id,
-        role="OWNER",
-        status="ACTIVE",
-        relationship_type_id=relationship.id,
-        relationship_display_label=payload.responsible_person_type,
-        can_login_family=True,
-    )
-
-    db.add(owner_member)
-    db.flush()
-
-    family.main_responsible_member_id = owner_member.id
-
-    db.commit()
-    db.refresh(family)
-
-    return family
-
-
-@router.get("", response_model=list[FamilyResponse])
-def get_my_families(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.repositories import family_repo
-
-    return family_repo(db).list_active_for_user(current_user.id)
 
 
 @router.get("/my-memberships")

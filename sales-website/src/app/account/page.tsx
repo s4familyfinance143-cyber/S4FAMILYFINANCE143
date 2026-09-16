@@ -31,7 +31,9 @@ export default function AccountPage() {
   const [country, setCountry] = useState("");
   const [phone, setPhone] = useState("");
   const [savedMsg, setSavedMsg] = useState("");
+  const [savedErr, setSavedErr] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [sessionErr, setSessionErr] = useState("");
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [licenses, setLicenses] = useState<CustomerLicense[]>([]);
@@ -101,6 +103,7 @@ export default function AccountPage() {
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     setSavedMsg("");
+    setSavedErr("");
     setSavingProfile(true);
     const res = await authFetch("/account/profile", {
       method: "PATCH",
@@ -115,6 +118,11 @@ export default function AccountPage() {
     if (res.ok) {
       setSavedMsg(c.acSaved);
       await refreshUser();
+    } else {
+      // authFetch never throws (it returns {ok:false,...} on failure), so
+      // this needs an explicit else — without it, a failed save looked
+      // identical to a successful one: form just sat there, no message.
+      setSavedErr(res.error ?? "Failed to save profile.");
     }
   }
 
@@ -139,7 +147,15 @@ export default function AccountPage() {
   }
 
   async function revoke(id: string) {
-    await authFetch(`/account/sessions/${id}`, { method: "DELETE" });
+    setSessionErr("");
+    const res = await authFetch(`/account/sessions/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      // Same missing-else issue as saveProfile — a failed revoke (session
+      // already gone, network error) silently reloaded the same unchanged
+      // list with no indication anything went wrong.
+      setSessionErr(res.error ?? "Failed to revoke session.");
+      return;
+    }
     await loadSessions();
   }
 
@@ -276,6 +292,9 @@ export default function AccountPage() {
           />
           {savedMsg && (
             <p className="text-sm font-semibold text-good">{savedMsg}</p>
+          )}
+          {savedErr && (
+            <p className="text-sm font-semibold text-danger">{savedErr}</p>
           )}
           <button
             type="submit"
@@ -595,6 +614,9 @@ export default function AccountPage() {
 
         <div className={card}>
           <h2 className="text-lg font-extrabold text-text">{c.acSessions}</h2>
+          {sessionErr && (
+            <p className="text-sm font-semibold text-danger">{sessionErr}</p>
+          )}
           <div className="flex flex-col gap-3">
             {sessions.map((s) => (
               <div

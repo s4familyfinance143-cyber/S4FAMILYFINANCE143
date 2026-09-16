@@ -6,6 +6,7 @@ import {
   preferElevatedRole,
 } from "../../lib/familyRoles";
 import { CloudBackupPanel } from "./CloudBackupPanel";
+import { CategoriesPanel } from "./CategoriesPanel";
 
 function resolveSettingsGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily }) {
   const uid = String(
@@ -38,7 +39,7 @@ function resolveSettingsGlobalRole({ myPermissions, governanceMembers, currentUs
   return "";
 }
 
-const SETTINGS_TABS = ["profile", "family", "permissions", "security", "cloud"];
+const SETTINGS_TABS = ["profile", "family", "categories", "permissions", "security", "cloud"];
 
 const PERMISSION_CATEGORIES = [
   {
@@ -284,6 +285,11 @@ export function SettingsPanel({
   onDriveUpload,
   onDriveRestore,
   cloudOnlyMode = false,
+  categories = [],
+  categoriesSaving = false,
+  categoryDeletingId = "",
+  onCreateCategory,
+  onDeleteCategory,
 }) {
   const displayName = currentUser?.full_name || currentUser?.email || email || "—";
   const displayEmail = currentUser?.email || email || "—";
@@ -740,6 +746,19 @@ export function SettingsPanel({
             </div>
           ) : null}
         </div>
+      )}
+
+      {settingsTab === "categories" && (
+        <CategoriesPanel
+          t={t}
+          categories={categories}
+          loading={settingsLoading}
+          saving={categoriesSaving}
+          deletingId={categoryDeletingId}
+          canManage={isOwnerOrAdmin}
+          onCreate={onCreateCategory}
+          onDelete={onDeleteCategory}
+        />
       )}
 
       {settingsTab === "permissions" && (

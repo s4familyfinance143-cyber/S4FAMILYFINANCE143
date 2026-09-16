@@ -600,41 +600,6 @@ def test_fg_phase5b_require_permission_denied(monkeypatch):
     assert "wallet.delete" in str(exc.value.detail)
 
 
-def test_fg_phase5b_set_member_permission_not_found(monkeypatch):
-    from app.api.v1 import family_governance_hardened as fg
-
-    _mock_phase5b_inspector(monkeypatch, fg)
-    owner = {"id": "m-owner", "role": "OWNER"}
-    db = Db(execute_results=[_mapping_result(owner), _mapping_result(None)])
-    with pytest.raises(HTTPException) as exc:
-        fg.phase5b_set_member_permission(
-            family_id="f1",
-            member_id="missing",
-            permission_key="wallet.read",
-            payload=fg.Phase5BPermissionSetRequest(allow=True),
-            db=db,
-            current_user=_ns(id="u1"),
-        )
-    assert exc.value.status_code == 404
-
-
-def test_fg_phase5b_set_permission_update_existing(monkeypatch):
-    from app.api.v1 import family_governance_hardened as fg
-
-    _mock_phase5b_inspector(monkeypatch, fg)
-    monkeypatch.setattr(fg, "_phase5b_now", lambda: "2024-01-01T00:00:00")
-    db = Db(
-        execute_results=[
-            _mapping_result({"id": "p1"}),
-            MagicMock(),
-            _mapping_result({"id": "p1", "permission_key": "wallet.read", "allow": False, "scope": "FAMILY"}),
-        ]
-    )
-    row = fg._phase5b_set_permission(db, "m1", "wallet.read", allow=False, scope="FAMILY")
-    assert row["allow"] is False
-    assert db.commit_count == 1
-
-
 # ===========================================================================
 # grocery.py — remaining CRUD / expense / ocr-image paths
 # ===========================================================================
@@ -646,7 +611,6 @@ def test_grocery_create_and_list_vendors(monkeypatch):
     from app.schemas.grocery import GroceryVendorCreateRequest
 
     monkeypatch.setattr(gr, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(gr, "_dual_write_vendor", lambda *a, **k: None)
     monkeypatch.setattr(gr, "write_audit_log", lambda *a, **k: None)
     monkeypatch.setattr(gr, "publish_grocery_event", lambda *a, **k: None)
 
@@ -780,7 +744,6 @@ def test_grocery_create_item_and_list_items(monkeypatch):
     from app.schemas.grocery import GroceryItemCreateRequest
 
     monkeypatch.setattr(gr, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(gr, "_dual_write_grocery_item", lambda *a, **k: None)
     monkeypatch.setattr(gr, "write_audit_log", lambda *a, **k: None)
     monkeypatch.setattr(gr, "publish_grocery_event", lambda *a, **k: None)
 
@@ -1406,7 +1369,7 @@ def test_recurring_get_helpers_and_monthly_year_wrap():
 
     assert mod.get_category(Db(), "f1", None, "EXPENSE") is None
     assert mod.next_due_date(date(2026, 12, 15), "MONTHLY") == date(2027, 1, 15)
-    assert mod.next_due_date(date(2026, 1, 31), "YEARLY") == date(2027, 1, 28)
+    assert mod.next_due_date(date(2026, 1, 31), "YEARLY") == date(2027, 1, 31)  # January always has 31 days
 
 
 def test_recurring_create_invalid_transaction_type(monkeypatch):

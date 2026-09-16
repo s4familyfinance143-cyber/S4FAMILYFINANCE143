@@ -16,6 +16,7 @@ def test_production_rs256_requires_keys():
             DATABASE_URL="postgresql+psycopg://u:p@localhost:5432/db",
             AUTO_CREATE_TABLES=False,
             JWT_SECRET_KEY="production_secret_key_at_least_32_chars_xx",
+            FIELD_ENCRYPTION_KEY="production_field_encryption_key_placeholder",
             JWT_ALGORITHM="RS256",
             JWT_PRIVATE_KEY=None,
             JWT_PUBLIC_KEY=None,
@@ -29,8 +30,27 @@ def test_production_hs256_allowed_without_rsa():
         DATABASE_URL="postgresql+psycopg://u:p@localhost:5432/db",
         AUTO_CREATE_TABLES=False,
         JWT_SECRET_KEY="production_secret_key_at_least_32_chars_xx",
+        FIELD_ENCRYPTION_KEY="production_field_encryption_key_placeholder",
         JWT_ALGORITHM="HS256",
     )
     assert s.IS_PRODUCTION
     assert s.JWT_ALGORITHM.upper() == "HS256"
     assert s.REFRESH_COOKIE_SECURE is True
+
+
+def test_production_requires_field_encryption_key():
+    """FIELD_ENCRYPTION_KEY has no production check of its own, unlike every
+    other secret here — field_encryption.py silently falls back to deriving
+    the AES key from JWT_SECRET_KEY, which breaks key separation and means a
+    future JWT_SECRET_KEY rotation would silently make all already-encrypted
+    fields (phone numbers) permanently undecryptable."""
+    with pytest.raises((ValidationError, ValueError)):
+        Settings(
+            _env_file=None,
+            ENVIRONMENT="production",
+            DATABASE_URL="postgresql+psycopg://u:p@localhost:5432/db",
+            AUTO_CREATE_TABLES=False,
+            JWT_SECRET_KEY="production_secret_key_at_least_32_chars_xx",
+            JWT_ALGORITHM="HS256",
+            FIELD_ENCRYPTION_KEY=None,
+        )

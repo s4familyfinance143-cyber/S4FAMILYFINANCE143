@@ -73,9 +73,13 @@ export function buildJoinInvitePayload(form: JoinInviteForm) {
   };
   if (form.serial_label?.trim()) body.serial_label = form.serial_label.trim().toUpperCase();
   if (form.relationship_serial?.toString?.().trim?.()) {
-    const n = Number(form.relationship_serial);
-    if (Number.isFinite(n)) body.relationship_serial = n;
-    else if (!body.serial_label) body.relationship_serial = String(form.relationship_serial).trim();
+    // Backend's JoinInviteRequest.relationship_serial is typed str | None —
+    // Pydantic v2 rejects a JSON number for a str field outright (422), so
+    // this must always be sent as a string even though the field is numeric
+    // input (keyboardType="number-pad"). Sending a number here used to 422
+    // every join request that filled in a serial for Son/Daughter/Brother/
+    // Sister — the exact case this input exists for.
+    body.relationship_serial = String(form.relationship_serial).trim();
   }
   if (form.linked_member_id?.trim?.()) body.linked_member_id = form.linked_member_id.trim();
   if (form.relationship_note?.trim?.()) body.relationship_note = form.relationship_note.trim();

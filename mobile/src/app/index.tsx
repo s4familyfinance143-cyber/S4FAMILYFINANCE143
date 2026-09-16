@@ -8,6 +8,7 @@ import {
   apiPatch as svcPatch,
   apiPut as svcPut,
   apiDelete as svcDelete,
+  getOrCreateDeviceId,
   setApiBaseUrl,
   setAuthToken,
 } from "../services/api";
@@ -90,7 +91,6 @@ import {
   mapDomainOutboxRow,
   mapFinanceIntentToChange,
   mapGroceryRowToChanges,
-  MOBILE_SYNC_DEVICE_ID,
   pullPhase10b,
   pushPhase10bChanges,
   pushResultFailed,
@@ -591,7 +591,7 @@ export default function HomeScreen() {
     try {
       let resolution_payload: Record<string, unknown> = {
         strategy,
-        device_id: MOBILE_SYNC_DEVICE_ID,
+        device_id: await getOrCreateDeviceId(),
       };
       if (strategy === "keep_server") {
         resolution_payload.chosen = conflict.remote_payload || {};
@@ -1698,6 +1698,14 @@ export default function HomeScreen() {
       }
       await clearCloudSession();
       setCloudApiContext({ familyId: "", user: null, onAfterWrite: null });
+    } else if (refreshToken && !isOfflineAccessToken(token)) {
+      // Revoke the refresh session server-side so a leaked/cached refresh
+      // token can't still mint new access tokens after the user logs out.
+      try {
+        await svcPost("/api/v1/auth/logout", { refresh_token: refreshToken }, "");
+      } catch {
+        /* Local logout must still work if the revoke request cannot complete. */
+      }
     }
     setToken("");
     setRefreshToken("");
@@ -2014,7 +2022,7 @@ export default function HomeScreen() {
           payload.family_id,
           [change],
           tunnelHeaders(),
-          MOBILE_SYNC_DEVICE_ID
+          await getOrCreateDeviceId()
         );
         if (pushResultHasConflict(pushResult)) throw new Error("SYNC_CONFLICT");
         const failMsg = pushResultFailed(pushResult);
@@ -2163,11 +2171,9 @@ export default function HomeScreen() {
       clearInterval(intervalId);
       subscription.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, autoSyncEnabled, pendingSyncCount, loading, activeFamilyId]);
     // Foreground auto-sync intentionally follows current queue/login state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, autoSyncEnabled, pendingSyncCount, loading]);
+  }, [token, autoSyncEnabled, pendingSyncCount, loading, activeFamilyId]);
 
   const currency = families.find((family) => family.id === activeFamilyId)?.default_currency || "AED";
   const latestTransaction = transactions[0];

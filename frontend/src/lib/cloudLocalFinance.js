@@ -282,8 +282,49 @@ export function buildSavingsAnnualPlan(savings, year = new Date().getFullYear())
   };
 }
 
+function money4(value) {
+  return Math.round((Number(value) || 0) * 10000) / 10000;
+}
+
+/**
+ * Mirrors backend calc_total_interest (loan_schedule_service.py) — must stay
+ * in sync so an offline-created loan's remaining_amount matches what the
+ * server would compute once synced.
+ */
+export function calcTotalLoanInterest(principal, annualRatePercent, installmentCount, interestType) {
+  const p = money4(principal);
+  const rate = Number(annualRatePercent) || 0;
+  const n = Math.max(Math.trunc(Number(installmentCount) || 0), 0);
+  const itype = String(interestType || "NONE").toUpperCase().trim();
+
+  if (n <= 0 || rate <= 0 || itype === "NONE" || itype === "ZERO") return 0;
+
+  if (itype === "REDUCING") {
+    const principalEach = money4(p / n);
+    const monthlyRate = rate / 100 / 12;
+    let remaining = p;
+    let total = 0;
+    for (let i = 0; i < n; i += 1) {
+      total += money4(remaining * monthlyRate);
+      remaining = money4(remaining - principalEach);
+      if (remaining < 0) remaining = 0;
+    }
+    return money4(total);
+  }
+
+  const years = n / 12;
+  return money4(p * (rate / 100) * years);
+}
+
 export function buildLocalLoan({ familyId, form, currency }) {
   const principal = Number(form.principal_amount) || 0;
+  const interestRate = Number(form.interest_rate || 0);
+  const interestType = form.interest_type || "NONE";
+  const installmentCount = form.installment_count ? Number(form.installment_count) : null;
+  // remaining_amount is the payoff target applyLoanPayment() closes the loan
+  // against — it must include interest, or the loan auto-closes once the
+  // principal alone is repaid, leaving interest permanently uncollected.
+  const totalInterest = calcTotalLoanInterest(principal, interestRate, installmentCount || 0, interestType);
   const now = new Date().toISOString();
   return {
     id: newId("loan"),
@@ -292,13 +333,13 @@ export function buildLocalLoan({ familyId, form, currency }) {
     loan_type: form.loan_type || "GIVEN",
     person_name: String(form.person_name || "").trim(),
     principal_amount: principal,
-    remaining_amount: principal,
+    remaining_amount: money4(principal + totalInterest),
     paid_amount: 0,
     currency: currency || "BDT",
     note: form.note || "",
-    interest_rate: Number(form.interest_rate || 0),
-    interest_type: form.interest_type || "NONE",
-    installment_count: form.installment_count ? Number(form.installment_count) : null,
+    interest_rate: interestRate,
+    interest_type: interestType,
+    installment_count: installmentCount,
     start_date: form.start_date || null,
     status: "ACTIVE",
     created_at: now,

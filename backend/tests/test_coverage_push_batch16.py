@@ -1,4 +1,4 @@
-"""Batch-16 coverage push: missing_features_api, phase16, currency,
+"""Batch-16 coverage push: missing_features_api, currency,
 architecture_system_api, offline_sync_hardened, sync_apply, auth, main — mock-only."""
 
 from __future__ import annotations
@@ -237,8 +237,21 @@ def _p16_item(**overrides):
 # ===========================================================================
 
 
+def _split_test_account():
+    return SimpleNamespace(
+        id="a1",
+        family_id="fam-1",
+        owner_member_id="m1",
+        is_shared_family=True,
+        is_owner_wallet=False,
+        is_active=True,
+        deleted_at=None,
+    )
+
+
 def test_mf_create_split_invalid_member(monkeypatch):
     from app.api.v1 import missing_features_api as mod
+    from app.models.account import Account
     from app.models.family_member import FamilyMember
 
     monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
@@ -252,7 +265,10 @@ def test_mf_create_split_invalid_member(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         mod.create_split_expense(
             payload,
-            db=Db(query_map={FamilyMember: Query(first_row=None)}),
+            db=Db(query_map={
+                FamilyMember: Query(first_row=None),
+                Account: Query(first_row=_split_test_account()),
+            }),
             current_user=_user(),
         )
     assert exc.value.status_code == 400
@@ -261,6 +277,7 @@ def test_mf_create_split_invalid_member(monkeypatch):
 
 def test_mf_create_split_needs_amount_or_percent(monkeypatch):
     from app.api.v1 import missing_features_api as mod
+    from app.models.account import Account
     from app.models.family_member import FamilyMember
 
     monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
@@ -274,7 +291,10 @@ def test_mf_create_split_needs_amount_or_percent(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         mod.create_split_expense(
             payload,
-            db=Db(query_map={FamilyMember: Query(first_row=_member())}),
+            db=Db(query_map={
+                FamilyMember: Query(first_row=_member()),
+                Account: Query(first_row=_split_test_account()),
+            }),
             current_user=_user(),
         )
     assert "share_amount or share_percent" in str(exc.value.detail)
@@ -282,6 +302,7 @@ def test_mf_create_split_needs_amount_or_percent(monkeypatch):
 
 def test_mf_create_split_success_with_percent(monkeypatch):
     from app.api.v1 import missing_features_api as mod
+    from app.models.account import Account
     from app.models.family_member import FamilyMember
 
     monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
@@ -298,7 +319,10 @@ def test_mf_create_split_success_with_percent(monkeypatch):
             mod.SplitShareIn(member_id="m2", share_percent=Decimal("40")),
         ],
     )
-    db = Db(query_map={FamilyMember: Query(first_row=_member())})
+    db = Db(query_map={
+        FamilyMember: Query(first_row=_member()),
+        Account: Query(first_row=_split_test_account()),
+    })
     out = mod.create_split_expense(payload, db=db, current_user=_user())
     assert out["is_split"] is True
     assert out["transaction_id"] == "tx-1"
@@ -422,10 +446,18 @@ def test_mf_health_budgets_list_and_create(monkeypatch):
         notes=None,
         deleted_at=None,
     )
+    # spent_amount on the stored row (250) is a stale creation-time snapshot —
+    # list_health_budgets now recomputes it live from HealthExpense rows instead
+    # (see missing_features_api.py's _health_budget_spent fix).
+    list_expense = SimpleNamespace(year="2026", expense_date="2026-05-01", member_id=None, amount=Decimal("150"), status="ACTIVE")
     listed = mod.list_health_budgets(
-        "fam-1", year="2026", db=Db(query_map={HealthAnnualBudget: [budget]}), user=_user()
+        "fam-1",
+        year="2026",
+        db=Db(query_map={HealthAnnualBudget: [budget], HealthExpense: [list_expense]}),
+        user=_user(),
     )
-    assert listed[0]["remaining_amount"] == "750.0000"
+    assert listed[0]["spent_amount"] == "150.0000"
+    assert listed[0]["remaining_amount"] == "850.0000"
 
     expense = SimpleNamespace(year="2026", expense_date="2026-03-01", member_id=None, amount=Decimal("100"), status="ACTIVE")
     created = mod.create_health_budget(
@@ -531,171 +563,6 @@ def test_mf_upload_transaction_attachment(monkeypatch):
     )
     assert out["attachment_name"] == "bill.jpg"
     assert tx.attachment_url == "/vault/a.bin"
-
-
-# ===========================================================================
-# phase16.py
-# ===========================================================================
-
-
-def test_p16_parse_date_clean_text_and_due_soon():
-    from app.api.v1 import phase16 as p16
-
-    assert p16.clean_text("  ") is None
-    assert p16.clean_text(None, "GENERAL") == "GENERAL"
-    assert p16.clean_currency(None) == "BDT"
-    assert p16.parse_date(None) is None
-    assert p16.parse_date("bad") is None
-    assert p16.parse_date("2026-08-12") == date(2026, 8, 12)
-    soon = (date.today() + timedelta(days=3)).isoformat()
-    assert p16.is_due_soon(soon) is True
-    assert p16.is_due_soon("1999-01-01") is False
-
-
-def test_p16_get_item_not_found():
-    from app.api.v1 import phase16 as p16
-    from app.models.phase16 import Phase16Item
-
-    with pytest.raises(HTTPException) as exc:
-        p16.get_item(Db(query_map={Phase16Item: Query(first_row=None)}), "fam-1", "missing")
-    assert exc.value.status_code == 404
-
-
-def test_p16_create_item_and_summary(monkeypatch):
-    from app.api.v1 import phase16 as p16
-    from app.models.phase16 import Phase16Item
-    from app.schemas.phase16 import Phase16ItemCreateRequest
-
-    monkeypatch.setattr(p16, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(p16, "write_audit_log", lambda **k: None)
-    payload = Phase16ItemCreateRequest(
-        family_id="fam-1",
-        module_type="SUBSCRIPTION",
-        name="Netflix",
-        amount=Decimal("120"),
-        billing_cycle="YEARLY",
-        renewal_or_expiry_date="2026-12-01",
-    )
-    created = p16.create_phase16_item(payload, db=Db(), current_user=_user())
-    assert created["name"] == "Netflix"
-    assert created["module_type"] == "SUBSCRIPTION"
-
-    item = _p16_item()
-    summary = p16.phase16_summary(
-        "fam-1", db=Db(query_map={Phase16Item: [item]}), current_user=_user()
-    )
-    assert summary["total_items"] == 1
-    assert "SUBSCRIPTION" in summary["modules"]
-    assert summary["upcoming"]
-
-
-def test_p16_upcoming_list_and_vault(monkeypatch):
-    from app.api.v1 import phase16 as p16
-    from app.models.phase16 import Phase16Item
-
-    monkeypatch.setattr(p16, "require_permission", lambda *a, **k: None)
-    monkeypatch.setattr(p16, "object_storage_status", lambda: {"backend": "local"})
-    monkeypatch.setattr(p16, "ensure_s3_bucket", lambda: {"ok": True})
-    item = _p16_item()
-    upcoming = p16.phase16_upcoming("fam-1", db=Db(query_map={Phase16Item: [item]}), current_user=_user())
-    assert upcoming["items"][0]["name"] == "Netflix"
-
-    listed = p16.list_phase16_items(
-        "fam-1", module_type="subscription", db=Db(query_map={Phase16Item: [item]}), current_user=_user()
-    )
-    assert listed[0]["id"] == "p1"
-    assert p16.phase16_vault_status(_user())["backend"] == "local"
-    assert p16.phase16_vault_ensure_bucket(_user())["ok"] is True
-
-
-def test_p16_update_and_close(monkeypatch):
-    from app.api.v1 import phase16 as p16
-    from app.schemas.phase16 import Phase16ItemCloseRequest, Phase16ItemUpdateRequest
-
-    monkeypatch.setattr(p16, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(p16, "write_audit_log", lambda **k: None)
-    item = _p16_item()
-    monkeypatch.setattr(p16, "get_item", lambda db, fid, iid: item)
-    updated = p16.update_phase16_item(
-        "p1",
-        Phase16ItemUpdateRequest(
-            family_id="fam-1",
-            name="Disney+",
-            amount=Decimal("99"),
-            billing_cycle="MONTHLY",
-            renewal_or_expiry_date="2026-09-01",
-        ),
-        db=Db(),
-        current_user=_user(),
-    )
-    assert updated["name"] == "Disney+"
-    closed = p16.close_phase16_item(
-        "p1",
-        Phase16ItemCloseRequest(family_id="fam-1", reason="done"),
-        db=Db(),
-        current_user=_user(),
-    )
-    assert closed["status"] == "CLOSED"
-    assert item.status == "CLOSED"
-
-
-def test_p16_upload_rejects_non_document(monkeypatch):
-    from app.api.v1 import phase16 as p16
-
-    monkeypatch.setattr(p16, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(p16, "get_item", lambda db, fid, iid: _p16_item(module_type="SUBSCRIPTION"))
-    with pytest.raises(HTTPException) as exc:
-        _run(
-            p16.upload_phase16_document(
-                "p1",
-                family_id="fam-1",
-                file=SimpleNamespace(filename="x.pdf", content_type="application/pdf", read=AsyncMock(return_value=b"x")),
-                db=Db(),
-                current_user=_user(),
-            )
-        )
-    assert exc.value.status_code == 400
-
-
-def test_p16_upload_and_download_document(monkeypatch):
-    from app.api.v1 import phase16 as p16
-
-    monkeypatch.setattr(p16, "require_permission", lambda *a, **k: _member())
-    monkeypatch.setattr(p16, "write_audit_log", lambda **k: None)
-    item = _p16_item(module_type="DOCUMENT", file_path=None, file_name=None)
-    monkeypatch.setattr(p16, "get_item", lambda db, fid, iid: item)
-    monkeypatch.setattr(
-        p16,
-        "store_document_file",
-        lambda **k: {
-            "file_name": "pass.pdf",
-            "file_path": "/vault/pass.pdf",
-            "file_mime": "application/pdf",
-            "file_size": 12,
-            "file_sha256": "abc",
-            "file_encrypted": False,
-        },
-    )
-    out = _run(
-        p16.upload_phase16_document(
-            "p1",
-            family_id="fam-1",
-            file=SimpleNamespace(filename="pass.pdf", content_type="application/pdf", read=AsyncMock(return_value=b"pdf")),
-            db=Db(),
-            current_user=_user(),
-        )
-    )
-    assert out["has_file"] is True
-    assert item.file_name == "pass.pdf"
-
-    monkeypatch.setattr(p16, "load_document_file", lambda *a, **k: b"pdf-bytes")
-    resp = p16.download_phase16_document("p1", "fam-1", db=Db(), current_user=_user())
-    assert resp.body == b"pdf-bytes"
-
-    item.file_path = None
-    with pytest.raises(HTTPException) as exc:
-        p16.download_phase16_document("p1", "fam-1", db=Db(), current_user=_user())
-    assert exc.value.status_code == 404
 
 
 # ===========================================================================
@@ -1381,6 +1248,35 @@ def test_auth_verify_reset_logout_and_refresh(monkeypatch):
         mod.refresh_access_token(_request(), Response(), payload=None, db=Db())
     assert exc4.value.status_code == 401
     _ = User
+
+
+def test_account_deletion_clears_pending_reset_token(monkeypatch):
+    """A reset-password token issued before account deletion must not still
+    validate afterward — deactivate_and_anonymize_user used to clear the wrong
+    field (reset_password_token, an unused legacy column) instead of
+    reset_password_token_hash, the one consume_password_reset_token() actually
+    checks, leaving a pending reset request live on a deleted account."""
+    from app.services import account_deletion_service as svc
+
+    monkeypatch.setattr(svc.AuthSecurityService, "revoke_all_user_sessions", lambda *a, **k: 0)
+    monkeypatch.setattr(svc, "delete_avatar", lambda *a, **k: None)
+
+    user = _user()
+    user.reset_password_token = "legacy-unused-field"
+    user.reset_password_token_hash = "pending-reset-hash-from-before-deletion"
+    user.reset_password_expires_at = "not-none-before-deletion"
+    user.email_verification_token_hash = None
+    user.email_verification_expires_at = None
+    user.email_verified_at = None
+    user.failed_login_count = 0
+    user.locked_until = None
+    user.last_login_ip = None
+
+    svc.deactivate_and_anonymize_user(Db(), user)
+
+    assert user.reset_password_token_hash is None
+    assert user.reset_password_expires_at is None
+    assert user.is_active is False
 
 
 def test_auth_resend_and_avatar_routes(monkeypatch):

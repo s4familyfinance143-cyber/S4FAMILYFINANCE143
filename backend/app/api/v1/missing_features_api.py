@@ -26,6 +26,7 @@ from app.services.audit_service import write_audit_log
 from app.services.document_vault_service import store_document_file
 from app.services.permission_service import require_permission
 from app.services.finance_posting import post_expense_flush
+from app.api.v1.transactions import get_account_or_404, require_wallet_access
 
 router = APIRouter(tags=["Missing Features"])
 MONEY = Decimal("0.0001")
@@ -109,6 +110,12 @@ def create_split_expense(
     total = _money_d(payload.amount)
     if not payload.splits:
         raise HTTPException(400, "At least one split share is required")
+
+    # Same wallet-ownership check regular /transactions/expense enforces —
+    # without it, any member could split-expense against another member's
+    # private (non-shared) wallet.
+    account = get_account_or_404(db, payload.family_id, payload.account_id)
+    require_wallet_access(member, account)
 
     computed: list[tuple[str, Decimal, Decimal | None]] = []
     running = Decimal("0")
@@ -544,6 +551,24 @@ def vehicle_expenses_cost_per_km_by_name(
 
 
 # ---------- health annual budget ----------
+def _health_budget_spent(db: Session, family_id: str, year: str, member_id: str | None) -> Decimal:
+    expenses = (
+        db.query(HealthExpense)
+        .filter(
+            HealthExpense.family_id == family_id,
+            HealthExpense.deleted_at.is_(None),
+            HealthExpense.status == "ACTIVE",
+        )
+        .all()
+    )
+    spent = Decimal("0")
+    for e in expenses:
+        y = (e.year or (e.expense_date or "")[:4] or "")
+        if y == year and (member_id is None or e.member_id == member_id):
+            spent += _money_d(e.amount)
+    return spent
+
+
 @router.get("/health-annual-budgets")
 def list_health_budgets(family_id: str, year: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_permission(db, family_id, user.id, "report.read")
@@ -556,7 +581,12 @@ def list_health_budgets(family_id: str, year: str | None = None, db: Session = D
     rows = q.order_by(HealthAnnualBudget.year.desc()).all()
     out = []
     for r in rows:
-        remaining = _money_d(Decimal(r.budget_amount or 0) - Decimal(r.spent_amount or 0))
+        # spent_amount on the row is a snapshot taken at creation time (see
+        # create_health_budget) and is never updated as new health expenses come
+        # in — recompute live here so this doesn't silently go stale, same fix
+        # already applied to budgets.py's period-scoped spend calc this session.
+        spent = _health_budget_spent(db, r.family_id, r.year, r.member_id)
+        remaining = _money_d(Decimal(r.budget_amount or 0) - spent)
         out.append(
             {
                 "id": r.id,
@@ -564,7 +594,7 @@ def list_health_budgets(family_id: str, year: str | None = None, db: Session = D
                 "member_id": r.member_id,
                 "year": r.year,
                 "budget_amount": money(r.budget_amount),
-                "spent_amount": money(r.spent_amount),
+                "spent_amount": money(spent),
                 "remaining_amount": money(remaining),
                 "currency": r.currency,
                 "notes": r.notes,
@@ -577,21 +607,7 @@ def list_health_budgets(family_id: str, year: str | None = None, db: Session = D
 def create_health_budget(payload: HealthBudgetIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     member = require_permission(db, payload.family_id, user.id, "report.read")
     year = payload.year.strip()
-    # sync spent from existing health expenses for year
-    expenses = (
-        db.query(HealthExpense)
-        .filter(
-            HealthExpense.family_id == payload.family_id,
-            HealthExpense.deleted_at.is_(None),
-            HealthExpense.status == "ACTIVE",
-        )
-        .all()
-    )
-    spent = Decimal("0")
-    for e in expenses:
-        y = (e.year or (e.expense_date or "")[:4] or "")
-        if y == year and (payload.member_id is None or e.member_id == payload.member_id):
-            spent += _money_d(e.amount)
+    spent = _health_budget_spent(db, payload.family_id, year, payload.member_id)
 
     row = HealthAnnualBudget(
         family_id=payload.family_id,

@@ -196,10 +196,6 @@ def test_process_recurring_transactions_branches(monkeypatch):
         next_due_date = CmpCol()
         deleted_at = CmpCol()
 
-    class FakeTransaction:
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
     class FakeAuditLog:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
@@ -211,15 +207,29 @@ def test_process_recurring_transactions_branches(monkeypatch):
     monkeypatch.setattr(rs, "Account", FakeAccount)
     monkeypatch.setattr(rs, "FamilyMember", FakeFamilyMember)
     monkeypatch.setattr(rs, "RecurringTransaction", FakeRecurring)
-    monkeypatch.setattr(rs, "Transaction", FakeTransaction)
     monkeypatch.setattr(rs, "AuditLog", FakeAuditLog)
     monkeypatch.setattr(rs, "Notification", FakeNotification)
+
+    # process_recurring_transactions() now posts through accounting_service
+    # (real TransactionLine/ledger writes) instead of hand-building a bare
+    # Transaction — mock at that boundary rather than the ORM layer.
+    def fake_post_income(db, **kwargs):
+        return SimpleNamespace(id="tx-income")
+
+    def fake_post_expense(db, **kwargs):
+        if kwargs.get("description") == "BOOM_MARKER":
+            raise RuntimeError("explode")
+        return SimpleNamespace(id="tx-expense")
+
+    monkeypatch.setattr(rs.accounting_service, "post_income", fake_post_income)
+    monkeypatch.setattr(rs.accounting_service, "post_expense", fake_post_expense)
 
     due = SimpleNamespace(
         id="r1",
         family_id="fam",
         account_id="a1",
         title="Rent",
+        description="Rent",
         amount="100",
         currency="BDT",
         transaction_type="EXPENSE",
@@ -233,6 +243,7 @@ def test_process_recurring_transactions_branches(monkeypatch):
         family_id="fam",
         account_id="a2",
         title="Pay",
+        description="Pay",
         amount="50",
         currency="BDT",
         transaction_type="INCOME",
@@ -246,6 +257,7 @@ def test_process_recurring_transactions_branches(monkeypatch):
         family_id="fam",
         account_id="a3",
         title="X",
+        description="X",
         amount="10",
         currency="BDT",
         transaction_type="EXPENSE",
@@ -259,6 +271,7 @@ def test_process_recurring_transactions_branches(monkeypatch):
         family_id="fam",
         account_id="a4",
         title="Big",
+        description="Big",
         amount="999",
         currency="BDT",
         transaction_type="EXPENSE",
@@ -272,6 +285,7 @@ def test_process_recurring_transactions_branches(monkeypatch):
         family_id="fam",
         account_id="a5",
         title="Boom",
+        description="BOOM_MARKER",
         amount="1",
         currency="BDT",
         transaction_type="EXPENSE",
@@ -302,14 +316,6 @@ def test_process_recurring_transactions_branches(monkeypatch):
     pdb = ProcessDb()
     pdb._acct_queue = [accounts["a1"], accounts["a2"], accounts["a3"], accounts["a4"], accounts["a5"]]
 
-    def boom_add(row):
-        if isinstance(row, FakeTransaction) and getattr(row, "description", "").startswith(
-            "Auto recurring: Boom"
-        ):
-            raise RuntimeError("explode")
-        pdb.added.append(row)
-
-    pdb.add = boom_add  # type: ignore[method-assign]
     monkeypatch.setattr(rs, "SessionLocal", lambda: pdb)
     rs.process_recurring_transactions()
     assert pdb.closed is True
@@ -616,28 +622,37 @@ def test_permissions_api_helpers_and_routes(monkeypatch):
     ov = SimpleNamespace(id="o1", permission_key="wallet.read", allow=True, scope="FAMILY")
     assert p.serialize_override(ov)["permission_key"] == "wallet.read"
 
+    # effective_permissions_for_member now delegates the effective-set computation
+    # to permission_service.effective_permission_keys(), which does its own
+    # deferred `from app.models.member_permission import MemberPermission` — that
+    # resolves to the real model class, not this test's FakeMemberPermission, so
+    # the query_map below must be keyed on the real class for these two calls.
+    from app.models.member_permission import MemberPermission as RealMemberPermission
+
     owner = SimpleNamespace(id="o", user_id="u", role="OWNER", relationship_display_label=None)
     overrides = [
         SimpleNamespace(id="1", permission_key="wallet.read", allow=True, scope="FAMILY"),
         SimpleNamespace(id="2", permission_key="audit.read", allow=False, scope="FAMILY"),
     ]
-    odb = Db(query_map={FakeMemberPermission: Query(rows=overrides)})
+    odb = Db(query_map={FakeMemberPermission: Query(rows=overrides), RealMemberPermission: Query(rows=overrides)})
     data = p.effective_permissions_for_member(odb, owner)
-    assert "wallet.read" in data["effective_permissions"] or "base_permissions" in data
+    assert "wallet.read" in data["effective_permissions"]
+    assert "audit.read" in data["effective_permissions"]  # OWNER: denies don't apply
 
     memb = SimpleNamespace(id="m", user_id="u", role="MEMBER", relationship_display_label="X")
+    member_overrides = [
+        SimpleNamespace(id="1", permission_key="wallet.read", allow=True, scope="FAMILY"),
+        SimpleNamespace(id="2", permission_key="member.invite", allow=True, scope="FAMILY"),
+    ]
     mdb = Db(
         query_map={
-            FakeMemberPermission: Query(
-                rows=[
-                    SimpleNamespace(id="1", permission_key="wallet.read", allow=True, scope="FAMILY"),
-                    SimpleNamespace(id="2", permission_key="member.invite", allow=True, scope="FAMILY"),
-                ]
-            )
+            FakeMemberPermission: Query(rows=member_overrides),
+            RealMemberPermission: Query(rows=member_overrides),
         }
     )
     edata = p.effective_permissions_for_member(mdb, memb)
-    assert "member.invite" not in edata["effective_permissions"]
+    assert "member.invite" not in edata["effective_permissions"]  # protected, even via override
+    assert "wallet.read" in edata["effective_permissions"]
 
     monkeypatch.setattr(p, "get_active_member", lambda *a, **k: None)
     with pytest.raises(HTTPException) as exc:
@@ -697,61 +712,6 @@ def test_permissions_api_helpers_and_routes(monkeypatch):
     out2 = p.update_member_permission("t2", payload, new_db, SimpleNamespace(id="u"))
     assert out2["success"] is True
     assert new_db.commit_count == 1
-
-
-def test_audit_logs_helpers_and_routes(monkeypatch):
-    from app.api.v1 import audit_logs as al
-
-    class FakeAuditLog:
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-            self.id = kwargs.get("id", "1")
-
-        action_type = MagicMock()
-        entity_type = MagicMock()
-        severity = MagicMock()
-        family_id = MagicMock()
-        entity_id = MagicMock()
-        deleted_at = MagicMock()
-        created_at = MagicMock()
-
-    monkeypatch.setattr(al, "AuditLog", FakeAuditLog)
-
-    item = SimpleNamespace(
-        id="1",
-        family_id="fam",
-        member_id="m",
-        action_type="CREATE",
-        entity_type="WALLET",
-        entity_id="w",
-        title="t",
-        description="d",
-        severity="INFO",
-        ip_address="127.0.0.1",
-        user_agent="ua",
-        created_at=datetime.now(timezone.utc),
-    )
-    assert al.serialize_audit_log(item)["id"] == "1"
-
-    db = Db()
-    written = al.write_audit_log(db, "fam", "m", "create", "wallet", "w", "Title", "desc", "info")
-    assert written.action_type == "CREATE"
-    assert db.commit_count == 1
-
-    monkeypatch.setattr(al, "require_permission", lambda **k: None)
-    logs = [item, SimpleNamespace(**{**item.__dict__, "action_type": "UPDATE", "entity_type": "GOAL", "severity": "WARN"})]
-    list_db = Db(query_map={FakeAuditLog: Query(rows=logs)})
-    listed = al.list_audit_logs("fam", 10, 0, "create", "wallet", "info", list_db, SimpleNamespace(id="u"))
-    assert isinstance(listed, list)
-
-    by_entity = al.audit_by_entity(
-        "fam", "wallet", "w", Db(query_map={FakeAuditLog: Query(rows=[item])}), SimpleNamespace(id="u")
-    )
-    assert by_entity[0]["entity_type"] == "WALLET"
-
-    summary = al.audit_summary("fam", Db(query_map={FakeAuditLog: Query(rows=logs)}), SimpleNamespace(id="u"))
-    assert summary["total_logs"] == 2
-    assert "CREATE" in summary["by_action"] or "UPDATE" in summary["by_action"]
 
 
 def test_accounts_and_currency_helpers(monkeypatch):
@@ -1021,49 +981,8 @@ def test_categories_helpers_and_seed(monkeypatch):
             self.__dict__.update(kwargs)
             self.id = kwargs.get("id")
 
-    class FakeExpenseCategory:
-        legacy_category_id = MagicMock()
-        deleted_at = MagicMock()
-
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
-    class FakeIncomeCategory:
-        legacy_category_id = MagicMock()
-        deleted_at = MagicMock()
-
-        def __init__(self, **kwargs):
-            self.__dict__.update(kwargs)
-
     monkeypatch.setattr(cat, "FamilyMember", FakeFamilyMember)
     monkeypatch.setattr(cat, "Category", FakeCategory)
-    monkeypatch.setattr(cat, "ExpenseCategory", FakeExpenseCategory)
-    monkeypatch.setattr(cat, "IncomeCategory", FakeIncomeCategory)
-
-    expense = SimpleNamespace(
-        id="c1",
-        family_id="fam",
-        name_en="Food",
-        name_bn="খাবার",
-        category_type="EXPENSE",
-        icon="food",
-        color="#f00",
-        is_system=True,
-        is_active=True,
-        parent_id=None,
-    )
-    existing_db = Db(query_map={FakeExpenseCategory: Query(first_row=SimpleNamespace(id="e1"))})
-    cat._dual_write_category(existing_db, expense)
-    assert existing_db.added == []
-
-    new_db = Db(query_map={FakeExpenseCategory: Query(first_row=None)})
-    cat._dual_write_category(new_db, expense)
-    assert len(new_db.added) == 1
-
-    income = SimpleNamespace(**{**expense.__dict__, "category_type": "INCOME", "id": "c2"})
-    inc_db = Db(query_map={FakeIncomeCategory: Query(first_row=None)})
-    cat._dual_write_category(inc_db, income)
-    assert len(inc_db.added) == 1
 
     member = SimpleNamespace(id="m", role="OWNER")
     assert (
@@ -1091,7 +1010,6 @@ def test_categories_helpers_and_seed(monkeypatch):
                 if getattr(row, "id", None) is None:
                     row.id = "new-cat"
 
-    monkeypatch.setattr(cat, "_dual_write_category", lambda db, c: None)
     result = cat.seed_default_categories("fam", SeedCatDb(), SimpleNamespace(id="u"))
     assert result["created"] >= 1
 
@@ -1504,7 +1422,7 @@ def test_budgets_and_recurring_helpers():
             )
         }
     )
-    assert b.calculate_spent(spent_db, "fam", "c") == Decimal("15")
+    assert b.calculate_spent(spent_db, "fam", "c", "MONTHLY") == Decimal("15")
 
     summary = b.budget_status_summary(
         [
@@ -1576,159 +1494,12 @@ def test_budgets_and_recurring_helpers():
     assert rec.get_recurring(Db(got={"r1": item}), "r1") is item
     assert rec.next_due_date(date(2024, 1, 1), "DAILY") == date(2024, 1, 2)
     assert rec.next_due_date(date(2024, 1, 1), "WEEKLY") == date(2024, 1, 8)
-    assert rec.next_due_date(date(2024, 1, 31), "MONTHLY") == date(2024, 2, 28)
+    assert rec.next_due_date(date(2024, 1, 31), "MONTHLY") == date(2024, 2, 29)  # 2024 is a leap year
     assert rec.next_due_date(date(2024, 12, 31), "MONTHLY").month == 1
     assert rec.next_due_date(date(2024, 2, 29), "YEARLY") == date(2025, 2, 28)
     with pytest.raises(HTTPException):
         rec.next_due_date(date.today(), "HOURLY")
     assert rec.serialize_recurring(item)["title"] == "Rent"
-
-
-# ---------------------------------------------------------------------------
-# phase15 / phase16 / notifications / architecture_system / accounts wallets
-# ---------------------------------------------------------------------------
-
-
-def test_phase15_phase16_helpers():
-    from app.api.v1 import phase15 as p15
-    from app.api.v1 import phase16 as p16
-    from app.models.family_member import FamilyMember
-
-    assert p15.money("1") == "1.0000"
-    assert p15.clean_module("investment") == "INVESTMENT"
-    with pytest.raises(HTTPException):
-        p15.clean_module("NOPE")
-    assert p15.clean_text("  ") is None
-    assert p15.clean_currency(None) == "BDT"
-    assert p15.parse_date(None) is None
-    assert p15.parse_date("bad") is None
-    assert p15.parse_date("2024-05-01") == date(2024, 5, 1)
-    soon = (date.today() + timedelta(days=5)).isoformat()
-    assert p15.is_due_soon(soon) is True
-    assert p15.is_due_soon("1999-01-01") is False
-    assert p15.ensure_member(Db(), "fam", None) is None
-    with pytest.raises(HTTPException):
-        p15.ensure_member(Db(query_map={FamilyMember: Query(first_row=None)}), "fam", "m")
-    assert p15.ensure_member(Db(query_map={FamilyMember: Query(first_row=SimpleNamespace(id="m"))}), "fam", "m") == "m"
-
-    with pytest.raises(HTTPException):
-        p15.validate_phase15_payload("INVESTMENT", SimpleNamespace(sub_type=None, member_id=None), is_create=True)
-    with pytest.raises(HTTPException):
-        p15.validate_phase15_payload("HEALTH", SimpleNamespace(sub_type="x", member_id=None), is_create=True)
-    p15.validate_phase15_payload("VEHICLE", SimpleNamespace(sub_type=None, member_id=None), is_create=True)
-
-    item = SimpleNamespace()
-    payload = SimpleNamespace(
-        name="Car",
-        category=None,
-        sub_type="SUV",
-        provider="Toyota",
-        member_id=None,
-        amount=Decimal("1"),
-        secondary_amount=None,
-        target_date="2024-01-01",
-        secondary_date=None,
-        note="n",
-    )
-    p15.apply_phase15_fields(item, payload, Db(), "fam")
-    assert item.name == "Car"
-    filled = SimpleNamespace(
-        id="i1",
-        family_id="fam",
-        module_type="VEHICLE",
-        name="Car",
-        category="GENERAL",
-        sub_type="SUV",
-        provider="Toyota",
-        member_id=None,
-        amount=Decimal("1"),
-        secondary_amount=None,
-        currency="BDT",
-        target_date=soon,
-        secondary_date=None,
-        status="ACTIVE",
-        note=None,
-        created_at=None,
-    )
-    assert p15.item_response(filled)["name"] == "Car"
-    rows = [filled, SimpleNamespace(**{**filled.__dict__, "module_type": "HEALTH", "status": "CLOSED"})]
-    assert len(p15.module_summary_rows(rows, "VEHICLE")) == 1
-    summary = p15.build_module_summary(rows)
-    assert "VEHICLE" in summary
-    upcoming = p15.build_upcoming(rows)
-    assert upcoming and upcoming[0]["id"] == "i1"
-    with pytest.raises(HTTPException):
-        p15.get_item(Db(query_map={}), "fam", "missing")
-
-    from app.models.phase15 import Phase15Item
-
-    assert p15.get_item(Db(query_map={Phase15Item: Query(first_row=filled)}), "fam", "i1") is filled
-
-    assert p16.clean_module("subscription") == "SUBSCRIPTION"
-    with pytest.raises(HTTPException):
-        p16.clean_module("X")
-    assert p16.clean_billing_cycle(None) is None
-    assert p16.clean_billing_cycle("monthly") == "MONTHLY"
-    with pytest.raises(HTTPException):
-        p16.clean_billing_cycle("weekly")
-    with pytest.raises(HTTPException):
-        p16.validate_phase16_payload("SUBSCRIPTION", SimpleNamespace(billing_cycle=None, renewal_or_expiry_date=None, sub_type=None))
-    with pytest.raises(HTTPException):
-        p16.validate_phase16_payload(
-            "SUBSCRIPTION",
-            SimpleNamespace(billing_cycle="MONTHLY", renewal_or_expiry_date=None, sub_type=None),
-        )
-    with pytest.raises(HTTPException):
-        p16.validate_phase16_payload(
-            "DOCUMENT",
-            SimpleNamespace(billing_cycle=None, renewal_or_expiry_date=None, sub_type=None),
-        )
-    with pytest.raises(HTTPException):
-        p16.validate_phase16_payload(
-            "DOCUMENT",
-            SimpleNamespace(billing_cycle=None, renewal_or_expiry_date="2024-01-01", sub_type=None),
-        )
-    with pytest.raises(HTTPException):
-        p16.validate_phase16_payload("PROPERTY", SimpleNamespace(billing_cycle=None, renewal_or_expiry_date=None, sub_type=None))
-    p16.validate_phase16_payload(
-        "PROPERTY",
-        SimpleNamespace(billing_cycle=None, renewal_or_expiry_date=None, sub_type="LAND"),
-    )
-
-    p16_item = SimpleNamespace(amount=Decimal("120"), billing_cycle="YEARLY")
-    assert p16.monthly_subscription_amount(p16_item) == Decimal("10")
-    assert p16.monthly_subscription_amount(SimpleNamespace(amount=Decimal("10"), billing_cycle="MONTHLY")) == Decimal("10")
-
-    p16_obj = SimpleNamespace(
-        id="p1",
-        family_id="fam",
-        module_type="SUBSCRIPTION",
-        name="Netflix",
-        category="GENERAL",
-        sub_type=None,
-        provider="NF",
-        member_id=None,
-        amount=Decimal("120"),
-        secondary_amount=None,
-        currency="BDT",
-        renewal_or_expiry_date=soon,
-        secondary_date=None,
-        billing_cycle="YEARLY",
-        payment_account_id=None,
-        reference=None,
-        status="ACTIVE",
-        note=None,
-        created_at=None,
-        file_name=None,
-        file_mime=None,
-        file_size=None,
-        file_sha256=None,
-        file_encrypted=False,
-        file_path=None,
-    )
-    assert p16.item_response(p16_obj)["has_file"] is False
-    assert p16.build_module_summary([p16_obj])["SUBSCRIPTION"]["monthly_cost_total"] == "10.0000"
-    assert p16.build_upcoming([p16_obj])
 
 
 def test_notifications_and_architecture_helpers(monkeypatch):
@@ -1790,78 +1561,3 @@ def test_notifications_and_architecture_helpers(monkeypatch):
 
     monkeypatch.setattr(n, "fcm_status", lambda: {"configured": False})
     assert n.notification_fcm_status(SimpleNamespace(id="u"))["configured"] is False
-
-
-def test_accounts_wallets_hardened_pure_helpers():
-    from app.api.v1 import accounts_wallets_hardened as aw
-
-    assert isinstance(aw._phase6b_now(), str)
-    assert aw._phase6b_to_decimal(None) == "0"
-    assert aw._phase6b_to_decimal("") == "0"
-    assert aw._phase6b_to_decimal("1.5") == "1.5"
-
-    row = {
-        "amt": Decimal("1.2"),
-        "ts": datetime(2024, 1, 2, 3, 4, 5),
-        "name": "Cash",
-        "uid": SimpleNamespace(),
-    }
-    # UUID-like typename simulation
-    class FakeUUID:
-        pass
-
-    FakeUUID.__name__ = "UUID"
-    row["uid"] = FakeUUID()
-    out = aw._phase6b_jsonable(row)
-    assert out["amt"] == "1.2"
-    assert "2024-01-02" in out["ts"]
-
-    cols = ["id", "family_id", "account_type", "name", "opening_balance", "current_balance", "description", "status", "created_by_member_id", "user_id"]
-    assert aw._phase6b_pick(cols, ["missing", "name"]) == "name"
-    assert aw._phase6b_type_col(cols) == "account_type"
-    assert aw._phase6b_name_col(cols) == "name"
-    assert "opening_balance" in aw._phase6b_balance_cols(cols)
-    assert aw._phase6b_description_col(cols) == "description"
-    assert aw._phase6b_status_col(cols) == "status"
-    assert aw._phase6b_created_member_col(cols) == "created_by_member_id"
-    assert aw._phase6b_created_user_col(cols) == "user_id"
-    assert "BOOL" in aw._phase6b_col_type_name({"type": "BOOLEAN"}) or aw._phase6b_col_type_name({"type": "BOOLEAN"}) == "BOOLEAN"
-
-    assert aw._phase6b_required_default({"name": "created_at", "type": "DATETIME"}, "WALLET")
-    assert aw._phase6b_required_default({"name": "is_active", "type": "BOOLEAN"}, "WALLET") is False
-    assert aw._phase6b_required_default({"name": "count", "type": "INTEGER"}, "WALLET") == 0
-    assert aw._phase6b_required_default({"name": "balance", "type": "NUMERIC"}, "WALLET") == 0
-    assert aw._phase6b_required_default({"name": "status", "type": "TEXT"}, "WALLET") == "ACTIVE"
-    assert aw._phase6b_required_default({"name": "account_type", "type": "TEXT"}, "WALLET") == "WALLET"
-    assert "WAL" in aw._phase6b_required_default({"name": "code", "type": "TEXT"}, "WALLET")
-    assert "wallet-" in aw._phase6b_required_default({"name": "slug", "type": "TEXT"}, "WALLET")
-    assert aw._phase6b_required_default({"name": "note", "type": "TEXT"}, "WALLET") == ""
-
-    assert "family_id" in aw._phase6b_base_where(cols)
-    assert aw._phase6b_kind_filter(cols, "WALLET")
-    assert aw._phase6b_kind_filter(["id", "family_id"], "ACCOUNT") == ""
-
-    with pytest.raises(HTTPException):
-        aw._phase6b_require_accounts_table(MagicMock())
-
-    # table exists path
-    bind = MagicMock()
-    inspector = MagicMock()
-    inspector.get_table_names.return_value = ["accounts"]
-    inspector.get_columns.return_value = [{"name": "id"}, {"name": "family_id"}, {"name": "name"}]
-    db = MagicMock()
-    db.get_bind.return_value = bind
-    with patch("app.api.v1.accounts_wallets_hardened.inspect", return_value=inspector):
-        names = aw._phase6b_require_accounts_table(db)
-        assert "id" in names
-
-    inspector2 = MagicMock()
-    inspector2.get_table_names.return_value = ["accounts"]
-    inspector2.get_columns.return_value = [{"name": "id"}]
-    with patch("app.api.v1.accounts_wallets_hardened.inspect", return_value=inspector2):
-        with pytest.raises(HTTPException):
-            aw._phase6b_require_accounts_table(db)
-
-    with pytest.raises(HTTPException):
-        aw._phase6b_assert_kind({"account_type": "CASH"}, ["account_type"], "WALLET")
-    aw._phase6b_assert_kind({"account_type": "WALLET"}, ["account_type"], "WALLET")

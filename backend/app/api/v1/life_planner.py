@@ -441,8 +441,14 @@ def accept_ownership_transfer(
         raise HTTPException(404, "Transfer not ready — waiting for second Admin approval then target accept")
     if row.to_member_id != member.id:
         raise HTTPException(403, "Only the target member can accept")
-    if not row.admin_approved_by_member_id:
-        raise HTTPException(409, "Second admin approval required first")
+    # Do NOT also require admin_approved_by_member_id here: the query above
+    # already restricts to status == PENDING_ACCEPT, which a transfer only
+    # reaches via one of two paths — admin_approve_ownership_transfer having
+    # set admin_approved_by_member_id, OR create_ownership_transfer skipping
+    # straight here because the family had no admin at all (by design, see
+    # its docstring comment). In that second case admin_approved_by_member_id
+    # is legitimately None forever, so requiring it here made every transfer
+    # from an admin-less family permanently unacceptable.
     from_member = db.query(FamilyMember).filter(FamilyMember.id == row.from_member_id).first()
     to_member = db.query(FamilyMember).filter(FamilyMember.id == row.to_member_id).first()
     if not from_member or not to_member:

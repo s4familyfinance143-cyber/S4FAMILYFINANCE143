@@ -97,7 +97,12 @@ export default function AdminLoginPage() {
         body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
-        setError(c.error);
+        // The route returns a specific message for rate-limiting (429, "Too
+        // many login attempts...") distinct from wrong credentials (401) —
+        // this used to always show the generic credentials error either way,
+        // so a locked-out admin had no way to know to just wait.
+        const data = await res.json().catch(() => null);
+        setError((typeof data?.error === "string" && data.error) || c.error);
         return;
       }
       const next =

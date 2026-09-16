@@ -103,7 +103,7 @@ export function MobileReportsPanel({
     try {
       if (tab === "OVERVIEW") {
         const [fin, wal, cash] = await Promise.all([
-          apiGet(`/families/${familyId}/reports/financial-summary`, token),
+          apiGet(`/api/v1/families/${familyId}/reports/financial-summary`, token),
           apiGet(`/api/v1/reports/wallets/${familyId}`, token),
           apiGet(`/api/v1/reports/cashflow/${familyId}`, token),
         ]);

@@ -8,24 +8,40 @@ from typing import Any
 from app.core.config import settings
 
 _client = None
+_last_failure_at: float = 0.0
+_RETRY_COOLDOWN_SECONDS = 10.0
 _memory: dict[str, tuple[float, str]] = {}
 
 
 def _redis():
-    global _client
+    global _client, _last_failure_at
+    import time
+
     url = (settings.REDIS_URL or "").strip()
     if not url:
         return None
     if _client is not None:
         return _client
+    # A cached failure used to be permanent (_client stayed falsy forever,
+    # never retried) — any transient Redis blip at startup or a brief
+    # network hiccup would silently and permanently pin this process to the
+    # in-memory fallback for its whole lifetime. That's a real problem for
+    # OTP codes (otp_service.py) and JWT blacklist/sessions
+    # (redis_session.py): with multiple workers/replicas behind the nginx
+    # upstream, a worker stuck on memory-only storage would reject valid
+    # OTPs or fail to see tokens blacklisted by other workers. Retry after a
+    # short cooldown instead of caching the failure forever.
+    if time.time() - _last_failure_at < _RETRY_COOLDOWN_SECONDS:
+        return None
     try:
         import redis
 
-        _client = redis.Redis.from_url(url, decode_responses=True)
-        _client.ping()
+        client = redis.Redis.from_url(url, decode_responses=True)
+        client.ping()
+        _client = client
         return _client
     except Exception:
-        _client = False  # type: ignore
+        _last_failure_at = time.time()
         return None
 
 

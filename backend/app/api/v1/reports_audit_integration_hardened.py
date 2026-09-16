@@ -460,6 +460,7 @@ def phase8b_wallet_summary(
     is_owner_wallet = _phase8b_first(account_cols, ["is_owner_wallet"])
     is_shared_family = _phase8b_first(account_cols, ["is_shared_family"])
     is_active = _phase8b_first(account_cols, ["is_active"])
+    is_system = _phase8b_first(account_cols, ["is_system"])
 
     if not account_pk:
         raise HTTPException(status_code=500, detail="Account id column missing")
@@ -468,6 +469,11 @@ def phase8b_wallet_summary(
     wallet_filters = []
 
     if account_type:
+        # No real account_type value (CASH/BANK/BKASH/...) ever contains the
+        # substring "WALLET" — this clause never matches anything on its
+        # own. It's kept only as a defensive OR in case a future account
+        # type literally uses that word; is_owner_wallet/is_shared_family
+        # below are the real signals.
         wallet_filters.append(f"UPPER(CAST({_phase8b_q(account_type)} AS TEXT)) LIKE '%WALLET%'")
     if is_owner_wallet:
         wallet_filters.append(f"({_phase8b_q(is_owner_wallet)} = 1 OR {_phase8b_q(is_owner_wallet)} = true)")
@@ -479,6 +485,14 @@ def phase8b_wallet_summary(
 
     if is_active:
         filters.append(f"({_phase8b_q(is_active)} IS NULL OR {_phase8b_q(is_active)} = 1 OR {_phase8b_q(is_active)} = true)")
+
+    if is_system:
+        # System Chart-of-Accounts rows (Salary Income, General Expense,
+        # Loan Payable, ...) are created with is_shared_family=True — the
+        # OR clause above would otherwise count them as spendable wallets
+        # and inflate total_current_balance. Matches accounts.py's
+        # is_spend_wallet(): real wallets always have is_system falsy.
+        filters.append(f"({_phase8b_q(is_system)} IS NULL OR {_phase8b_q(is_system)} = 0 OR {_phase8b_q(is_system)} = false)")
 
     where_sql = " AND ".join(filters)
 

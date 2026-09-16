@@ -307,8 +307,13 @@ def test_redis_client_connect_and_fail(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "redis", FakeMod)
     redis_cache._client = None
+    redis_cache._last_failure_at = 0.0
     assert redis_cache._redis() is None
-    assert redis_cache._client is False
+    # A failed connection used to be cached forever (_client pinned to False,
+    # never retried — see test_redis_cache_retries_after_cooldown_not_forever
+    # in test_coverage_push_batch6.py for the fixed retry behavior). _client
+    # now stays None and only the failure timestamp is recorded.
+    assert redis_cache._client is None
 
     class Client:
         def ping(self):
@@ -322,6 +327,10 @@ def test_redis_client_connect_and_fail(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "redis", GoodMod)
     redis_cache._client = None
+    # Bypass the retry cooldown left over from the FakeMod failure above —
+    # without this, _redis() would correctly refuse to retry yet (by design)
+    # and this assertion would fail for an unrelated reason.
+    redis_cache._last_failure_at = 0.0
     assert redis_cache._redis() is not None
     assert redis_cache._redis() is not None
     redis_cache._client = None
@@ -1044,17 +1053,8 @@ def test_finance_posting_name_and_client_request_edges(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_architecture_bridge_preference_push_and_mirrors():
+def test_architecture_bridge_preference_and_push():
     from app.models.architecture_auth import PushToken, UserPreference
-    from app.models.architecture_modules import (
-        Document,
-        HealthExpense,
-        Investment,
-        Property,
-        Subscription,
-        VehicleExpense,
-    )
-    from app.models.architecture_modules import EducationFund
 
     user = SimpleNamespace(id="u", preferred_language="en")
     db = Db({UserPreference: None})
@@ -1062,10 +1062,6 @@ def test_architecture_bridge_preference_push_and_mirrors():
     assert pref.language == "en" and pref in db.added
     existing_pref = SimpleNamespace(id="p")
     assert bridge.ensure_user_preference(Db({UserPreference: existing_pref}), user) is existing_pref
-
-    assert bridge._dec("12.5") == Decimal("12.5")
-    assert bridge._dec("bad") == Decimal("0")
-    assert bridge._dec(None) == Decimal("0")
 
     device = SimpleNamespace(
         id="pd",
@@ -1084,104 +1080,6 @@ def test_architecture_bridge_preference_push_and_mirrors():
     )
     bridge.mirror_push_device(Db({PushToken: existing_token}), device)
     assert existing_token.fcm_token == "tok"
-
-    item15 = SimpleNamespace(
-        id="p15",
-        family_id="f",
-        created_by_member_id="m",
-        member_id="m",
-        module_type="INVESTMENT",
-        sub_type="STOCK",
-        category=None,
-        name="Shares",
-        amount=100,
-        secondary_amount=5,
-        secondary_date="2025-01-01",
-        target_date="2026-01-01",
-        currency="BDT",
-        status="ACTIVE",
-        note="n",
-        deleted_at=None,
-        provider=None,
-    )
-    db_inv = Db({Investment: None})
-    bridge.mirror_phase15_item(db_inv, item15)
-    assert db_inv.added[0].name == "Shares"
-
-    item15.module_type = "HEALTH"
-    item15.provider = "Dr"
-    db_h = Db({HealthExpense: None})
-    bridge.mirror_phase15_item(db_h, item15)
-    assert db_h.added[0].doctor == "Dr"
-
-    item15.module_type = "VEHICLE"
-    db_v = Db({VehicleExpense: None})
-    bridge.mirror_phase15_item(db_v, item15)
-    assert db_v.added[0].vehicle_name == "Shares"
-
-    item15.module_type = "EDUCATION"
-    db_e = Db({EducationFund: None})
-    bridge.mirror_phase15_item(db_e, item15)
-    assert db_e.added[0].provider is None or True
-
-    item16 = SimpleNamespace(
-        id="p16",
-        family_id="f",
-        created_by_member_id="m",
-        member_id="m",
-        module_type="PROPERTY",
-        sub_type="HOME",
-        category=None,
-        name="Flat",
-        amount=1000,
-        secondary_amount=10,
-        provider="Dhaka",
-        reference="1200sqft",
-        currency="BDT",
-        status="ACTIVE",
-        note="n",
-        deleted_at=None,
-        billing_cycle="YEARLY",
-        renewal_or_expiry_date="2027-01-01",
-        payment_account_id=None,
-        file_path="/f",
-        file_encrypted=True,
-        file_name="a.pdf",
-        file_mime="application/pdf",
-        file_size=10,
-        file_sha256="abc",
-    )
-    db_p = Db({Property: None})
-    bridge.mirror_phase16_item(db_p, item16)
-    assert db_p.added[0].location == "Dhaka"
-
-    item16.module_type = "SUBSCRIPTION"
-    db_s = Db({Subscription: None})
-    bridge.mirror_phase16_item(db_s, item16)
-    assert db_s.added[0].cycle == "YEARLY"
-
-    item16.module_type = "DOCUMENT"
-    db_d = Db({Document: None})
-    bridge.mirror_phase16_item(db_d, item16)
-    assert db_d.added[0].encrypted is True
-
-    # update existing rows
-    existing_inv = SimpleNamespace(
-        member_id=None,
-        type=None,
-        name=None,
-        principal=None,
-        rate=None,
-        start_date=None,
-        maturity=None,
-        currency=None,
-        status=None,
-        note=None,
-        deleted_at=None,
-    )
-    item15.module_type = "INVESTMENT"
-    bridge.mirror_phase15_item(Db({Investment: existing_inv}), item15)
-    assert existing_inv.name == "Shares"
 
 
 # ---------------------------------------------------------------------------

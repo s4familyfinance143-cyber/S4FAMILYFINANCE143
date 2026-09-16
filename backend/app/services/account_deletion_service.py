@@ -39,6 +39,15 @@ def deactivate_and_anonymize_user(db: Session, user: User) -> dict:
     user.is_phone_verified = False
     user.password_hash = hash_password(secrets.token_urlsafe(48))
     user.reset_password_token = None
+    # reset_password_token_hash (not reset_password_token, a separate unused legacy
+    # field) is what consume_password_reset_token() actually matches on. Leaving it
+    # set here while clearing reset_password_expires_at made a pending reset token
+    # issued before deletion look "never expired" (the expiry check is skipped when
+    # expires_at is falsy) — the token would still validate and let a holder of the
+    # old raw token reset the password on this now-deactivated, anonymized account.
+    # Not exploitable for takeover (login still blocked on is_active), but it's a
+    # gap in the deletion — a reset token issued before deletion should die with it.
+    user.reset_password_token_hash = None
     user.reset_password_expires_at = None
     user.email_verification_token_hash = None
     user.email_verification_expires_at = None

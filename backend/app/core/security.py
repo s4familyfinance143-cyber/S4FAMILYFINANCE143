@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -139,6 +138,3 @@ def decode_token(token: str) -> dict[str, Any]:
         algorithms=[settings.JWT_ALGORITHM],
         options={"verify_aud": False},
     )
-
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")

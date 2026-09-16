@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.services import accounting_service
-from app.services.permission_service import require_permission
+from app.services.permission_service import require_owner_or_admin, require_permission
 
 router = APIRouter(prefix="/accounting", tags=["Double-Entry Accounting"])
 
@@ -44,11 +44,19 @@ def create_transaction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = require_permission(
+    # This is a raw double-entry posting tool: unlike /transactions/expense,
+    # /income, /transfer it takes caller-supplied account_id/debit/credit lines
+    # directly and has none of their wallet-ownership (can_use_wallet) or
+    # balance-sufficiency checks. "transaction.create" is held by plain MEMBER
+    # role, which would let a regular member move money in/out of ANY wallet
+    # in the family (including ones they don't own and aren't shared) via a
+    # crafted journal line. Every other power endpoint in this file already
+    # requires owner/admin (rollback needs "transaction.delete", repair-legacy
+    # needs "transaction.update" — both OWNER/ADMIN-only); this one didn't.
+    member = require_owner_or_admin(
         db=db,
         family_id=payload.family_id,
         user_id=current_user.id,
-        permission="transaction.create",
     )
     lines = [line.model_dump() for line in payload.lines]
     accounting_service.validate_balance(lines)

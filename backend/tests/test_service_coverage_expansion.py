@@ -36,6 +36,9 @@ class Query:
     def with_for_update(self):
         return self
 
+    def populate_existing(self):
+        return self
+
     def all(self):
         return list(self.rows)
 
@@ -100,7 +103,12 @@ def test_spend_wallet_and_ensure_accounts(monkeypatch):
     )
 
     monkeypatch.setattr(coa, "_ensure_is_system_column", lambda db: None)
-    existing = SimpleNamespace(account_type="LOAN_PAYABLE", is_system=False)
+    # The find-or-create query now filters on is_system=True (a user's own
+    # wallet that happens to share a system account's name must never be
+    # matched/hijacked here), so a row this function can legitimately find
+    # is already a real system account — seed it that way, matching what the
+    # real filtered query would actually return.
+    existing = SimpleNamespace(account_type="LOAN_PAYABLE", is_system=True)
     assert (
         coa.ensure_system_account(
             Db([[existing]]),
@@ -140,7 +148,9 @@ def test_ensure_family_chart_and_named_account(monkeypatch):
     assert set(chart) == {spec["key"] for spec in coa.SYSTEM_ACCOUNT_SPECS}
     assert len(calls) == len(coa.SYSTEM_ACCOUNT_SPECS)
 
-    existing = SimpleNamespace(account_type="ASSET", is_system=False)
+    # Same reasoning as ensure_system_account above: with the is_system=True
+    # filter in place, a row found here is already a real system account.
+    existing = SimpleNamespace(account_type="ASSET", is_system=True)
     result = coa.ensure_named_coa_account(
         Db([[existing]]),
         family_id="f",
@@ -304,19 +314,27 @@ def test_accounting_posting_helpers(monkeypatch):
         lambda *a, **k: SimpleNamespace(id="counterpart"),
     )
     wallet = SimpleNamespace(
-        id="wallet", currency="BDT", current_balance=Decimal("100"), name="Cash"
+        id="wallet", currency="BDT", current_balance=Decimal("100"), name="Cash", is_active=True
     )
     other = SimpleNamespace(id="other", currency="BDT", current_balance=Decimal("0"), name="Bank")
-    common = dict(db=Db(), family_id="f", member_id="m", wallet=wallet, amount=10, currency="bdt")
+    # post_expense/post_transfer/post_loan_given/post_loan_installment(TAKEN)/
+    # post_savings_deposit/post_goal_contribute now re-lock the wallet via
+    # _wallet_or_404 before checking its balance (accounting_service.py fix
+    # for a TOCTOU race — see post_expense's comment), so each of those calls
+    # issues one extra db.query(). Seed enough [wallet] rows for the 4 calls
+    # below that go through common's shared Db.
+    common = dict(
+        db=Db(query_rows=[[wallet]] * 4), family_id="f", member_id="m", wallet=wallet, amount=10, currency="bdt"
+    )
 
     accounting.post_income(
         Db(), family_id="f", member_id="m", account=wallet, amount=10, currency="bdt"
     )
     accounting.post_expense(
-        Db(), family_id="f", member_id="m", account=wallet, amount=10, currency="bdt"
+        Db(query_rows=[[wallet]]), family_id="f", member_id="m", account=wallet, amount=10, currency="bdt"
     )
     accounting.post_transfer(
-        Db(),
+        Db(query_rows=[[wallet]]),
         family_id="f",
         member_id="m",
         from_account=wallet,
@@ -352,14 +370,16 @@ def test_accounting_posting_helpers(monkeypatch):
 
 
 def test_accounting_posting_validation(monkeypatch):
-    wallet = SimpleNamespace(id="same", currency="USD", current_balance=Decimal("1"), name="Wallet")
+    wallet = SimpleNamespace(
+        id="same", currency="USD", current_balance=Decimal("1"), name="Wallet", is_active=True
+    )
     with pytest.raises(HTTPException, match="Currency mismatch"):
         accounting.post_income(
             Db(), family_id="f", member_id="m", account=wallet, amount=1, currency="BDT"
         )
     with pytest.raises(HTTPException, match="Insufficient"):
         accounting.post_expense(
-            Db(), family_id="f", member_id="m", account=wallet, amount=2, currency="USD"
+            Db(query_rows=[[wallet]]), family_id="f", member_id="m", account=wallet, amount=2, currency="USD"
         )
     with pytest.raises(HTTPException, match="same wallet"):
         accounting.post_transfer(

@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.api.v1.budgets import calculate_spent
 from app.models.budget import Budget
 from app.models.loan import Loan
 from app.models.missing_features import LoanInstallment
@@ -55,6 +56,8 @@ def _create_template_notification(
     db: Session,
     family_id: str,
     notification_type: str,
+    *,
+    dedup_prefix: str | None = None,
     **values,
 ) -> Notification | None:
     template = SCAN_TEMPLATES[notification_type]
@@ -63,18 +66,27 @@ def _create_template_notification(
         f"{template['message'].format(**values)} | "
         f"{template['message_bn'].format(**values)}"
     )
-    existing = (
+    query = (
         db.query(Notification)
         .filter(
             Notification.family_id == family_id,
             Notification.notification_type == notification_type,
             Notification.title == title,
-            Notification.message == message,
             Notification.is_read.is_(False),
             Notification.deleted_at.is_(None),
         )
-        .first()
     )
+    if dedup_prefix is not None:
+        # message embeds a live value (percent used, remaining balance, ...) that
+        # shifts on every scan even though the underlying situation ("still over
+        # budget", "still owe money on this loan") hasn't materially changed —
+        # matching on the full message would defeat dedup entirely and spam a new
+        # unread notification every run. Match on the stable, entity-identifying
+        # prefix instead (there's no entity_id column on Notification to key off).
+        query = query.filter(Notification.message.startswith(dedup_prefix))
+    else:
+        query = query.filter(Notification.message == message)
+    existing = query.first()
     if existing:
         return None
 
@@ -114,9 +126,13 @@ def run_family_notification_scan(db: Session, family_id: str) -> dict:
     )
     for budget in budgets:
         budget_amount = Decimal(budget.budget_amount or 0)
-        spent_amount = Decimal(budget.spent_amount or 0)
         if budget_amount <= 0:
             continue
+        # budget.spent_amount is a cache that only gets refreshed when the
+        # Budgets screen is opened (list/status/create/update/close) — reads
+        # here must recompute live, or over-budget scans go stale between
+        # visits and silently miss real overspending.
+        spent_amount = calculate_spent(db, family_id, budget.category_id, budget.period_type)
         used = (spent_amount / budget_amount) * Decimal("100")
         if used >= 100:
             remember(
@@ -130,6 +146,7 @@ def run_family_notification_scan(db: Session, family_id: str) -> dict:
                     db,
                     family_id,
                     "BUDGET_WARNING",
+                    dedup_prefix=f"{budget.name} reached ",
                     name=budget.name,
                     percent=str(used.quantize(Decimal("0.01"))),
                 )
@@ -172,6 +189,13 @@ def run_family_notification_scan(db: Session, family_id: str) -> dict:
                 db,
                 family_id,
                 "LOAN_ACTIVE",
+                # NOTE: prefix keys on person_name only — two distinct active loans
+                # from the same person would collide and only the first gets
+                # notified per scan cycle. Accepted trade-off: no entity_id column
+                # on Notification to key off precisely, and this is far better
+                # than the previous behavior (a fresh unread notification on every
+                # single payment, since remaining balance was part of the dedup key).
+                dedup_prefix=f"{loan.person_name} has ",
                 name=loan.person_name,
                 amount=str(Decimal(loan.remaining_amount or 0).quantize(Decimal("0.01"))),
                 currency=loan.currency,
@@ -207,6 +231,7 @@ def run_family_notification_scan(db: Session, family_id: str) -> dict:
                 db,
                 family_id,
                 "LOAN_INSTALLMENT_DUE",
+                dedup_prefix=f"{loan.person_name} installment #{installment.installment_no} of ",
                 name=loan.person_name,
                 installment_no=str(installment.installment_no),
                 amount=str(due_left.quantize(Decimal("0.01"))),

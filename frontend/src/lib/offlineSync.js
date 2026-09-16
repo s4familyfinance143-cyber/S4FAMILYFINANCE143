@@ -3,6 +3,7 @@ import {
   enqueueOutboxChange,
   isBrowserOnline,
   listPendingOutbox,
+  markOutboxFailed,
   markOutboxSynced,
 } from "./offlineDb";
 
@@ -84,19 +85,33 @@ export async function flushLocalOutbox({
   if (conflictCount === 0 && failedCount === 0) {
     await markOutboxSynced(syncedIds);
   } else {
-    // Keep only successfully synced client_change_ids if server reports per-id; else mark all synced that aren't in failed
-    const failedOutbox = new Set(
-      (result?.applied?.failed || []).map((f) => f.outbox_id)
+    // accepted_outbox_ids[i] is positionally aligned with `pending`/`changes`: the
+    // server appends one new outbox id per submitted change, in order, before
+    // applying any of them (see offline_sync_hardened.py phase10b_sync_push).
+    // Use that to find which specific local rows actually failed to apply, so we
+    // only leave those pending for retry instead of marking the whole batch
+    // synced — which used to silently drop failed changes for good.
+    const acceptedOutboxIds = result?.accepted_outbox_ids || [];
+    const failedErrorByOutboxId = new Map(
+      (result?.applied?.failed || []).map((f) => [f.outbox_id, f.error])
     );
-    const accepted = result?.accepted_outbox_ids || [];
-    // Local ids differ from server outbox ids — mark all local pending as synced if accepted_count matches
-    if (Number(result?.accepted_count) === pending.length && failedCount === 0) {
-      // Conflicts still mean server recorded them; drop local pending to avoid loops
-      await markOutboxSynced(syncedIds);
-    } else if (accepted.length) {
-      await markOutboxSynced(syncedIds);
-    } else if (!failedOutbox.size) {
-      await markOutboxSynced(syncedIds);
+    const idsToMarkSynced = [];
+    const failedRows = [];
+    pending.forEach((row, i) => {
+      const serverOutboxId = acceptedOutboxIds[i];
+      // Conflicts still mean server recorded them; drop local pending to avoid loops.
+      // Only a confirmed apply failure keeps the row pending for retry.
+      if (serverOutboxId && failedErrorByOutboxId.has(serverOutboxId)) {
+        failedRows.push({ id: row.id, error: failedErrorByOutboxId.get(serverOutboxId) });
+        return;
+      }
+      idsToMarkSynced.push(row.id);
+    });
+    // Apply backoff so a permanently-failing row (e.g. insufficient balance) doesn't
+    // get resubmitted on every flush cycle until it's been retried a few times.
+    await Promise.all(failedRows.map((f) => markOutboxFailed(f.id, f.error)));
+    if (idsToMarkSynced.length) {
+      await markOutboxSynced(idsToMarkSynced);
     }
   }
 

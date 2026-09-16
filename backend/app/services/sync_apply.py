@@ -1062,6 +1062,7 @@ def _apply_loan(
                 loan_type=str(loan.loan_type or ""),
                 loan_id=loan.id,
                 description=description,
+                client_request_id=client_request_id,
             )
         except Exception as exc:
             return {"status": "FAILED", "error": str(getattr(exc, "detail", None) or exc)}
@@ -1165,6 +1166,7 @@ def _apply_loan(
                     currency=currency,
                     loan_id=loan.id,
                     description=note,
+                    client_request_id=client_request_id,
                 )
             else:
                 accounting_service.post_loan_taken(
@@ -1176,6 +1178,7 @@ def _apply_loan(
                     currency=currency,
                     loan_id=loan.id,
                     description=note,
+                    client_request_id=client_request_id,
                 )
         except Exception as exc:
             return {"status": "FAILED", "error": str(getattr(exc, "detail", None) or exc)}

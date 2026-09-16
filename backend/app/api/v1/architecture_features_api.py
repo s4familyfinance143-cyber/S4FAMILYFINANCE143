@@ -146,6 +146,21 @@ def list_tx_tags(
     user: User = Depends(get_current_user),
 ):
     require_permission(db, family_id, user.id, "report.read")
+    # family_id above only proves membership in *a* family — transaction_id is
+    # caller-supplied, so the query must also confirm that transaction actually
+    # belongs to that family, or a member of one family could read tags off an
+    # arbitrary transaction UUID belonging to a different family.
+    tx = (
+        db.query(Transaction)
+        .filter(
+            Transaction.id == transaction_id,
+            Transaction.family_id == family_id,
+            Transaction.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not tx:
+        raise HTTPException(404, "Transaction not found")
     rows = (
         db.query(TransactionTag, Tag)
         .join(Tag, Tag.id == TransactionTag.tag_id)
@@ -169,6 +184,20 @@ def detach_tag(
     require_permission(db, family_id, user.id, "transaction.create")
     row = db.get(TransactionTag, link_id)
     if not row or row.deleted_at is not None:
+        raise HTTPException(404, "Not found")
+    # Same cross-family check as list_tx_tags: link_id alone doesn't prove the
+    # underlying transaction belongs to the caller's family — TransactionTag has
+    # no family_id column of its own, so this must join through Transaction.
+    owner_tx = (
+        db.query(Transaction)
+        .filter(
+            Transaction.id == row.transaction_id,
+            Transaction.family_id == family_id,
+            Transaction.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not owner_tx:
         raise HTTPException(404, "Not found")
     from datetime import datetime, timezone
 
@@ -249,6 +278,14 @@ def create_loan_payment(payload: LoanPaymentIn, db: Session = Depends(get_db), u
     )
     if not loan:
         raise HTTPException(404, "Loan not found")
+    # This is a supplementary payment record (note/method/date attached to a
+    # transaction posted elsewhere) — NOT a money-moving action. The real
+    # payment + ledger posting + loan.paid_amount/remaining_amount update
+    # happens in POST /loans/payment via accounting_service.post_loan_installment.
+    # Mutating the loan balance here too (as this used to) double-counted every
+    # payment against loan.paid_amount with no matching wallet debit, corrupting
+    # the loan balance and the books — sync_apply.py's offline equivalent for
+    # this same entity type was already record-only; this now matches it.
     row = LoanPayment(
         loan_id=loan.id,
         family_id=payload.family_id,
@@ -259,11 +296,6 @@ def create_loan_payment(payload: LoanPaymentIn, db: Session = Depends(get_db), u
         transaction_id=payload.transaction_id,
     )
     db.add(row)
-    loan.paid_amount = Decimal(str(loan.paid_amount or 0)) + Decimal(str(payload.amount))
-    loan.remaining_amount = Decimal(str(loan.principal_amount or 0)) - Decimal(str(loan.paid_amount or 0))
-    if loan.remaining_amount <= 0:
-        loan.remaining_amount = Decimal("0")
-        loan.status = "PAID"
     db.flush()
     write_audit_log(
         db=db,

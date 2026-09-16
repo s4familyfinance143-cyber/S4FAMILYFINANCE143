@@ -799,34 +799,6 @@ def test_grocery_require_expected_version_and_bump_sync():
     assert row.last_client_updated_at == "2026-08-12"
 
 
-def test_grocery_dual_write_skips_or_adds():
-    from app.api.v1 import grocery as gr
-    from app.models.architecture_feature import GroceryListItem, VendorContact
-
-    vendor = SimpleNamespace(
-        id="v1", family_id="f1", name="Shop", phone=None, address=None,
-        category="GENERAL", note=None, is_active=True,
-    )
-    db = Db(query_map={VendorContact: SimpleNamespace(id="existing")})
-    gr._dual_write_vendor(db, vendor)
-    assert len(db.added) == 0
-
-    db2 = Db(query_map={VendorContact: None})
-    gr._dual_write_vendor(db2, vendor)
-    assert len(db2.added) == 1
-    assert db2.added[0].legacy_grocery_vendor_id == "v1"
-
-    item = SimpleNamespace(
-        id="i1", family_id="f1", grocery_list_id="l1", created_by_member_id="m1",
-        name="Rice", quantity=Decimal("2"), unit="kg",
-        actual_price=Decimal("10"), estimated_price=Decimal("12"),
-        is_bought=False, barcode=None, category="FOOD", mobile_sync_key=None,
-    )
-    db3 = Db(query_map={GroceryListItem: None})
-    gr._dual_write_grocery_item(db3, item)
-    assert db3.added[0].name == "Rice"
-
-
 def test_grocery_budget_compare_over_budget(monkeypatch):
     from app.api.v1 import grocery as gr
     from app.models.grocery import GroceryList, GroceryItem

@@ -365,21 +365,22 @@ def test_net_worth_report(patch_report_access):
     from app.models.goal import FinancialGoal
     from app.models.loan import Loan
     from app.models.savings import SavingsGoal
-    from app.models.transaction_line import TransactionLine
 
     r = patch_report_access
     db = Db(
         query_map={
             Account: Query(rows=[_account()]),
-            TransactionLine: Query(rows=[_line(debit=80, credit=20)]),
             SavingsGoal: Query(rows=[_saving(current=50)]),
             FinancialGoal: Query(rows=[_goal(current=25)]),
             Loan: Query(rows=[_loan(remaining=10)]),
         }
     )
     out = r.net_worth_report("fam1", db=db, current_user=USER)
-    assert out["summary"]["wallet_balance"] == "60.0000"
-    assert out["summary"]["net_worth"] == "125.0000"
+    # wallet_balance now comes from Account.current_balance (like net_worth_currency_report),
+    # not a manual TransactionLine debit/credit sum — see reports.py net_worth_report fix.
+    assert out["summary"]["wallet_balance"] == "100.0000"
+    assert out["summary"]["net_worth"] == "165.0000"
+    assert out["base_currency"] == "BDT"
 
 
 def test_net_worth_currency_report(patch_report_access):

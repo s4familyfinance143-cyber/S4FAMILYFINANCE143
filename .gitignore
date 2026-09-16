@@ -1,3 +1,6 @@
+# Local backups (DB dumps — may contain real user data)
+/backups/
+
 # Secrets / env
 .env
 .env.local

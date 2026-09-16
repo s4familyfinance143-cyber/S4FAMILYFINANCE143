@@ -176,11 +176,17 @@ export function MobilePlannerPanel({
   }
 
   async function deleteEvent(eventId: string) {
+    if (!apiDelete) {
+      // Unlike deleteTask (which falls back to marking complete), there was
+      // no fallback here — if apiDelete was ever unavailable, this silently
+      // no-opped: loading would spin then stop with the event still in the
+      // list and no explanation why.
+      onMessage(tm("deleteUnavailable") || "Delete is unavailable right now", false);
+      return;
+    }
     setLoading(true);
     try {
-      if (apiDelete) {
-        await apiDelete(`/api/v1/calendar/${eventId}?family_id=${encodeURIComponent(familyId)}`, token);
-      }
+      await apiDelete(`/api/v1/calendar/${eventId}?family_id=${encodeURIComponent(familyId)}`, token);
       await load();
     } catch (error) {
       onMessage(error instanceof Error ? error.message : "Delete event failed", false);

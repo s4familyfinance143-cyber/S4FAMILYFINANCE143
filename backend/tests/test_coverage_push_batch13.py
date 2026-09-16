@@ -857,6 +857,77 @@ def test_architecture_delete_tag_not_found(monkeypatch):
     assert exc.value.status_code == 404
 
 
+def test_architecture_list_tx_tags_cross_family_blocked(monkeypatch):
+    """list_tx_tags must verify transaction_id actually belongs to family_id —
+    family_id was previously only used for the permission check, so a member of
+    any family could read tags off an arbitrary transaction UUID from a
+    different family (IDOR)."""
+    from app.api.v1 import architecture_features_api as mod
+    from app.models.transaction import Transaction
+
+    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
+    with pytest.raises(HTTPException) as exc:
+        mod.list_tx_tags(
+            "tx-from-other-family",
+            "fam-1",
+            db=Db(query_map={Transaction: Query(first_row=None)}),
+            user=_user(),
+        )
+    assert exc.value.status_code == 404
+
+
+def test_architecture_detach_tag_cross_family_blocked(monkeypatch):
+    """detach_tag must verify the link's underlying transaction belongs to
+    family_id before soft-deleting it — TransactionTag has no family_id column
+    of its own, so link_id alone let any family member detach another family's
+    tag link (cross-tenant write IDOR)."""
+    from app.api.v1 import architecture_features_api as mod
+    from app.models.transaction import Transaction
+
+    link = SimpleNamespace(id="tt1", transaction_id="tx-from-other-family", deleted_at=None)
+    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
+    with pytest.raises(HTTPException) as exc:
+        mod.detach_tag(
+            "tt1",
+            "fam-1",
+            db=Db(got=link, query_map={Transaction: Query(first_row=None)}),
+            user=_user(),
+        )
+    assert exc.value.status_code == 404
+    assert link.deleted_at is None
+
+
+def test_architecture_loan_payment_no_balance_mutation(monkeypatch):
+    """create_loan_payment must not touch loan.paid_amount/remaining_amount —
+    the real ledger posting + balance update happens in POST /loans/payment via
+    accounting_service.post_loan_installment. This endpoint used to also flip
+    those fields directly, double-counting every payment with no matching
+    wallet debit."""
+    from app.api.v1 import architecture_features_api as mod
+    from app.models.loan import Loan
+
+    loan = SimpleNamespace(
+        id="l1",
+        family_id="fam-1",
+        paid_amount=Decimal("1000"),
+        remaining_amount=Decimal("4000"),
+        principal_amount=Decimal("5000"),
+        status="ACTIVE",
+        deleted_at=None,
+    )
+    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member())
+    monkeypatch.setattr(mod, "write_audit_log", lambda **k: None)
+    row = mod.create_loan_payment(
+        mod.LoanPaymentIn(family_id="fam-1", loan_id="l1", amount=Decimal("500"), payment_date="2026-01-15"),
+        db=Db(query_map={Loan: Query(first_row=loan)}),
+        user=_user(),
+    )
+    assert row["amount"] == "500.0000"
+    assert loan.paid_amount == Decimal("1000")
+    assert loan.remaining_amount == Decimal("4000")
+    assert loan.status == "ACTIVE"
+
+
 # ===========================================================================
 # main.py
 # ===========================================================================

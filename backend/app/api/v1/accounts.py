@@ -9,7 +9,7 @@ from app.core.dependencies import get_current_user
 from app.models.account import Account
 from app.models.family_member import FamilyMember
 from app.models.user import User
-from app.schemas.account import AccountCreateRequest, AccountResponse
+from app.schemas.account import AccountCreateRequest, AccountResponse, AccountUpdateRequest
 from app.services import accounting_service
 from app.services.audit_service import write_audit_log
 from app.services.chart_of_accounts import VALID_ACCOUNT_TYPES, is_spend_wallet
@@ -213,6 +213,94 @@ def get_account(
     resp = serialize_wallet(db, account)
     db.commit()
     return resp
+
+
+@router.patch("/{account_id}", response_model=AccountResponse)
+def update_account(
+    account_id: str,
+    payload: AccountUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    account = db.get(Account, account_id)
+
+    if not account or account.deleted_at is not None:
+        raise HTTPException(404, "Account not found")
+
+    member = require_permission(
+        db=db,
+        family_id=account.family_id,
+        user_id=current_user.id,
+        permission="wallet.update",
+    )
+
+    if account.is_system:
+        raise HTTPException(400, "System accounts cannot be edited")
+
+    changes: dict[str, tuple[object, object]] = {}
+
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(400, "Name cannot be empty")
+        if new_name != account.name:
+            changes["name"] = (account.name, new_name)
+            account.name = new_name
+
+    if payload.account_type is not None:
+        new_type = payload.account_type.upper().strip()
+        if new_type not in VALID_ACCOUNT_TYPES:
+            raise HTTPException(400, "Invalid account type")
+        if new_type != account.account_type:
+            changes["account_type"] = (account.account_type, new_type)
+            account.account_type = new_type
+
+    if payload.currency is not None:
+        new_currency = payload.currency.upper().strip()
+        if not new_currency:
+            raise HTTPException(400, "Currency cannot be empty")
+        if new_currency != account.currency:
+            changes["currency"] = (account.currency, new_currency)
+            account.currency = new_currency
+
+    if payload.institution_name is not None and payload.institution_name != account.institution_name:
+        changes["institution_name"] = (account.institution_name, payload.institution_name)
+        account.institution_name = payload.institution_name
+
+    if (
+        payload.account_number_masked is not None
+        and payload.account_number_masked != account.account_number_masked
+    ):
+        changes["account_number_masked"] = (
+            account.account_number_masked,
+            payload.account_number_masked,
+        )
+        account.account_number_masked = payload.account_number_masked
+
+    if payload.is_shared_family is not None and payload.is_shared_family != account.is_shared_family:
+        changes["is_shared_family"] = (account.is_shared_family, payload.is_shared_family)
+        account.is_shared_family = payload.is_shared_family
+
+    if payload.is_owner_wallet is not None and payload.is_owner_wallet != account.is_owner_wallet:
+        changes["is_owner_wallet"] = (account.is_owner_wallet, payload.is_owner_wallet)
+        account.is_owner_wallet = payload.is_owner_wallet
+
+    if changes:
+        write_audit_log(
+            db=db,
+            family_id=account.family_id,
+            member_id=member.id,
+            action_type="UPDATE",
+            entity_type="WALLET",
+            entity_id=account.id,
+            title="Wallet Updated",
+            description=f"{account.name} wallet updated: {', '.join(changes.keys())}",
+        )
+
+    db.commit()
+    db.refresh(account)
+
+    return serialize_wallet(db, account)
 
 
 @router.delete("/{account_id}")

@@ -207,6 +207,33 @@ try {
   /* ignore */
 }
 
+const DEVICE_ID_STORAGE_KEY = "s4-device-id";
+
+function getOrCreateDeviceId() {
+  // Backend's new-device security-alert email (AuthSecurityService.
+  // _upsert_device_session, via auth.py's get_device_label) falls back to
+  // sha256(User-Agent) when no X-Device-Id header is sent — and this client
+  // never sent one. Since many unrelated users share the same common
+  // browser+OS string, that fallback fingerprint is not actually per-device:
+  // an attacker using a stolen password with a common browser could log in
+  // without ever triggering the alert, once the real user had logged in
+  // once with that same common UA. A random ID persisted in localStorage
+  // makes the fingerprint actually unique per browser install.
+  try {
+    let id = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (!id) {
+      id =
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeApiBase(value) {
   const cleaned = String(value || "").trim().replace(/\/+$/, "");
   if (!cleaned) return "";
@@ -430,6 +457,8 @@ function App() {
   const [wallets, setWallets] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categoriesSaving, setCategoriesSaving] = useState(false);
+  const [categoryDeletingId, setCategoryDeletingId] = useState("");
   const [savings, setSavings] = useState([]);
   const [loans, setLoans] = useState([]);
   const [budgets, setBudgets] = useState([]);
@@ -2355,7 +2384,7 @@ function App() {
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Device-Id": getOrCreateDeviceId() || "" },
         credentials: "include",
         body: JSON.stringify({ email: email.trim(), password }),
       });
@@ -2402,7 +2431,7 @@ function App() {
     try {
       const res = await fetch(`${apiBase}/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Device-Id": getOrCreateDeviceId() || "" },
         body: JSON.stringify({
           full_name: fullName.trim(),
           email: email.trim(),
@@ -2642,7 +2671,7 @@ function App() {
     try {
       const res = await fetch(`${apiBase}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Device-Id": getOrCreateDeviceId() || "" },
         credentials: "include",
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
@@ -3558,7 +3587,7 @@ function App() {
     try {
       const res = await fetch(`${apiBase}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Device-Id": getOrCreateDeviceId() || "" },
         credentials: "include",
         body: JSON.stringify({ refresh_token: refreshToken || undefined }),
       });
@@ -3947,6 +3976,60 @@ function App() {
       setCategories([]);
       softFail("Categories", err, "error");
       return [];
+    }
+  }
+
+  async function createCategory(form) {
+    if (!activeFamilyId) {
+      setMessage(t("activeFamilyRequired"), "error");
+      return false;
+    }
+    if (isCloudLocalMode()) {
+      setMessage(t("categoriesOfflineUnavailable") || "Custom categories need an internet connection", "warning");
+      return false;
+    }
+    const nameEn = String(form.name_en || "").trim();
+    const nameBn = String(form.name_bn || "").trim();
+    if (!nameEn || !nameBn) {
+      setMessage(t("categoryNameRequired") || "English and Bangla name are required", "error");
+      return false;
+    }
+    setCategoriesSaving(true);
+    try {
+      await apiPost("/categories", {
+        family_id: activeFamilyId,
+        name_en: nameEn,
+        name_bn: nameBn,
+        category_type: form.category_type === "INCOME" ? "INCOME" : "EXPENSE",
+        icon: form.icon ? String(form.icon).trim() : null,
+        color: form.color ? String(form.color).trim() : null,
+      });
+      setMessage(t("categoryCreated") || "Category created", "success");
+      await loadCategories();
+      return true;
+    } catch (err) {
+      setMessage(err.message || t("categoryCreateFailed") || "Category create failed", "error");
+      return false;
+    } finally {
+      setCategoriesSaving(false);
+    }
+  }
+
+  async function deleteCategoryById(categoryId) {
+    if (!categoryId) return;
+    if (isCloudLocalMode()) {
+      setMessage(t("categoriesOfflineUnavailable") || "Custom categories need an internet connection", "warning");
+      return;
+    }
+    setCategoryDeletingId(categoryId);
+    try {
+      await apiDelete(`/categories/${categoryId}`);
+      setMessage(t("categoryDeleted") || "Category deleted", "success");
+      await loadCategories();
+    } catch (err) {
+      setMessage(err.message || t("categoryDeleteFailed") || "Category delete failed", "error");
+    } finally {
+      setCategoryDeletingId("");
     }
   }
 
@@ -6373,10 +6456,22 @@ function App() {
 
     try {
       if (isCloudLocalMode()) {
-        const data = await apiGet(
-          `/backup/restore/preview-file/${activeFamilyId}?file_name=${encodeURIComponent(fileName)}`
-        );
-        setBackupPreview(data);
+        // Cloud-local backups are client-side JSON snapshots (see buildBackupBlob),
+        // never uploaded to the backend's /backup/create store, so the backend's
+        // preview-file endpoint can never find them (filename format doesn't even
+        // match what backup.py expects). Preview from the local cache instead.
+        const cached = await loadOfflineSnapshot(activeFamilyId, "system", "backup").catch(() => null);
+        const payload = cached?.data?.files?.[fileName];
+        if (!payload) {
+          throw new Error("Restore preview failed");
+        }
+        setBackupPreview({
+          file_name: fileName,
+          restore_safe: true,
+          backup_kind: "cloud_local",
+          message: `Local snapshot exported at ${payload.exported_at || "unknown time"}.`,
+          contains_files: [`${Array.isArray(payload.rows) ? payload.rows.length : 0} rows`],
+        });
         setMessage(t("restorePreviewLoaded"), "success");
         return;
       }
@@ -6809,12 +6904,17 @@ function App() {
 
   async function saveEditWallet() {
     if (!editingWalletId) return;
-    if (!walletForm.name.trim() || walletForm.name.trim().length < 2) {
+    const trimmedName = walletForm.name.trim();
+    if (!trimmedName || trimmedName.length < 2) {
       setMessage(t("walletNameRequired"), "error");
       return;
     }
+    if (!String(walletForm.account_type || "").trim()) {
+      setMessage(t("walletTypeRequired"), "error");
+      return;
+    }
     const patch = {
-      name: walletForm.name.trim(),
+      name: trimmedName,
       account_type: walletForm.account_type,
       is_shared_family: Boolean(walletForm.is_shared_family),
       is_owner_wallet: Boolean(walletForm.is_owner_wallet),
@@ -6831,6 +6931,15 @@ function App() {
         setWallets(activeWalletRows(next));
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next);
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
+        if (token) {
+          await enqueueOutboxChange({
+            familyId: activeFamilyId,
+            entity_type: "accounts",
+            operation: "UPDATE",
+            payload: { ...patch, id: editingWalletId },
+          });
+          await refreshLocalOutboxCount();
+        }
         if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
           await syncCloudAfterWrite();
         }
@@ -6838,16 +6947,26 @@ function App() {
         cancelEditWallet();
         return;
       }
+
       if (!token) throw new Error(t("walletLoadFailed"));
-      try {
-        await apiPatch(`/families/${activeFamilyId}/accounts/${editingWalletId}`, patch);
-      } catch {
-        const next = wallets.map((w) =>
-          String(w.id) === String(editingWalletId) ? { ...w, ...patch } : w,
-        );
-        setWallets(next);
-        await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", next).catch(() => {});
+
+      if (!isBrowserOnline()) {
+        await enqueueOutboxChange({
+          familyId: activeFamilyId,
+          entity_type: "accounts",
+          operation: "UPDATE",
+          payload: { ...patch, id: editingWalletId },
+        });
+        await refreshLocalOutboxCount();
+        setMessage(t("syncQueuedOffline"), "success");
+        cancelEditWallet();
+        return;
       }
+
+      // Real backend call — no silent fallback. A failure here must surface
+      // to the user, otherwise the UI shows "saved" while the server still
+      // has the old value.
+      await apiPatch(`/accounts/${editingWalletId}`, patch);
       setMessage(t("walletUpdated"), "success");
       cancelEditWallet();
       await loadWallets();
@@ -6916,6 +7035,11 @@ function App() {
 
     if (!txForm.amount || Number(txForm.amount) <= 0) {
       setMessage(t("validAmountRequired"), "error");
+      return;
+    }
+
+    if (txForm.type !== "transfer" && !txForm.category_id) {
+      setMessage(t("selectCategory") || "Select a category", "error");
       return;
     }
 
@@ -7146,11 +7270,21 @@ function App() {
         createdId = data?.id;
       }
 
+      let attachmentFailed = false;
       if (attachFile && createdId && apiUpload) {
-        const fd = new FormData();
-        fd.append("family_id", activeFamilyId);
-        fd.append("file", attachFile);
-        await apiUpload(`/transactions/${createdId}/attachment`, fd);
+        try {
+          const fd = new FormData();
+          fd.append("family_id", activeFamilyId);
+          fd.append("file", attachFile);
+          await apiUpload(`/transactions/${createdId}/attachment`, fd);
+        } catch (attErr) {
+          // The transaction itself already posted successfully — an attachment
+          // failure here must not be reported as a failed transaction, and
+          // must not block the form reset (that would leave clientRequestId
+          // stale and risk a duplicate post on retry).
+          console.warn("[S4 Tx] attachment upload failed", attErr);
+          attachmentFailed = true;
+        }
       }
 
       setTxForm((prev) => ({
@@ -7160,7 +7294,11 @@ function App() {
         split_enabled: false,
       }));
 
-      setMessage(t("transactionPosted"), "success");
+      if (attachmentFailed) {
+        setMessage(t("transactionPostedAttachmentFailed") || t("transactionPosted"), "warning");
+      } else {
+        setMessage(t("transactionPosted"), "success");
+      }
       refreshAll();
     } catch (err) {
       setMessage(err.message || t("transactionFailed") || "Transaction failed", "error");
@@ -7575,6 +7713,7 @@ function App() {
           amount: savingsAction.amount,
           currency: currencyCode(),
           description: savingsAction.description,
+          client_request_id: payload.client_request_id,
         });
       }
 
@@ -7586,6 +7725,7 @@ function App() {
           amount: savingsAction.amount,
           currency: currencyCode(),
           description: savingsAction.description,
+          client_request_id: payload.client_request_id,
         });
       }
 
@@ -8265,6 +8405,7 @@ function App() {
         amount: goalContributionForm.amount,
         currency: currencyCode(),
         description: goalContributionForm.description,
+        client_request_id: payload.client_request_id,
       });
 
       setGoalContributionForm((prev) => ({
@@ -8436,6 +8577,7 @@ function App() {
         amount: goalContributionForm.amount,
         currency: currencyCode(),
         description: goalContributionForm.description,
+        client_request_id: payload.client_request_id,
       });
 
       setGoalContributionForm((prev) => ({
@@ -10299,6 +10441,9 @@ function App() {
         if (settingsTab === "permissions" || parseSettingsTab(activeMenu) === "permissions") {
           loadFamilyGovernance();
         }
+        if (settingsTab === "categories" || parseSettingsTab(activeMenu) === "categories") {
+          loadCategories();
+        }
       }
     }, 0);
 
@@ -10354,7 +10499,7 @@ function App() {
 
   useEffect(() => {
     const settingsTabKey = parseSettingsTab(activeMenu);
-    if (settingsTabKey && ["profile", "family", "permissions", "security", "cloud"].includes(settingsTabKey)) {
+    if (settingsTabKey && ["profile", "family", "permissions", "security", "cloud", "categories"].includes(settingsTabKey)) {
       setSettingsTab(settingsTabKey);
     }
     const tab15 = parsePhaseTab(activeMenu, "phase15");
@@ -12224,7 +12369,11 @@ function App() {
               <div className="card">
                 <span>{t("totalConvertedBalance")}</span>
                 <strong>{money(currencySummary?.total_converted_balance, currencySummary?.base_currency || activeFamily?.default_currency)}</strong>
-                <p>{t("convertedIntoBase")}</p>
+                <p>
+                  {currencySummary?.unconverted_wallet_count
+                    ? t("excludesUnconvertedWallets").replace("{n}", digits(currencySummary.unconverted_wallet_count))
+                    : t("convertedIntoBase")}
+                </p>
               </div>
 
               <div className="card">
@@ -12248,8 +12397,16 @@ function App() {
                     <span>{wallet.wallet_name || t("wallets")}</span>
                     <span>{currencyName(wallet.wallet_currency)}</span>
                     <span>{t("balance")}: {money(wallet.balance, wallet.wallet_currency)}</span>
-                    <span>{t("rate")}: {digits(wallet.rate_used)}</span>
-                    <strong>{money(wallet.converted_balance, currencySummary?.base_currency || activeFamily?.default_currency)}</strong>
+                    {wallet.rate_available === false ? (
+                      <span className="tone-warning">{t("exchangeRateNotSet")}</span>
+                    ) : (
+                      <span>{t("rate")}: {digits(wallet.rate_used)}</span>
+                    )}
+                    <strong>
+                      {wallet.rate_available === false
+                        ? t("notIncludedInTotal")
+                        : money(wallet.converted_balance, currencySummary?.base_currency || activeFamily?.default_currency)}
+                    </strong>
                   </div>
                 ))}
               </div>
@@ -12696,7 +12853,16 @@ function App() {
               if (settingsTab === "permissions" || parseSettingsTab(activeMenu) === "permissions") {
                 loadFamilyGovernance();
               }
+              if (settingsTab === "categories" || parseSettingsTab(activeMenu) === "categories") {
+                loadCategories();
+              }
             }}
+            categories={categories}
+            categoriesSaving={categoriesSaving}
+            categoryDeletingId={categoryDeletingId}
+            onCreateCategory={createCategory}
+            onDeleteCategory={deleteCategoryById}
+            onLoadCategories={loadCategories}
             apiBase={apiBase}
             cloudOnlyMode={cloudOnlyMode}
             onApiBaseChange={(next) => setApiBase(persistApiBase(next))}

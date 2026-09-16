@@ -112,138 +112,6 @@ def _member(mid="m1"):
 
 
 # ---------------------------------------------------------------------------
-# compat_aliases
-# ---------------------------------------------------------------------------
-
-
-def test_compat_alias_response_helpers():
-    from app.api.v1 import compat_aliases as mod
-
-    inv = SimpleNamespace(
-        id="inv-1",
-        family_id="fam-1",
-        name="FD",
-        type="FD",
-        member_id="m1",
-        principal=Decimal("1000"),
-        rate=Decimal("0.05"),
-        currency="BDT",
-        maturity="2026-12-31",
-        start_date="2026-01-01",
-        status="ACTIVE",
-        note="note",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    out = mod._investment_alias_response(inv)
-    assert out["module_type"] == "INVESTMENT"
-    assert out["amount"] == "1000.0000"
-    assert out["secondary_amount"] == "0.0500"
-
-    inv_no_rate = SimpleNamespace(**{**inv.__dict__, "rate": None})
-    assert mod._investment_alias_response(inv_no_rate)["secondary_amount"] is None
-
-    sub = SimpleNamespace(
-        id="sub-1",
-        family_id="fam-1",
-        name="Netflix",
-        amount=Decimal("499"),
-        currency="BDT",
-        next_due="2026-09-01",
-        cycle="MONTHLY",
-        payment_account_id="acc-1",
-        status="ACTIVE",
-        notes="monthly",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    sub_out = mod._subscription_alias_response(sub)
-    assert sub_out["module_type"] == "SUBSCRIPTION"
-    assert sub_out["billing_cycle"] == "MONTHLY"
-    assert sub_out["amount"] == "499.0000"
-
-
-def test_compat_alias_create_and_list_routes(monkeypatch):
-    from app.api.v1 import compat_aliases as mod
-    from app.models.architecture_modules import Investment, Subscription
-    from app.models.transaction import Transaction
-
-    member = _member()
-    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: member)
-    monkeypatch.setattr(mod, "write_audit_log", lambda *a, **k: None)
-    monkeypatch.setattr(mod, "create_income", lambda **k: {"kind": "income"})
-    monkeypatch.setattr(mod, "create_expense", lambda **k: {"kind": "expense"})
-
-    db = Db()
-    user = _user()
-    inv_payload = mod.InvestmentAliasCreateRequest(
-        family_id="fam-1", name="Gold", amount=Decimal("500"), currency="usd"
-    )
-    created = mod.create_investment_alias(payload=inv_payload, db=db, current_user=user)
-    assert created["module_type"] == "INVESTMENT"
-    assert created["currency"] == "USD"
-    assert db.commit_count == 1
-
-    tx = SimpleNamespace(
-        id="tx-1",
-        family_id="fam-1",
-        category_id="c1",
-        amount=Decimal("10"),
-        currency="BDT",
-        description="salary",
-        status="POSTED",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    db2 = Db({Transaction: [tx]})
-    income_rows = mod.list_income_alias(family_id="fam-1", db=db2, current_user=user)
-    assert income_rows[0]["amount"] == "10.0000"
-
-    db3 = Db({Transaction: [tx]})
-    expense_rows = mod.list_expense_alias(family_id="fam-1", db=db3, current_user=user)
-    assert expense_rows[0]["description"] == "salary"
-
-    inv_row = SimpleNamespace(
-        id="i1",
-        family_id="fam-1",
-        name="FD",
-        type="FD",
-        member_id=None,
-        principal=Decimal("1"),
-        rate=None,
-        currency="BDT",
-        maturity=None,
-        start_date=None,
-        status="ACTIVE",
-        note=None,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    db4 = Db({Investment: [inv_row]})
-    assert mod.list_investments_alias("fam-1", db4, user)[0]["id"] == "i1"
-
-    sub_payload = mod.SubscriptionAliasCreateRequest(
-        family_id="fam-1", name="Spotify", amount=Decimal("99"), reference="ref"
-    )
-    db5 = Db()
-    sub_created = mod.create_subscription_alias(payload=sub_payload, db=db5, current_user=user)
-    assert sub_created["module_type"] == "SUBSCRIPTION"
-    assert db5.commit_count == 1
-
-    sub_row = SimpleNamespace(
-        id="s1",
-        family_id="fam-1",
-        name="Spotify",
-        amount=Decimal("99"),
-        currency="BDT",
-        next_due=None,
-        cycle="MONTHLY",
-        payment_account_id=None,
-        status="ACTIVE",
-        notes=None,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    db6 = Db({Subscription: [sub_row]})
-    assert mod.list_subscriptions_alias("fam-1", db6, user)[0]["name"] == "Spotify"
-
-
-# ---------------------------------------------------------------------------
 # database + repositories
 # ---------------------------------------------------------------------------
 
@@ -444,18 +312,6 @@ def test_families_memberships_and_settings(monkeypatch):
     assert settings_out["new_timezone"] == "UTC"
 
 
-def test_families_list_uses_repository(monkeypatch):
-    from app.api.v1 import families as mod
-
-    fam = SimpleNamespace(id="f1", name="Home")
-    monkeypatch.setattr(
-        "app.repositories.family_repo",
-        lambda db: SimpleNamespace(list_active_for_user=lambda uid: [fam] if uid == "u1" else []),
-    )
-    rows = mod.get_my_families(db=Db(), current_user=_user())
-    assert rows == [fam]
-
-
 # ---------------------------------------------------------------------------
 # architecture_api_contract
 # ---------------------------------------------------------------------------
@@ -488,28 +344,6 @@ def test_architecture_contract_join_role_and_accounts(monkeypatch):
     )
     assert out["ok"] is True
 
-    target = SimpleNamespace(id="m2", family_id="fam-1", role="MEMBER", deleted_at=None)
-    db_role = Db(got=target)
-    monkeypatch.setattr(mod, "require_owner_or_admin", lambda *a, **k: None)
-    role_out = mod.architecture_put_member_role(
-        member_id="m2",
-        role="admin",
-        family_id="fam-1",
-        db=db_role,
-        current_user=_user(),
-    )
-    assert role_out["role"] == "ADMIN"
-    assert db_role.commit_count == 1
-
-    with pytest.raises(HTTPException) as owner_block:
-        mod.architecture_put_member_role(
-            member_id="m2",
-            role="MEMBER",
-            family_id="fam-1",
-            db=Db(got=SimpleNamespace(id="m2", family_id="fam-1", role="OWNER", deleted_at=None)),
-            current_user=_user(),
-        )
-    assert owner_block.value.status_code == 422
 
     rel = SimpleNamespace(
         id="rt-1",
@@ -549,47 +383,11 @@ def test_architecture_contract_join_role_and_accounts(monkeypatch):
     assert bal["accounts"][0]["balance"] == "150.0000"
 
 
-def test_architecture_contract_transaction_and_export_delegates(monkeypatch):
+def test_architecture_contract_export_delegates(monkeypatch):
     from app.api.v1 import architecture_api_contract as mod
-
-    monkeypatch.setattr("app.api.v1.transactions.create_income", lambda **k: {"type": "income"})
-    monkeypatch.setattr("app.api.v1.transactions.create_expense", lambda **k: {"type": "expense"})
-    monkeypatch.setattr("app.api.v1.transactions.create_transfer", lambda **k: {"type": "transfer"})
-    monkeypatch.setattr("app.api.v1.accounting.create_transaction", lambda **k: {"type": "journal"})
 
     db = Db()
     user = _user()
-    income_payload = {
-        "transaction_type": "INCOME",
-        "family_id": "fam-1",
-        "account_id": "a1",
-        "category_id": "c1",
-        "amount": "10",
-        "currency": "BDT",
-    }
-    assert mod.architecture_create_transaction(income_payload, db, user)["type"] == "income"
-    expense_payload = {**income_payload, "transaction_type": "EXPENSE"}
-    assert mod.architecture_create_transaction(expense_payload, db, user)["type"] == "expense"
-    transfer_payload = {
-        "transaction_type": "TRANSFER",
-        "family_id": "fam-1",
-        "from_account_id": "a1",
-        "to_account_id": "a2",
-        "amount": "10",
-        "currency": "BDT",
-    }
-    assert mod.architecture_create_transaction(transfer_payload, db, user)["type"] == "transfer"
-    journal_payload = {
-        "transaction_type": "JOURNAL",
-        "family_id": "fam-1",
-        "amount": "10",
-        "currency": "BDT",
-        "lines": [
-            {"account_id": "a1", "debit": "10", "credit": "0"},
-            {"account_id": "a2", "debit": "0", "credit": "10"},
-        ],
-    }
-    assert mod.architecture_create_transaction(journal_payload, db, user)["type"] == "journal"
 
     monkeypatch.setattr(
         "app.api.v1.jobs.create_export_job",
@@ -607,25 +405,6 @@ def test_architecture_contract_transaction_and_export_delegates(monkeypatch):
         current_user=user,
     )
     assert excel["job"]["id"] == "j1"
-
-    monkeypatch.setattr(
-        "app.api.v1.loans.loan_payment",
-        lambda **k: {"paid": True},
-    )
-    from app.schemas.loan import LoanPaymentRequest
-
-    paid = mod.architecture_loan_pay(
-        loan_id="loan-1",
-        payload=LoanPaymentRequest(
-            loan_id="ignored",
-            family_id="fam-1",
-            wallet_account_id="w1",
-            amount=Decimal("10"),
-        ),
-        db=db,
-        current_user=user,
-    )
-    assert paid["paid"] is True
 
 
 # ---------------------------------------------------------------------------

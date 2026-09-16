@@ -208,6 +208,35 @@ def approve_or_reject_request(
     if existing_member:
         raise HTTPException(409, "User already family member")
 
+    # max_uses is only enforced here, not when the join request was created —
+    # multiple people can submit PENDING requests against the same invite before
+    # any of them is reviewed (nothing blocks that in join_family_by_code), so
+    # without this check an owner approving several of them one by one could push
+    # a single-use invite's used_count past max_uses.
+    approve_invite = db.get(InviteCode, request.invite_code_id) if request.invite_code_id else None
+    if approve_invite and approve_invite.used_count >= approve_invite.max_uses:
+        raise HTTPException(409, "Invite has already reached its max uses")
+
+    # relationship_serial is meant to disambiguate multiple members of the same
+    # relationship_type (e.g. "Son #1" vs "Son #2") — nothing enforces this
+    # elsewhere (family_governance_hardened.py has a fuller version of this same
+    # check, assert_relationship_serial_available, but it's never actually called
+    # from any route), so without this an approval could create a second member
+    # with a serial that's already taken.
+    if request.requested_relationship_type_id and request.requested_relationship_serial is not None:
+        serial_taken = (
+            db.query(FamilyMember)
+            .filter(
+                FamilyMember.family_id == request.family_id,
+                FamilyMember.relationship_type_id == request.requested_relationship_type_id,
+                FamilyMember.relationship_serial == request.requested_relationship_serial,
+                FamilyMember.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if serial_taken:
+            raise HTTPException(409, "relationship_serial already exists in this family")
+
     member = FamilyMember(
         family_id=request.family_id,
         user_id=request.user_id,
@@ -223,7 +252,7 @@ def approve_or_reject_request(
     db.add(member)
     db.flush()
 
-    invite = db.get(InviteCode, request.invite_code_id)
+    invite = approve_invite
 
     if invite:
         invite.used_count += 1

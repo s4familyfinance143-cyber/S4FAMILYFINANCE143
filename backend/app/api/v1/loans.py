@@ -235,6 +235,12 @@ def create_loan(
     installment_count = payload.installment_count
     start_date = clean_text(payload.start_date) or date.today().isoformat()
 
+    # remaining_amount is the actual payoff target for loan_payment()/close_loan() —
+    # it must include interest, or the loan auto-closes once principal alone is
+    # repaid, permanently orphaning the interest installments in the schedule.
+    total_interest = calc_total_interest(amount, interest_rate, installment_count or 0, interest_type)
+    payoff_total = amount + total_interest
+
     loan = Loan(
         family_id=payload.family_id,
         owner_member_id=member.id,
@@ -243,7 +249,7 @@ def create_loan(
         person_name=person_name,
         principal_amount=amount,
         paid_amount=Decimal("0"),
-        remaining_amount=amount,
+        remaining_amount=payoff_total,
         interest_rate=interest_rate,
         interest_type=interest_type,
         installment_count=installment_count,
@@ -623,6 +629,17 @@ def generate_loan_schedule(
 
     if not loan.installment_count:
         raise HTTPException(400, "installment_count required to generate schedule")
+
+    # Keep remaining_amount (the loan_payment()/close_loan() payoff target) in
+    # sync with the newly recomputed interest total, preserving credit already paid.
+    total_interest = calc_total_interest(
+        Decimal(loan.principal_amount or 0),
+        Decimal(loan.interest_rate or 0),
+        int(loan.installment_count or 0),
+        loan.interest_type or "NONE",
+    )
+    payoff_total = Decimal(loan.principal_amount or 0) + total_interest
+    loan.remaining_amount = payoff_total - Decimal(loan.paid_amount or 0)
 
     rows = replace_loan_schedule(db, loan)
     write_audit_log(

@@ -8,6 +8,8 @@ from app.models.member_permission import MemberPermission
 from app.models.user import User
 from app.schemas.permission import PermissionUpdateRequest
 from app.services.permission_service import (
+    PROTECTED_OWNER_PERMISSIONS,
+    effective_permission_keys,
     get_base_permissions,
     normalize_role,
     require_owner,
@@ -16,18 +18,6 @@ from app.services.permission_service import (
 
 router = APIRouter(prefix="/permissions", tags=["Permissions"])
 
-
-PROTECTED_OWNER_PERMISSIONS = {
-    "member.permission",
-    "member.approve",
-    "member.invite",
-    "settings.manage",
-    "audit.read",
-    "backup.create",
-    "backup.read",
-    "backup.download",
-    "backup.restore",
-}
 
 def get_active_member(
     db: Session,
@@ -74,24 +64,11 @@ def effective_permissions_for_member(
         .all()
     )
 
-    from app.services.permission_service import member_permission_override_map
-
-    override_map = member_permission_override_map(overrides)
-    allowed_extra = {key for key, allowed in override_map.items() if allowed}
-    denied = {key for key, allowed in override_map.items() if not allowed}
-
-    role = normalize_role(
-        getattr(member, "role", None)
-    )
-
-    if role == "OWNER":
-        effective = base_permissions | allowed_extra
-    else:
-        protected_denied = PROTECTED_OWNER_PERMISSIONS
-        effective = (
-            base_permissions
-            | allowed_extra
-        ) - denied - protected_denied
+    # effective_permissions must match what require_permission() actually enforces
+    # everywhere else in the app — compute it via the same shared function instead
+    # of reimplementing the override/protected-key resolution here, so this view
+    # can never silently drift from the real authorization logic.
+    effective = effective_permission_keys(db, member)
 
     return {
         "base_permissions": sorted(base_permissions),

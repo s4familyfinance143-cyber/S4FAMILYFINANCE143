@@ -89,12 +89,8 @@ python -m pip install --upgrade pip
 if exist requirements.txt (
   pip install -r requirements.txt
 ) else (
-  if exist requirements-production.lock.txt (
-    pip install -r requirements-production.lock.txt
-  ) else (
-    echo requirements.txt not found.
-    exit /b 1
-  )
+  echo requirements.txt not found.
+  exit /b 1
 )
 
 echo Backend dependency install complete.
@@ -182,10 +178,10 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY backend/requirements*.txt /app/
+COPY backend/requirements.txt /app/requirements.txt
 
 RUN python -m pip install --upgrade pip && \
-    if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install -r requirements-production.lock.txt; fi
+    pip install -r requirements.txt
 
 COPY backend/app /app/app
 COPY backend/alembic /app/alembic
@@ -306,13 +302,20 @@ To create Windows .exe installer later:
 Current setup creates installer script only; it does not compile .exe automatically.
 "@ | Set-Content "$INSTALLER\README_INSTALLER.md" -Encoding UTF8
 
-Write-Host "6) Freeze production requirements..." -ForegroundColor Cyan
+Write-Host "6) Sync production requirements lock..." -ForegroundColor Cyan
 
-& $PY -m pip freeze | Set-Content "$BACKEND\requirements-production.lock.txt" -Encoding UTF8
-
+# Previously ran `pip freeze` here, snapshotting whatever happened to be
+# installed in this dev venv at packaging time. That silently drifted from
+# requirements.txt (the hand-maintained, fully pinned source) whenever a new
+# dependency was added there without this script being re-run right after —
+# which is exactly what happened: the checked-in lock file was missing
+# redis, celery, cryptography, boto3, sentry-sdk, slowapi, and others that
+# requirements.txt already had. requirements.txt is itself fully `==`
+# pinned, so copying it is the actual lock file — no separate freeze needed.
 if (-not (Test-Path "$BACKEND\requirements.txt")) {
-  Copy-Item "$BACKEND\requirements-production.lock.txt" "$BACKEND\requirements.txt" -Force
+  throw "backend\requirements.txt not found"
 }
+Copy-Item "$BACKEND\requirements.txt" "$BACKEND\requirements-production.lock.txt" -Force
 
 Write-Host "7) Frontend production build..." -ForegroundColor Cyan
 
