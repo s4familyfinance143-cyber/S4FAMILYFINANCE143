@@ -163,8 +163,18 @@ def download_bytes(file_id: str) -> bytes:
 def delete_file(file_id: str) -> None:
     try:
         _drive().files().delete(fileId=file_id).execute()
-    except Exception:
-        return
+    except Exception as exc:
+        # Best-effort by design (the DB row is the source of truth for
+        # "deleted", and the caller shouldn't block/fail a user-facing
+        # delete on Drive being unreachable) — but silently swallowing this
+        # meant a failed cleanup left a document (potentially an ID scan,
+        # bank statement, etc.) sitting on Drive forever with zero
+        # operational visibility. Log it; still doesn't raise.
+        import logging
+
+        logging.getLogger("s4.storage").warning(
+            "Google Drive delete_file failed for file_id=%s: %s", file_id, exc
+        )
 
 
 def path_for_file_id(file_id: str) -> str:

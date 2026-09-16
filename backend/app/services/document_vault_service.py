@@ -305,8 +305,15 @@ def delete_document_file(relative_path: str | None) -> None:
         key = relative_path[len(S3_PATH_PREFIX) :]
         try:
             _s3_client().delete_object(Bucket=settings.S3_BUCKET.strip(), Key=key)
-        except Exception:
-            return
+        except Exception as exc:
+            # Best-effort by design, matching gdrive_storage.delete_file —
+            # but log it, since silently swallowing left a failed cleanup
+            # with zero operational visibility.
+            import logging
+
+            logging.getLogger("s4.storage").warning(
+                "S3 delete_object failed for key=%s: %s", key, exc
+            )
         return
     path = vault_root() / relative_path
     if path.exists() and path.is_file():

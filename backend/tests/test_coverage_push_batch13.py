@@ -682,6 +682,73 @@ def test_invites_join_invalid_code(monkeypatch):
     assert exc.value.status_code == 404
 
 
+def _active_invite():
+    return SimpleNamespace(
+        id="inv-1", family_id="fam-1", status="ACTIVE",
+        expires_at=datetime.utcnow() + timedelta(days=1),
+        used_count=0, max_uses=5, created_by_member_id="m1",
+    )
+
+
+def test_invites_join_by_code_converts_relationship_serial_to_int():
+    from app.api.v1 import invites as mod
+    from app.models.invite_code import InviteCode
+    from app.models.family_member import FamilyMember
+    from app.models.join_request import JoinRequest
+    from app.models.relationship_type import RelationshipType
+    from app.schemas.invite import JoinByCodeRequest
+
+    db = Db(query_map={
+        InviteCode: Query(first_row=_active_invite()),
+        FamilyMember: Query(first_row=None),
+        JoinRequest: Query(first_row=None),
+        RelationshipType: Query(first_row=None),
+    })
+    payload = JoinByCodeRequest(invite_code="ABCD1234", relationship_type="Brother", relationship_serial="3")
+    mod.join_family_by_code.__wrapped__(_request(), payload, db=db, current_user=_user())
+
+    jr = [r for r in db.added if isinstance(r, JoinRequest)][0]
+    rt = [r for r in db.added if isinstance(r, RelationshipType)][0]
+    assert jr.requested_relationship_serial == 3
+    assert isinstance(jr.requested_relationship_serial, int)
+    assert rt.needs_serial is True
+
+
+def test_invites_join_by_code_no_relationship_serial():
+    from app.api.v1 import invites as mod
+    from app.models.invite_code import InviteCode
+    from app.models.family_member import FamilyMember
+    from app.models.join_request import JoinRequest
+    from app.models.relationship_type import RelationshipType
+    from app.schemas.invite import JoinByCodeRequest
+
+    db = Db(query_map={
+        InviteCode: Query(first_row=_active_invite()),
+        FamilyMember: Query(first_row=None),
+        JoinRequest: Query(first_row=None),
+        RelationshipType: Query(first_row=None),
+    })
+    payload = JoinByCodeRequest(invite_code="ABCD1234", relationship_type="Brother")
+    mod.join_family_by_code.__wrapped__(_request(), payload, db=db, current_user=_user())
+
+    jr = [r for r in db.added if isinstance(r, JoinRequest)][0]
+    rt = [r for r in db.added if isinstance(r, RelationshipType)][0]
+    assert jr.requested_relationship_serial is None
+    assert rt.needs_serial is False
+
+
+def test_invites_join_by_code_invalid_relationship_serial():
+    from app.api.v1 import invites as mod
+    from app.models.invite_code import InviteCode
+    from app.schemas.invite import JoinByCodeRequest
+
+    db = Db(query_map={InviteCode: Query(first_row=_active_invite())})
+    payload = JoinByCodeRequest(invite_code="ABCD1234", relationship_type="Brother", relationship_serial="not-a-number")
+    with pytest.raises(HTTPException) as exc:
+        mod.join_family_by_code.__wrapped__(_request(), payload, db=db, current_user=_user())
+    assert exc.value.status_code == 422
+
+
 # ===========================================================================
 # missing_features_api.py
 # ===========================================================================

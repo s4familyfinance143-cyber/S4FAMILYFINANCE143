@@ -383,12 +383,23 @@ def join_family_by_code(
         .first()
     )
 
+    # relationship_serial arrives as a string (see schemas/invite.py's
+    # JoinByCodeRequest comment); requested_relationship_serial is an
+    # Integer column, so convert it the same way the live /invites/join
+    # handler (family_governance_hardened.py) does.
+    serial_int: int | None = None
+    if payload.relationship_serial is not None and str(payload.relationship_serial).strip() != "":
+        try:
+            serial_int = int(str(payload.relationship_serial).strip())
+        except ValueError as exc:
+            raise HTTPException(422, "relationship_serial must be a number") from exc
+
     if not relationship:
         relationship = RelationshipType(
             name_bn=relationship_text,
             name_en=relationship_text,
             group_name="FAMILY",
-            needs_serial=payload.relationship_serial is not None,
+            needs_serial=serial_int is not None,
             is_system=True,
             is_active=True,
         )
@@ -403,7 +414,7 @@ def join_family_by_code(
         status="PENDING",
         requested_relationship_type_id=relationship.id,
         requested_relationship_label=relationship_text,
-        requested_relationship_serial=payload.relationship_serial,
+        requested_relationship_serial=serial_int,
     )
 
     db.add(request)
