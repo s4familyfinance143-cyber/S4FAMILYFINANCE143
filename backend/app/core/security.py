@@ -23,10 +23,13 @@ password_context = CryptContext(
 _KEY_DIR = Path(__file__).resolve().parents[2] / "secrets"
 _PRIVATE_PATH = _KEY_DIR / "jwt_rs256_private.pem"
 _PUBLIC_PATH = _KEY_DIR / "jwt_rs256_public.pem"
+_generated_keypair: tuple[str, str] | None = None
 
 
 def _ensure_rsa_keys() -> tuple[str, str]:
     """Load RS256 PEM key pair for JWT. Generate only outside production."""
+    global _generated_keypair
+
     private_pem = (getattr(settings, "JWT_PRIVATE_KEY", None) or "").strip()
     public_pem = (getattr(settings, "JWT_PUBLIC_KEY", None) or "").strip()
     if private_pem and public_pem:
@@ -40,6 +43,15 @@ def _ensure_rsa_keys() -> tuple[str, str]:
             "RS256 JWT keys missing in production. Set JWT_PRIVATE_KEY/JWT_PUBLIC_KEY "
             "or mount secrets/jwt_rs256_*.pem (or switch JWT_ALGORITHM=HS256)."
         )
+
+    # Memoize in-process: if secrets/ isn't writable below, every call would
+    # otherwise generate a FRESH, mutually-incompatible keypair -- a token
+    # signed by create_access_token() would already fail decode_token()'s
+    # verification on the very next call, breaking JWT auth entirely. Reusing
+    # one generated keypair for this process's lifetime keeps it self-consistent
+    # even when persistence to disk fails.
+    if _generated_keypair is not None:
+        return _generated_keypair
 
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -67,7 +79,8 @@ def _ensure_rsa_keys() -> tuple[str, str]:
         import logging
 
         logging.getLogger(__name__).warning("Could not persist generated JWT RSA keys to disk")
-    return private_pem, public_pem
+    _generated_keypair = (private_pem, public_pem)
+    return _generated_keypair
 
 
 def _signing_key() -> str:

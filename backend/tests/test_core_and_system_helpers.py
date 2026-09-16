@@ -82,7 +82,12 @@ def test_refresh_cookie_lifecycle_and_mobile_fallback(monkeypatch):
 
     cleared = Response()
     auth_cookies.clear_refresh_cookie(cleared)
-    assert "refresh=" in cleared.headers["set-cookie"]
+    cleared_cookie = cleared.headers["set-cookie"]
+    assert "refresh=" in cleared_cookie
+    # Must match set_refresh_cookie's SameSite exactly -- a mismatched
+    # attribute on the deleting Set-Cookie is an unnecessary risk for
+    # actually clearing the original cookie across browsers.
+    assert "SameSite=strict" in cleared_cookie
 
 
 def test_memory_cache_round_trip_expiry_and_bad_json(monkeypatch):

@@ -26,7 +26,17 @@ def set_refresh_cookie(response: Response, raw_refresh_token: str) -> None:
 
 
 def clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=refresh_cookie_name(), path="/")
+    # Match set_refresh_cookie's secure/samesite exactly. delete_cookie()
+    # defaults to secure=False -- relying on the default here would send a
+    # non-Secure Set-Cookie to expire a cookie that was set Secure, which is
+    # unreliable to depend on across browsers instead of just matching it.
+    secure = bool(settings.IS_PRODUCTION or settings.REFRESH_COOKIE_SECURE)
+    response.delete_cookie(
+        key=refresh_cookie_name(),
+        path="/",
+        secure=secure,
+        samesite=settings.REFRESH_COOKIE_SAMESITE or "lax",
+    )
 
 
 def read_refresh_token(request: Request, body_token: str | None = None) -> str | None:
