@@ -631,27 +631,54 @@ def phase10b_sync_push(
                 detail="operation must be CREATE/UPDATE/DELETE/UPSERT/DEPOSIT/WITHDRAW/PAYMENT/CONTRIBUTE/PAUSE/RESUME/CLOSE",
             )
 
-        outbox_id = str(uuid.uuid4())
         entity_id = change.get("entity_id")
         payload = change.get("payload", change)
+        client_change_id = str(change.get("client_change_id") or "")
 
-        db.execute(
-            text(
-                "INSERT INTO sync_outbox "
-                "(id, family_id, device_id, client_change_id, entity_type, entity_id, operation, payload, status, created_at, updated_at) "
-                "VALUES (:id, :family_id, :device_id, :client_change_id, :entity_type, :entity_id, :operation, :payload, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ),
-            {
-                "id": outbox_id,
-                "family_id": family_id,
-                "device_id": device_id,
-                "client_change_id": str(change.get("client_change_id") or ""),
-                "entity_type": entity_type,
-                "entity_id": str(entity_id) if entity_id is not None else None,
-                "operation": operation,
-                "payload": _phase10b_json_text(payload),
-            },
-        )
+        # client_change_id was captured but never checked before inserting a
+        # fresh outbox row every time — so a client retry after a dropped
+        # response (network drop, app killed mid-request) re-submitted the
+        # same batch and created a second outbox row for it. Most entity
+        # applicators only dedupe via an entity-level client_request_id (and
+        # only for money-move types that always post a Transaction); plain
+        # CREATE of budgets/savings_goals/financial_goals/investments/etc.
+        # had no protection at all, so a retried push created a genuine
+        # duplicate row. Reusing the existing outbox row for a repeated
+        # client_change_id makes this idempotent: process_pending_outbox
+        # only reprocesses PENDING rows, so an already-SYNCED repeat is a
+        # correct no-op, and a still-PENDING one is retried as normal.
+        existing_id = None
+        if client_change_id:
+            existing_id = db.execute(
+                text(
+                    "SELECT id FROM sync_outbox "
+                    "WHERE family_id = :family_id AND device_id = :device_id "
+                    "AND client_change_id = :client_change_id LIMIT 1"
+                ),
+                {"family_id": family_id, "device_id": device_id, "client_change_id": client_change_id},
+            ).scalar()
+
+        if existing_id:
+            outbox_id = str(existing_id)
+        else:
+            outbox_id = str(uuid.uuid4())
+            db.execute(
+                text(
+                    "INSERT INTO sync_outbox "
+                    "(id, family_id, device_id, client_change_id, entity_type, entity_id, operation, payload, status, created_at, updated_at) "
+                    "VALUES (:id, :family_id, :device_id, :client_change_id, :entity_type, :entity_id, :operation, :payload, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "id": outbox_id,
+                    "family_id": family_id,
+                    "device_id": device_id,
+                    "client_change_id": client_change_id,
+                    "entity_type": entity_type,
+                    "entity_id": str(entity_id) if entity_id is not None else None,
+                    "operation": operation,
+                    "payload": _phase10b_json_text(payload),
+                },
+            )
         accepted_ids.append(outbox_id)
 
         # Client-flagged conflict still recorded; auto conflicts also created during apply.
@@ -809,6 +836,25 @@ def phase10b_sync_pull(
         "grocery_lists": _phase10b_family_rows(db, "grocery_lists", family_id, since_token, limit),
         "grocery_items": _phase10b_family_rows(db, "grocery_items", family_id, since_token, limit),
         "grocery_vendors": _phase10b_family_rows(db, "grocery_vendors", family_id, since_token, limit),
+        # These entity_types were pushable (sync_apply.ALLOWED_ENTITY_TYPES)
+        # but missing here entirely, so a change made on one device could
+        # push successfully yet never appear on any other device pulling —
+        # multi-device sync was silently one-way for all of them.
+        # transaction_tags is intentionally still excluded: it has no
+        # family_id column of its own (only transaction_id + tag_id), so it
+        # needs a join like transaction_lines gets, not the generic helper.
+        "zakat_records": _phase10b_family_rows(db, "zakat_records", family_id, since_token, limit),
+        "phase15_items": _phase10b_family_rows(db, "phase15_items", family_id, since_token, limit),
+        "phase16_items": _phase10b_family_rows(db, "phase16_items", family_id, since_token, limit),
+        "investments": _phase10b_family_rows(db, "investments", family_id, since_token, limit),
+        "health_expenses": _phase10b_family_rows(db, "health_expenses", family_id, since_token, limit),
+        "vehicle_expenses": _phase10b_family_rows(db, "vehicle_expenses", family_id, since_token, limit),
+        "education_funds": _phase10b_family_rows(db, "education_funds", family_id, since_token, limit),
+        "properties": _phase10b_family_rows(db, "properties", family_id, since_token, limit),
+        "subscriptions": _phase10b_family_rows(db, "subscriptions", family_id, since_token, limit),
+        "documents": _phase10b_family_rows(db, "documents", family_id, since_token, limit),
+        "tags": _phase10b_family_rows(db, "tags", family_id, since_token, limit),
+        "loan_payments": _phase10b_family_rows(db, "loan_payments", family_id, since_token, limit),
     }
 
     sync_token = _phase10b_now_token()

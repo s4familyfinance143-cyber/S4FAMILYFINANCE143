@@ -282,6 +282,7 @@ def create_transaction(
                 return existing
             raise
     else:
+        db.add(tx)
         db.flush()
 
     created_lines: list[TransactionLine] = []

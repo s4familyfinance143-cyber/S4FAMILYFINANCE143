@@ -657,29 +657,16 @@ def _apply_account(
         ):
             if not member_id:
                 return {"status": "FAILED", "error": "member_id required for accounts CREATE"}
-            # Avoid double-create on duplicate client_request_id in institution_name marker
-            client_key = _clean(payload.get("client_request_id") or payload.get("mobile_sync_key"))
-            if client_key:
-                marker = f"[client_request_id:{client_key}]"
-                dup = (
-                    db.query(Account)
-                    .filter(
-                        Account.family_id == family_id,
-                        Account.deleted_at.is_(None),
-                        Account.institution_name.isnot(None),
-                    )
-                    .all()
-                )
-                for cand in dup:
-                    if marker in str(cand.institution_name or ""):
-                        return {"status": "SYNCED", "entity_id": str(cand.id), "note": "idempotent_client_key"}
-
+            # Retry-idempotency used to be done here by embedding
+            # "[client_request_id:xxx]" directly into institution_name — a
+            # real, user-visible wallet field (e.g. shown as "Dutch-Bangla
+            # Bank [client_request_id:abc-123]" in the app). Now handled
+            # upstream in offline_sync_hardened.py's push endpoint via
+            # client_change_id, which dedupes before an outbox row (and
+            # therefore this function) is ever reached a second time for the
+            # same retried push.
             opening = _dec(payload.get("opening_balance"))
             account_type = (_clean(payload.get("account_type")) or "CASH").upper()
-            inst = _clean(payload.get("institution_name")) or ""
-            if client_key:
-                marker = f"[client_request_id:{client_key}]"
-                inst = f"{inst} {marker}".strip()
             row = Account(
                 id=str(entity_id or uuid.uuid4()),
                 family_id=family_id,
@@ -689,7 +676,7 @@ def _apply_account(
                 currency=_clean(payload.get("currency")) or "BDT",
                 opening_balance=opening,
                 current_balance=opening,
-                institution_name=inst or None,
+                institution_name=_clean(payload.get("institution_name")),
                 account_number_masked=_clean(payload.get("account_number_masked")),
                 is_shared_family=bool(payload.get("is_shared_family", True)),
                 is_owner_wallet=bool(payload.get("is_owner_wallet", False)),
@@ -1072,6 +1059,27 @@ def _apply_loan(
         if loan.remaining_amount <= 0:
             loan.remaining_amount = Decimal("0")
             loan.status = "CLOSED"
+
+        # loans.py's direct online payment endpoint also calls this to keep
+        # the LoanInstallment schedule (next-due date, PENDING/PARTIAL/PAID
+        # status per installment) in sync — this offline-sync path posted
+        # the real money and updated the loan's own totals above, but never
+        # touched the schedule, so a payment made while offline (the exact
+        # scenario this sync path exists for) silently left the installment
+        # schedule stuck showing stale due dates/status forever.
+        try:
+            from app.services.loan_schedule_service import apply_payment_to_schedule
+
+            apply_payment_to_schedule(
+                db,
+                family_id=family_id,
+                loan_id=loan.id,
+                amount=amount,
+                paid_at=_clean(payload.get("payment_date")) or None,
+            )
+        except Exception:
+            pass
+
         db.flush()
         return {"status": "SYNCED", "entity_id": str(loan.id)}
 
@@ -1666,21 +1674,14 @@ def _apply_zakat_record(
     except Exception:
         return {"status": "FAILED", "error": "ZakatRecord model unavailable"}
 
-    client_request_id = _clean(payload.get("client_request_id"))
-    if client_request_id:
-        rows = (
-            db.query(ZakatRecord)
-            .filter(ZakatRecord.family_id == family_id, ZakatRecord.note.isnot(None))
-            .all()
-        )
-        for row in rows:
-            if client_request_id in str(row.note or ""):
-                return {"status": "SYNCED", "entity_id": str(row.id)}
-
+    # Retry-idempotency used to be done here by embedding
+    # "[client_request_id:xxx]" directly into note — a real, user-visible
+    # field shown back to the user in their zakat calculation history. Now
+    # handled upstream in offline_sync_hardened.py's push endpoint via
+    # client_change_id, which dedupes before an outbox row (and therefore
+    # this function) is ever reached a second time for the same retried push.
     try:
         note = _clean(payload.get("note") or payload.get("notes")) or ""
-        if client_request_id:
-            note = f"{note} [client_request_id:{client_request_id}]".strip()
 
         cash = _dec(payload.get("cash_amount") or payload.get("cash_value"))
         gold = _dec(payload.get("gold_value"))

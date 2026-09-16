@@ -30,7 +30,9 @@ export type RecordLocalEntity =
   | "financial_goals"
   | "recurring_transactions"
   | "zakat_records"
-  | "grocery_vendors";
+  | "grocery_vendors"
+  | "phase15_items"
+  | "phase16_items";
 
 export type LocalEntity = SpecificLocalEntity | RecordLocalEntity;
 
@@ -62,6 +64,8 @@ const RECORD_ENTITIES = new Set<string>([
   "recurring_transactions",
   "zakat_records",
   "grocery_vendors",
+  "phase15_items",
+  "phase16_items",
 ]);
 
 export function isLocalEntity(value: string): value is LocalEntity {

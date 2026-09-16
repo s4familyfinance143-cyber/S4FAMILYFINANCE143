@@ -233,6 +233,26 @@ def scan_due_notifications_task(limit: int = 200) -> dict:
                 scanned += 1
                 created_count += result["created_count"]
                 created_ids.extend(result["created_ids"])
+                # notification_scan_service only creates the in-app row —
+                # unlike notifications.py's POST /scan/{family_id} (user-
+                # triggered only, never called automatically), this
+                # scheduled task was the ONE unattended path meant to alert
+                # users to over-budget / loan-due situations without them
+                # having to open the app, but it never emailed anyone: a
+                # created notification just sat unread until someone
+                # happened to check. Fan out the same way the manual scan
+                # endpoint does.
+                if result["created_ids"]:
+                    try:
+                        from app.services.notification_delivery_service import (
+                            fanout_notification_ids,
+                        )
+
+                        fanout_notification_ids(db, family.id, result["created_ids"])
+                    except Exception as exc:
+                        failures.append(
+                            {"family_id": family.id, "error": f"delivery failed: {exc}"[:500]}
+                        )
             except Exception as exc:
                 db.rollback()
                 failures.append({"family_id": family.id, "error": str(exc)[:500]})

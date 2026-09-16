@@ -88,15 +88,12 @@ def validate_relationship_payload(
     serial_label: str | None = None,
     linked_member_id: str | None = None,
     relationship_note: str | None = None,
-    allow_owner_responsible: bool = False,
 ) -> dict:
     label = (relationship_label or "").strip()
     if not label:
         raise HTTPException(422, "relationship_type / label required")
 
     group = group_for_label(label)
-    if allow_owner_responsible and label in OWNER_RESPONSIBLE_TYPES:
-        group = group or ("SIBLINGS" if "Brother" in label or "Sister" in label else "GUARDIAN_OTHER" if label in {"Guardian", "Other"} else "SPOUSE" if label in {"Husband", "Wife"} else "PARENTS")
     if not group:
         # still allow free-form but classify as GUARDIAN_OTHER
         group = "GUARDIAN_OTHER"

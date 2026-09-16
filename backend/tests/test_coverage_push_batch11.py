@@ -244,7 +244,13 @@ def test_sync_apply_apply_account_create_and_idempotent():
     assert again["note"] == "idempotent"
 
 
-def test_sync_apply_apply_account_client_key_idempotent():
+def test_sync_apply_apply_account_no_longer_scans_institution_name_marker():
+    """Retry-idempotency moved to offline_sync_hardened.py's client_change_id
+    guard (dedupes before an outbox row is ever re-applied), so this
+    function no longer embeds/scans a "[client_request_id:x]" marker in the
+    user-visible institution_name field. A duplicate client_request_id in
+    the payload no longer short-circuits CREATE — it always creates fresh,
+    and institution_name is stored exactly as the client sent it."""
     from app.models.account import Account
     from app.services import sync_apply as sa
 
@@ -255,10 +261,13 @@ def test_sync_apply_apply_account_client_key_idempotent():
     db = Db(query_map={Account: Query(rows=[dup])})
     result = sa._apply_account(
         db, family_id="f1", operation="CREATE", entity_id=None,
-        payload={"name": "X", "client_request_id": "req-99"},
+        payload={"name": "X", "client_request_id": "req-99", "institution_name": "Bank"},
         member_id="m1",
     )
-    assert result["note"] == "idempotent_client_key"
+    assert result["status"] == "SYNCED"
+    assert result["entity_id"] != "acc-dup"
+    created = db.added[-1]
+    assert created.institution_name == "Bank"
 
 
 def test_sync_apply_apply_account_soft_delete_and_already_deleted():

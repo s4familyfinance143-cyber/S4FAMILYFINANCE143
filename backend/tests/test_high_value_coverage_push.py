@@ -38,6 +38,9 @@ class Query:
     def with_for_update(self):
         return self
 
+    def populate_existing(self):
+        return self
+
     def all(self):
         return list(self.rows)
 
@@ -401,15 +404,17 @@ def test_redis_session_rate_limit_redis_path(monkeypatch):
 
 
 def test_relationship_owner_responsible_and_serial_edges():
-    spouse = relationship_rules.validate_relationship_payload(
-        relationship_label="Husband", allow_owner_responsible=True
-    )
+    # allow_owner_responsible was removed: every OWNER_RESPONSIBLE_TYPES
+    # label (Husband/Wife/Father/Mother/Elder Brother/Elder Sister/Guardian/
+    # Other) is already classified by RELATIONSHIP_GROUPS, so the flag's
+    # fallback branch was unreachable dead code with zero callers passing
+    # it — confirmed these outcomes are identical without it.
+    spouse = relationship_rules.validate_relationship_payload(relationship_label="Husband")
     assert spouse["group"] == "SPOUSE"
 
     sibling = relationship_rules.validate_relationship_payload(
         relationship_label="Elder Brother",
         serial_label="YOUNGER",
-        allow_owner_responsible=True,
     )
     assert sibling["group"] == "SIBLINGS"
     assert sibling["relationship_serial"] == 2
@@ -417,7 +422,6 @@ def test_relationship_owner_responsible_and_serial_edges():
     guardian = relationship_rules.validate_relationship_payload(
         relationship_label="Guardian",
         relationship_note="uncle",
-        allow_owner_responsible=True,
     )
     assert guardian["group"] == "GUARDIAN_OTHER"
 

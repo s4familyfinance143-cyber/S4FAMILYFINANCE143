@@ -21,9 +21,19 @@ def reverse_account_balances_from_lines(db: Session, lines: list[TransactionLine
     for line in lines:
         if not line.account_id:
             continue
+        # populate_existing() + with_for_update() — same fix as
+        # accounting_service.py's create_transaction/_wallet_or_404: without
+        # a lock, a concurrent balanced posting on this same account (which
+        # does lock) can commit between this read and this function's write,
+        # producing a lost update. populate_existing() is required alongside
+        # with_for_update() because with_for_update() alone does not refresh
+        # an already identity-mapped object in the same SQLAlchemy session
+        # (verified empirically when this was first found).
         account = (
             db.query(Account)
             .filter(Account.id == line.account_id, Account.deleted_at.is_(None))
+            .populate_existing()
+            .with_for_update()
             .first()
         )
         if not account:

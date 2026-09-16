@@ -125,6 +125,22 @@ def test_notification_scan_task_runs_in_eager_mode(monkeypatch):
         return {"created_count": 2, "created_ids": ["n1", "n2"]}
 
     monkeypatch.setattr(scan_service, "run_family_notification_scan", scan)
+    # scan_due_notifications_task now fans out newly-created notifications
+    # (see celery_tasks.py) — FakeSession.query() is generic and returns
+    # `families` regardless of model, so a real fanout_notification_ids call
+    # would crash trying to read .family_id off the SimpleNamespace families
+    # list. Delivery behavior itself is covered elsewhere; this test is
+    # about the task's per-family scan/error-handling orchestration. The
+    # task does `from app.services.notification_delivery_service import
+    # fanout_notification_ids` inside the function body, so patch it at its
+    # source module — that's what the local import re-resolves at call time.
+    import app.services.notification_delivery_service as delivery_service
+
+    monkeypatch.setattr(
+        delivery_service,
+        "fanout_notification_ids",
+        lambda *a, **k: {"delivered": 0, "results": []},
+    )
     result = scan_due_notifications_task.apply(kwargs={"limit": 999}).get()
     assert result["ok"] is False
     assert result["families_scanned"] == 1
