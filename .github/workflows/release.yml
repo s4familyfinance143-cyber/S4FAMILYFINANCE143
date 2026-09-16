@@ -59,8 +59,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # android-actions/setup-android@v3 defaults to `sdkmanager tools`, a
+      # package Google retired from the SDK repository (replaced by
+      # cmdline-tools) -- it now fails outright with "Failed to find package
+      # 'tools'" before our own steps even run. ubuntu-latest GitHub runners
+      # already ship a preinstalled Android SDK (ANDROID_HOME/ANDROID_SDK_ROOT
+      # set, platforms + build-tools present), so this step was also
+      # redundant. Just ensure the specific platform/build-tools this app
+      # needs are present via the preinstalled sdkmanager instead.
+      - name: Ensure required Android SDK packages
+        run: |
+          # frontend/android/variables.gradle pins compileSdkVersion/targetSdkVersion = 35.
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
       - name: Sync Capacitor Android
         working-directory: frontend
         env:
