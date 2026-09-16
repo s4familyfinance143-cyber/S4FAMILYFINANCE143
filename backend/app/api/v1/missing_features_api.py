@@ -448,7 +448,9 @@ def list_vehicles(family_id: str, db: Session = Depends(get_db), user: User = De
 
 @router.post("/vehicles", status_code=status.HTTP_201_CREATED)
 def create_vehicle_master(payload: VehicleIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    # Write action -- report.read is held by VIEWER too (read-only role).
+    # Same fix as zakat.py/upsert_metal_rate this session.
+    member = require_permission(db, payload.family_id, user.id, "budget.create")
     row = Vehicle(
         family_id=payload.family_id,
         created_by_member_id=member.id,
@@ -609,7 +611,9 @@ def list_health_budgets(family_id: str, year: str | None = None, db: Session = D
 
 @router.post("/health-annual-budgets", status_code=status.HTTP_201_CREATED)
 def create_health_budget(payload: HealthBudgetIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    # Write action -- report.read is held by VIEWER too (read-only role).
+    # Same fix as zakat.py/upsert_metal_rate this session.
+    member = require_permission(db, payload.family_id, user.id, "budget.create")
     year = payload.year.strip()
     spent = _health_budget_spent(db, payload.family_id, year, payload.member_id)
 
@@ -673,7 +677,9 @@ def create_property_repair(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    member = require_permission(db, payload.family_id, user.id, "report.read")
+    # Write action -- report.read is held by VIEWER too (read-only role).
+    # Same fix as zakat.py/upsert_metal_rate this session.
+    member = require_permission(db, payload.family_id, user.id, "budget.create")
     if payload.property_id != property_id:
         raise HTTPException(400, "property_id mismatch")
     # Locked: below is a read-modify-write on prop.repair_cost (a cached
