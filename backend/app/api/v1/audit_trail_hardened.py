@@ -278,7 +278,11 @@ def phase9b_audit_trail_activity(
         db,
         family_id,
         current_user,
-        ["audit.view", "audit.view_all", "reports.view", "reports.view_all"],
+        # "reports.view"/"reports.view_all" deliberately excluded: they map to
+        # report.read, which VIEWER/MEMBER hold, and would let them bypass
+        # audit.read being in permission_service.PROTECTED_OWNER_PERMISSIONS
+        # (explicitly non-overridable, Owner/Admin only by design).
+        ["audit.view", "audit.view_all"],
     )
 
     cols = _phase9b_audit_columns_or_500(db)
@@ -344,7 +348,9 @@ def phase9b_audit_trail_summary(
         db,
         family_id,
         current_user,
-        ["audit.view", "audit.view_all", "reports.view", "reports.view_all"],
+        # See phase9b_audit_trail_activity's comment above on why
+        # reports.view/reports.view_all are excluded.
+        ["audit.view", "audit.view_all"],
     )
 
     cols = _phase9b_audit_columns_or_500(db)
@@ -444,7 +450,9 @@ def phase9b_audit_trail_entity(
         db,
         family_id,
         current_user,
-        ["audit.view", "audit.view_all", "reports.view", "reports.view_all"],
+        # See phase9b_audit_trail_activity's comment above on why
+        # reports.view/reports.view_all are excluded.
+        ["audit.view", "audit.view_all"],
     )
 
     cols = _phase9b_audit_columns_or_500(db)
