@@ -422,6 +422,35 @@ def test_trial_balance_currency_report(patch_report_access, monkeypatch):
     assert len(out["rows"]) == 2
 
 
+def test_trial_balance_currency_report_excludes_unconverted_row(patch_report_access, monkeypatch):
+    """report_currency_rate() returns Decimal(0) when no exchange rate is
+    configured. A trial balance previously folded that row's debit/credit
+    in as zero -- if the row's real (nonzero) value wasn't offset by another
+    zeroed row, this could make an actually-balanced ledger falsely report
+    as unbalanced. The unconverted row must be excluded, and "balanced"
+    must become None (unknown), not a possibly-wrong True/False."""
+    r = patch_report_access
+    monkeypatch.setattr(
+        "app.services.accounting_service.generate_trial_balance",
+        lambda db, fid: {
+            "rows": [
+                {"account_name": "Cash", "coa_class": "ASSET", "currency": "BDT", "debit": "100", "credit": "0"},
+                {"account_name": "Equity", "account_type": "EQUITY", "currency": "BDT", "debit": "0", "credit": "100"},
+                {"account_name": "Foreign Wallet", "coa_class": "ASSET", "currency": "XYZ", "debit": "50", "credit": "0"},
+            ]
+        },
+    )
+    out = r.trial_balance_currency_report("fam1", db=Db(got={"fam1": FAMILY}), current_user=USER)
+    assert out["balanced"] is None
+    assert out["debit_total_base"] == "100.0000"
+    assert out["credit_total_base"] == "100.0000"
+    assert out["unconverted_account_count"] == 1
+    assert len(out["rows"]) == 3
+    foreign_row = next(row for row in out["rows"] if row["account_name"] == "Foreign Wallet")
+    assert foreign_row["rate_available"] is False
+    assert foreign_row["debit_base"] is None
+
+
 def test_profit_loss_currency_report(patch_report_access, monkeypatch):
     r = patch_report_access
     monkeypatch.setattr("app.services.accounting_service.generate_income_statement", lambda db, fid: {"ok": True})
