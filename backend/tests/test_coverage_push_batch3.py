@@ -33,6 +33,9 @@ class Query:
     def with_for_update(self, *args, **kwargs):
         return self
 
+    def populate_existing(self, *args, **kwargs):
+        return self
+
     def all(self):
         return list(self.rows)
 
@@ -62,7 +65,7 @@ class Db:
             return Query(rows=payload)
         return Query(first_row=payload)
 
-    def get(self, model, key):
+    def get(self, model, key, **kwargs):
         if isinstance(self.got, dict):
             return self.got.get(key)
         return self.got

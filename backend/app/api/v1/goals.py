@@ -103,7 +103,10 @@ def can_use_wallet(member: FamilyMember, wallet: Account) -> bool:
 
 
 def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember) -> Account:
-    wallet = db.get(Account, wallet_id)
+    # Locked, unlike a plain db.get() -- accounting_service re-locks the
+    # wallet again downstream, but nothing else in this file protects the
+    # initial current_balance read used for the insufficient-balance check.
+    wallet = db.get(Account, wallet_id, populate_existing=True, with_for_update=True)
 
     if not wallet or wallet.family_id != family_id or wallet.deleted_at is not None:
         raise HTTPException(404, "Wallet not found")
@@ -123,7 +126,13 @@ def get_goal(
     goal_id: str,
     allowed_statuses=None,
 ) -> FinancialGoal:
-    goal = db.get(FinancialGoal, goal_id)
+    # Locked: goal.current_amount is mutated directly by this file's own
+    # code (contribute/withdraw below) with NO downstream re-lock anywhere
+    # in accounting_service -- unlike wallet balances, this is the ONLY
+    # guard against two concurrent contributions/withdrawals on the same
+    # goal silently losing one of the two updates. A plain db.get() here
+    # provided no protection at all.
+    goal = db.get(FinancialGoal, goal_id, populate_existing=True, with_for_update=True)
 
     if not goal or goal.family_id != family_id or goal.deleted_at is not None:
         raise HTTPException(404, "Financial goal not found")
@@ -138,7 +147,11 @@ def get_linked_savings(db: Session, goal: FinancialGoal):
     if not goal.linked_savings_goal_id:
         return None
 
-    savings = db.get(SavingsGoal, goal.linked_savings_goal_id)
+    # Locked -- same reasoning as get_goal above: linked_savings.current_amount
+    # is mutated directly right after this call, with no other guard.
+    savings = db.get(
+        SavingsGoal, goal.linked_savings_goal_id, populate_existing=True, with_for_update=True
+    )
 
     if not savings or savings.family_id != goal.family_id or savings.deleted_at is not None:
         raise HTTPException(400, "Linked savings goal invalid")

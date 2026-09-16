@@ -72,7 +72,7 @@ class Db:
             return Query(rows=payload)
         return Query(first_row=payload)
 
-    def get(self, model, key):
+    def get(self, model, key, **kwargs):
         if isinstance(self.got, dict):
             return self.got.get(key)
         return self.got

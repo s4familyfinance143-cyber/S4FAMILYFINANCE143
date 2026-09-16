@@ -99,6 +99,8 @@ def can_use_wallet(member: FamilyMember, wallet: Account) -> bool:
 
 
 def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember) -> Account:
+    # populate_existing() alongside with_for_update() -- established convention
+    # this session (accounting_service.py, transactions.py, finance_posting.py).
     wallet = (
         db.query(Account)
         .filter(
@@ -106,6 +108,7 @@ def get_wallet(db: Session, family_id: str, wallet_id: str, member: FamilyMember
             Account.family_id == family_id,
             Account.deleted_at.is_(None),
         )
+        .populate_existing()
         .with_for_update()
         .first()
     )
@@ -130,7 +133,11 @@ def get_savings_goal(db: Session, family_id: str, goal_id: str, lock: bool = Tru
     )
 
     if lock:
-        query = query.with_for_update()
+        # populate_existing() required: current_amount is mutated directly by
+        # this file's own code (deposit/withdraw below) with no downstream
+        # re-lock inside accounting_service -- unlike wallet balances, this
+        # lock is the ONLY guard against a lost update under concurrency.
+        query = query.populate_existing().with_for_update()
 
     goal = query.first()
 
