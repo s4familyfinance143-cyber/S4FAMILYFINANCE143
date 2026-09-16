@@ -83,10 +83,17 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
   echo "==> Rebuilding marketing website (no-deps, no-cache — avoid stale Downloads UI)"
   (
     cd "$SITE_ROOT"
+    # Without -p, compose derives the project name from the directory
+    # ("s4"), which is NOT the live stack. The real api+db (holding real
+    # customer_licenses/payment_transactions/users data — verified 2026-09-16)
+    # run under project "s4-production" (bound to 127.0.0.1:8001, which
+    # nginx's /s4-api/ location proxies to). Running without -p silently
+    # created a second, empty, network-detached api+db under the default
+    # "s4" project on every deploy instead of touching the real one.
     # BuildKit sometimes kept a stale COPY . . layer, so Downloads stayed on
     # old pending metadata even after rsync. Force a clean website image.
-    docker compose -f docker-compose.prod.yml build --no-cache website
-    docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps website
+    docker compose -p s4-production -f docker-compose.prod.yml build --no-cache website
+    docker compose -p s4-production -f docker-compose.prod.yml up -d --force-recreate --no-deps website
   )
 
   # Host nginx often serves /downloads/*.apk|exe from the bind-mounted public
@@ -100,7 +107,7 @@ if [[ "$DEPLOY_WEBSITE" == "1" ]]; then
     echo "==> Ensuring installers exist inside website container"
     (
       cd "$SITE_ROOT"
-      CID="$(docker compose -f docker-compose.prod.yml ps -q website | head -n1)"
+      CID="$(docker compose -p s4-production -f docker-compose.prod.yml ps -q website | head -n1)"
       if [[ -n "$CID" ]]; then
         docker exec "$CID" mkdir -p /app/public/downloads
         docker cp "$SITE_ROOT/installer-binaries/S4-Family-Finance-143.apk" "$CID:/app/public/downloads/"
