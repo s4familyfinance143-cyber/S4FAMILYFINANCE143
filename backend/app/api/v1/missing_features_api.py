@@ -24,7 +24,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.services.audit_service import write_audit_log
 from app.services.document_vault_service import store_document_file
-from app.services.permission_service import require_permission
+from app.services.permission_service import normalize_role, require_permission
 from app.services.finance_posting import post_expense_flush
 from app.api.v1.transactions import get_account_or_404, require_wallet_access
 
@@ -351,7 +351,11 @@ def upsert_metal_rate(
     current_user: User = Depends(get_current_user),
 ):
     member = require_permission(db, family_id, current_user.id, "report.read")
-    role = (member.role or "").upper()
+    # normalize_role(), not a raw upper() comparison -- OWNER_ROLES in
+    # permission_service.py recognizes legacy strings like "FAMILY_OWNER" as
+    # OWNER; a raw check would 403 a real owner stored under that alias (see
+    # the same bug already fixed in categories.py this session).
+    role = normalize_role(member.role)
     if role not in {"OWNER", "ADMIN"}:
         raise HTTPException(403, "Owner/Admin required to set metal rates")
 
@@ -672,9 +676,15 @@ def create_property_repair(
     member = require_permission(db, payload.family_id, user.id, "report.read")
     if payload.property_id != property_id:
         raise HTTPException(400, "property_id mismatch")
+    # Locked: below is a read-modify-write on prop.repair_cost (a cached
+    # running total). Without the lock, two concurrent repair entries for
+    # the same property can both read the same starting value and one
+    # increment is silently lost.
     prop = (
         db.query(Property)
         .filter(Property.id == property_id, Property.family_id == payload.family_id, Property.deleted_at.is_(None))
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if not prop:

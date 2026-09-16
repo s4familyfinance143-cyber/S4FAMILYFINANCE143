@@ -368,6 +368,21 @@ def test_mf_upsert_metal_rate_forbidden_and_owner(monkeypatch):
     assert db.commit_count == 1
 
 
+def test_mf_upsert_metal_rate_accepts_legacy_family_owner_role(monkeypatch):
+    """normalize_role() must be used, not a raw string comparison --
+    permission_service.OWNER_ROLES recognizes "FAMILY_OWNER" as a legacy
+    OWNER alias, so a real owner stored under that value must not 403 here
+    (same bug already fixed in categories.py this session)."""
+    from app.api.v1 import missing_features_api as mod
+
+    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: _member(role="FAMILY_OWNER"))
+    monkeypatch.setattr(mod, "write_audit_log", lambda **k: None)
+    payload = mod.MetalRateIn(metal="SILVER", rate_bdt=Decimal("120"))
+    db = Db()
+    out = mod.upsert_metal_rate(payload, "fam-1", db=db, current_user=_user())
+    assert out["metal"] == "SILVER"
+
+
 def test_mf_create_vehicle_master(monkeypatch):
     from app.api.v1 import missing_features_api as mod
 
