@@ -7,6 +7,7 @@ from app.models.category import Category
 from app.models.family_member import FamilyMember
 from app.models.user import User
 from app.schemas.category import CategoryCreateRequest, CategoryResponse
+from app.services.permission_service import require_owner_or_admin
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -58,10 +59,11 @@ def seed_default_categories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = get_active_member(db, family_id, current_user.id)
-
-    if not member or member.role not in {"OWNER", "ADMIN"}:
-        raise HTTPException(403, "Owner/Admin required")
+    # normalize_role()-aware check (require_owner_or_admin), not a raw
+    # member.role comparison -- permission_service.OWNER_ROLES recognizes
+    # legacy role strings like "FAMILY_OWNER" as OWNER; a raw `not in
+    # {"OWNER", "ADMIN"}` check would 403 a real owner stored under that alias.
+    require_owner_or_admin(db=db, family_id=family_id, user_id=current_user.id)
 
     created = 0
 
@@ -109,10 +111,7 @@ def create_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = get_active_member(db, payload.family_id, current_user.id)
-
-    if not member or member.role not in {"OWNER", "ADMIN"}:
-        raise HTTPException(403, "Owner/Admin required")
+    require_owner_or_admin(db=db, family_id=payload.family_id, user_id=current_user.id)
 
     category_type = payload.category_type.upper().strip()
 
@@ -192,10 +191,7 @@ def delete_category(
     if not category or category.deleted_at is not None:
         raise HTTPException(404, "Category not found")
 
-    member = get_active_member(db, category.family_id, current_user.id)
-
-    if not member or member.role not in {"OWNER", "ADMIN"}:
-        raise HTTPException(403, "Owner/Admin required")
+    require_owner_or_admin(db=db, family_id=category.family_id, user_id=current_user.id)
 
     if category.is_system:
         raise HTTPException(400, "System category cannot be deleted")

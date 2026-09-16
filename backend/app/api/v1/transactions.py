@@ -69,6 +69,12 @@ def validate_amount(value) -> Decimal:
 
 
 def get_account_or_404(db: Session, family_id: str, account_id: str) -> Account:
+    # populate_existing() alongside with_for_update() -- same convention as
+    # accounting_service.create_transaction / finance_posting.get_account.
+    # Currently this is always the first Account query in a fresh per-request
+    # session, so there's nothing stale to refresh today -- but that safety
+    # depends on a fragile "nothing queried this account earlier" call-order
+    # assumption. Matching the established pattern removes that fragility.
     account = (
         db.query(Account)
         .filter(
@@ -76,6 +82,7 @@ def get_account_or_404(db: Session, family_id: str, account_id: str) -> Account:
             Account.family_id == family_id,
             Account.deleted_at.is_(None),
         )
+        .populate_existing()
         .with_for_update()
         .first()
     )

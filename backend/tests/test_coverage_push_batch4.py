@@ -28,6 +28,9 @@ class Query:
     def with_for_update(self, *args, **kwargs):
         return self
 
+    def populate_existing(self, *args, **kwargs):
+        return self
+
     def scalar(self):
         row = self._first
         return row if not hasattr(row, "__getitem__") else row

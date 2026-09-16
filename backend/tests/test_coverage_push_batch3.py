@@ -964,6 +964,7 @@ def test_backup_helpers(monkeypatch, tmp_path):
 
 def test_categories_helpers_and_seed(monkeypatch):
     from app.api.v1 import categories as cat
+    from app.models.family_member import FamilyMember as RealFamilyMember
 
     class FakeFamilyMember:
         family_id = MagicMock()
@@ -990,16 +991,20 @@ def test_categories_helpers_and_seed(monkeypatch):
         is member
     )
 
+    # seed_default_categories/create_category/delete_category now go through
+    # permission_service.require_owner_or_admin(), which queries the REAL
+    # FamilyMember model (not categories.py's cat.FamilyMember binding) --
+    # so the owner/admin check below must be keyed on the real class.
     with pytest.raises(HTTPException):
         cat.seed_default_categories(
             "fam",
-            Db(query_map={FakeFamilyMember: Query(first_row=None)}),
+            Db(query_map={RealFamilyMember: Query(first_row=None)}),
             SimpleNamespace(id="u"),
         )
 
     class SeedCatDb(Db):
         def query(self, model):
-            if model is FakeFamilyMember:
+            if model is RealFamilyMember:
                 return Query(first_row=SimpleNamespace(id="m", role="ADMIN"))
             if model is FakeCategory:
                 return Query(first_row=None)
