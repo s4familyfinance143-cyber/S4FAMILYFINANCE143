@@ -1174,7 +1174,10 @@ def test_notification_delivery_email_and_push_branches(monkeypatch):
     db = NDb()
     out = nd.deliver_notification_channels(db, notif)
     assert out["email"][0]["queued"] is True
-    assert out["push"][0]["queued"] is True
+    # FCM is permanently removed (is_fcm_configured() False here), so this row
+    # will never be retried -- honestly reported as not-queued, not sent.
+    assert out["push"][0]["queued"] is False
+    assert out["push"][0]["sent"] is False
     assert any(isinstance(x, type(db.added[0])) or True for x in db.added)
 
     # celery email path

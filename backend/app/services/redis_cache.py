@@ -50,13 +50,17 @@ def cache_get(key: str) -> Any | None:
 
     r = _redis()
     if r:
-        raw = r.get(key)
-        if raw is None:
-            return None
         try:
-            return json.loads(raw)
+            raw = r.get(key)
         except Exception:
-            return None
+            raw = None
+        else:
+            if raw is None:
+                return None
+            try:
+                return json.loads(raw)
+            except Exception:
+                return None
     row = _memory.get(key)
     if not row:
         return None

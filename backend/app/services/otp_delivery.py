@@ -70,7 +70,14 @@ def send_otp_to_channels(*, email: str, phone: str, otp: str) -> OtpDeliveryRepo
         report.error = "WhatsApp/SMS not configured"
         return report
 
-    if report.email_sent and report.mobile_sent:
+    if report.delivered_via:
+        # At least one channel got the OTP through -- that's enough for the user
+        # to authenticate. Requiring BOTH email and mobile to succeed meant a
+        # transient WhatsApp/SMS provider hiccup (rate limit, network blip) blocked
+        # signup/login/delete-account entirely even though the user already has a
+        # working OTP in their inbox -- and for signup, went as far as deleting the
+        # freshly-created account. The other channel's failure is still reported
+        # below so the caller can surface it, just not treated as fatal.
         report.ok = True
         return report
     report.ok = False

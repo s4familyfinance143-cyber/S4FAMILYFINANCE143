@@ -189,6 +189,11 @@ def deliver_notification_channels(db: Session, notification: Notification) -> di
                 )
                 push_results.append({"device_id": device.id, **result.as_dict()})
             else:
+                # FCM is permanently removed (fcm_service.is_fcm_configured() always
+                # False), so this row will never be picked up and retried — nothing
+                # in the codebase reads PushOutbox.status=="QUEUED". Recording it as
+                # QUEUED implied pending delivery and contradicted last_error's own
+                # "permanently disabled" message; record the true, final outcome.
                 _record_push_outbox(
                     db,
                     family_id=family_id,
@@ -196,14 +201,14 @@ def deliver_notification_channels(db: Session, notification: Notification) -> di
                     token=token,
                     title=title,
                     body=body,
-                    status="QUEUED",
+                    status="FAILED",
                     last_error=fcm_status().get("note"),
                 )
                 push_results.append(
                     {
                         "device_id": device.id,
                         "sent": False,
-                        "queued": True,
+                        "queued": False,
                         "reason": fcm_status().get("note"),
                     }
                 )

@@ -659,3 +659,36 @@ def test_redis_cache_retries_after_cooldown_not_forever(monkeypatch):
     client = rc._redis()
     assert client is not None
     assert attempts["n"] == 2
+
+
+def test_redis_cache_get_falls_back_to_memory_when_redis_get_raises(monkeypatch):
+    """cache_set/cache_delete already degrade gracefully to the in-memory store
+    when their Redis call raises; cache_get's r.get() was NOT wrapped the same
+    way, so a mid-request Redis blip (connection already established, then the
+    network drops) crashed instead of falling back -- breaking otp_service's
+    verify_otp for a real OTP that had already been cached in memory too."""
+    from app.services import redis_cache as rc
+
+    class FlakyRedis:
+        def ping(self):
+            return True
+
+        def get(self, key):
+            raise ConnectionError("connection reset")
+
+        def setex(self, key, ttl, raw):
+            raise ConnectionError("connection reset")
+
+        def delete(self, key):
+            raise ConnectionError("connection reset")
+
+    fake_redis_mod = SimpleNamespace(Redis=SimpleNamespace(from_url=lambda *a, **k: FlakyRedis()))
+    monkeypatch.setitem(__import__("sys").modules, "redis", fake_redis_mod)
+    monkeypatch.setattr(rc.settings, "REDIS_URL", "redis://localhost:6379/0")
+    rc._client = None
+    rc._memory.clear()
+
+    # cache_set already falls back to memory when setex raises.
+    rc.cache_set("otp:flaky", {"code": "999999"}, ttl_seconds=30)
+    # cache_get must fall back to the same memory store instead of raising.
+    assert rc.cache_get("otp:flaky") == {"code": "999999"}
