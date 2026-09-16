@@ -78,9 +78,17 @@ def find_by_client_request_id(
 
 
 def get_account(db: Session, family_id: str, account_id: str) -> Account:
+    # populate_existing() is required alongside with_for_update(): if this
+    # Account row is already identity-mapped in the session (e.g. fetched
+    # earlier, unlocked, in the same request), with_for_update() alone
+    # acquires the DB lock but does NOT refresh the Python object's
+    # attributes -- current_balance would stay stale, defeating the lock's
+    # whole purpose. Same fix already applied elsewhere in this codebase
+    # (transaction_void_service.py, accounting_service.py).
     account = (
         db.query(Account)
         .filter(Account.id == account_id, Account.family_id == family_id, Account.deleted_at.is_(None))
+        .populate_existing()
         .with_for_update()
         .first()
     )
