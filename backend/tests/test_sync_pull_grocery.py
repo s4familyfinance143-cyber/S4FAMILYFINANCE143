@@ -11,7 +11,8 @@ def test_sync_pull_payload_includes_grocery_keys(monkeypatch):
     db = MagicMock()
     user = MagicMock()
 
-    monkeypatch.setattr(sync, "_phase10b_require_any_permission", lambda *a, **k: None)
+    monkeypatch.setattr(sync, "_phase10b_require_any_permission", lambda *a, **k: {"id": "member-1", "role": "OWNER"})
+    monkeypatch.setattr(sync, "_phase5b_has_permission", lambda *a, **k: True)
     monkeypatch.setattr(sync, "_phase10b_register_device", lambda *a, **k: None)
     monkeypatch.setattr(sync, "_phase10b_insert_audit", lambda *a, **k: None)
     monkeypatch.setattr(sync, "_phase10b_family_rows", lambda *a, **k: [{"id": "x"}])

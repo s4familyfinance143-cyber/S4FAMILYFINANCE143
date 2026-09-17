@@ -544,11 +544,18 @@ def phase8b_audit_activity(
     db: Session = Depends(get_db),
     current_user: Any = Depends(_phase5b_get_current_user),
 ):
+    # audit.view/audit.view_all map to audit.read, which is in
+    # permission_service.PROTECTED_OWNER_PERMISSIONS (Owner/Admin only,
+    # non-overridable). reports.view/reports.view_all map to report.read,
+    # which VIEWER holds by design -- including them here let VIEWER read
+    # the family's audit log through this endpoint, bypassing the same
+    # protection audit_trail_hardened.py enforces. See that module for the
+    # identical fix.
     _phase8b_require_any_permission(
         db,
         family_id,
         current_user,
-        ["audit.view", "audit.view_all", "reports.view", "reports.view_all"],
+        ["audit.view", "audit.view_all"],
     )
 
     if "audit_logs" not in _phase8b_tables(db):

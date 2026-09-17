@@ -757,6 +757,7 @@ def test_phase10b_sync_pull_returns_server_changes(monkeypatch):
         mod, "_phase10b_require_any_permission",
         lambda *a, **k: SimpleNamespace(ok=True),
     )
+    monkeypatch.setattr(mod, "_phase5b_has_permission", lambda *a, **k: True)
     monkeypatch.setattr(mod, "_phase10b_register_device", lambda *a, **k: None)
     monkeypatch.setattr(mod, "_phase10b_family_rows", lambda *a, **k: [{"id": "x"}])
     monkeypatch.setattr(mod, "_phase10b_transaction_line_rows", lambda *a, **k: [])
@@ -768,6 +769,7 @@ def test_phase10b_sync_pull_returns_server_changes(monkeypatch):
     )
     assert out["family_id"] == "f1"
     assert out["changes"]["accounts"] == [{"id": "x"}]
+    assert out["changes"]["audit_logs"] == [{"id": "x"}]
     assert "sync_token" in out
     assert db.commit_count == 1
 

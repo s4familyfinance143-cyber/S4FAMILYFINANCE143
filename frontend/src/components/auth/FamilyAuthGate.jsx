@@ -662,7 +662,27 @@ export function FamilyAuthGate({
         body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await parseJson(res);
-      if (!res.ok) throw new Error(apiError(data, "Login failed"));
+      if (!res.ok) {
+        const detail = apiError(data, "Login failed");
+        // Plain login never had this check (unlike ensureSession(), used by
+        // Create Family/Join Family), so an unverified account landing back
+        // on the plain Login screen got stuck: an error toast with no way
+        // to reach the OTP entry form at all -- the OTP email had already
+        // arrived, but nothing in the UI let the user act on it.
+        if (String(detail).toLowerCase().includes("verification")) {
+          setPendingAfterVerify(null);
+          setView("verifyOtp");
+          setOtpHint(
+            lang === "bn"
+              ? "আগে OTP দিয়ে অ্যাকাউন্ট ভেরিফাই করুন"
+              : "Verify your account with OTP first",
+          );
+          setOtpCode("");
+          setStatus("");
+          return;
+        }
+        throw new Error(detail);
+      }
       const access = data.access_token || data.data?.access_token;
       const refresh = data.refresh_token || data.data?.refresh_token || "";
       if (!access) throw new Error("Login failed — no access token");

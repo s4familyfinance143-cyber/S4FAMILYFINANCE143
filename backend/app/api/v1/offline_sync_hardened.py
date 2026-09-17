@@ -21,6 +21,7 @@ from app.services.sync_apply import (
 try:
     from app.api.v1.family_governance_hardened import (
         _phase5b_get_current_user,
+        _phase5b_has_permission,
         _phase5b_require_permission,
     )
 except Exception as import_error:  # pragma: no cover
@@ -37,6 +38,9 @@ except Exception as import_error:  # pragma: no cover
             status_code=500,
             detail=f"RBAC permission dependency import failed: {_PHASE10B_IMPORT_ERROR}",
         )
+
+    def _phase5b_has_permission(*args, **kwargs):
+        return False
 
 
 router = APIRouter(tags=["Phase 10B Offline Sync Engine"])
@@ -812,7 +816,7 @@ def phase10b_sync_pull(
     db: Session = Depends(get_db),
     current_user: Any = Depends(_phase5b_get_current_user),
 ):
-    _phase10b_require_any_permission(
+    member = _phase10b_require_any_permission(
         db,
         family_id,
         current_user,
@@ -832,10 +836,25 @@ def phase10b_sync_pull(
         "budgets": _phase10b_family_rows(db, "budgets", family_id, since_token, limit),
         "savings_goals": _phase10b_family_rows(db, "savings_goals", family_id, since_token, limit),
         "loans": _phase10b_family_rows(db, "loans", family_id, since_token, limit),
-        "audit_logs": _phase10b_family_rows(db, "audit_logs", family_id, since_token, limit),
         "grocery_lists": _phase10b_family_rows(db, "grocery_lists", family_id, since_token, limit),
         "grocery_items": _phase10b_family_rows(db, "grocery_items", family_id, since_token, limit),
         "grocery_vendors": _phase10b_family_rows(db, "grocery_vendors", family_id, since_token, limit),
+        # The gate above accepts "reports.view"/"accounts.view_all" (i.e.
+        # report.read, held even by VIEWER) or "sync.pull" (aliased to
+        # dashboard.read, also VIEWER-held) -- but audit_logs specifically
+        # requires audit.read, which is in
+        # permission_service.PROTECTED_OWNER_PERMISSIONS (Owner/Admin only,
+        # non-overridable by design). Dumping it unconditionally here let
+        # any VIEWER pull the family's full audit trail through this
+        # generic multi-table sync payload, bypassing that restriction
+        # entirely (same bug class fixed in audit_trail_hardened.py and
+        # reports_audit_integration_hardened.py, but via data exposure
+        # rather than the permission-list check itself).
+        "audit_logs": (
+            _phase10b_family_rows(db, "audit_logs", family_id, since_token, limit)
+            if _phase5b_has_permission(db, family_id, member, "audit.read")
+            else []
+        ),
         # These entity_types were pushable (sync_apply.ALLOWED_ENTITY_TYPES)
         # but missing here entirely, so a change made on one device could
         # push successfully yet never appear on any other device pulling —
