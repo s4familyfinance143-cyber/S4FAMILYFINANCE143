@@ -24,4 +24,14 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # API default; celery_worker / celery_beat override `command` in compose
-CMD ["sh", "-c", "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+#
+# --proxy-headers/--forwarded-allow-ips='*': the backend is never reachable
+# except through the docker-network nginx service (no host port published in
+# docker-compose.production.yml), so every request's direct TCP peer is
+# nginx itself, not the real visitor. Without this flag, Starlette's
+# request.client.host (which slowapi's rate limiter keys on -- see
+# app/core/rate_limit.py::get_remote_address) is that same nginx address for
+# EVERY request, making AUTH_REGISTER_LIMIT (3/hour) and AUTH_LOGIN_LIMIT
+# (5/minute) a site-wide shared limit instead of a per-visitor one -- three
+# signups from anyone locks registration for the whole site for an hour.
+CMD ["sh", "-c", "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
