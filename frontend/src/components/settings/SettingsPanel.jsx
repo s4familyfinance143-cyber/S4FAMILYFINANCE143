@@ -7,6 +7,9 @@ import {
 } from "../../lib/familyRoles";
 import { CloudBackupPanel } from "./CloudBackupPanel";
 import { CategoriesPanel } from "./CategoriesPanel";
+import packageJson from "../../../package.json";
+
+const APP_VERSION = packageJson.version;
 
 function resolveSettingsGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily }) {
   const uid = String(
@@ -1239,6 +1242,8 @@ export function SettingsPanel({
           onDriveRestore={onDriveRestore}
         />
       )}
+
+      <p className="settings-version">S4 Family Finance 143 · v{APP_VERSION}</p>
     </section>
   );
 }

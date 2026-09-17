@@ -2300,6 +2300,14 @@ body.mobile-drawer-open .mobile-drawer-backdrop {
   background: var(--surface-2);
   border: 1px solid var(--line);
 }
+.settings-version {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted, #667085);
+}
 .settings-tab {
   border: 0 !important;
   background: transparent !important;
