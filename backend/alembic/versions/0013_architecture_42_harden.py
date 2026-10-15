@@ -120,8 +120,8 @@ def upgrade() -> None:
         bind.execute(
             text(
                 """
-                INSERT INTO device_sessions (id, user_id, device_name, platform, fcm_token, last_active, ip_address, user_agent, legacy_session_id, created_at, updated_at, deleted_at)
-                SELECT s.id || '-ds', s.user_id, s.device_label, NULL, NULL, s.updated_at, s.ip_address, s.user_agent, s.id,
+                INSERT INTO device_sessions (id, user_id, device_name, platform, last_active, ip_address, user_agent, legacy_session_id, created_at, updated_at, deleted_at)
+                SELECT s.id || '-ds', s.user_id, s.device_label, NULL, s.updated_at, s.ip_address, s.user_agent, s.id,
                        s.created_at, s.updated_at, s.deleted_at
                 FROM auth_sessions s
                 WHERE NOT EXISTS (

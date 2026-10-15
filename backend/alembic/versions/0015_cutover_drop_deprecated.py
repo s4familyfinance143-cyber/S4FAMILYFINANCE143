@@ -98,14 +98,13 @@ def upgrade() -> None:
                 text(
                     """
                     INSERT INTO device_sessions (
-                        id, user_id, device_name, platform, fcm_token, last_active,
+                        id, user_id, device_name, platform, last_active,
                         ip_address, user_agent, legacy_session_id, created_at, updated_at, deleted_at
                     )
                     SELECT
                         a.id || '-ds2',
                         a.user_id,
                         a.device_label,
-                        NULL,
                         NULL,
                         a.updated_at,
                         a.ip_address,
