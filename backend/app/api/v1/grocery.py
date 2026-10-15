@@ -731,12 +731,16 @@ def grocery_collaboration_status(
     }
 
 
-@router.websocket("/ws/{family_id}")
-async def grocery_family_websocket(
+async def serve_family_socket(
     websocket: WebSocket,
     family_id: str,
-    token: str = Query(...),
-):
+    token: str,
+    *,
+    permission: str,
+    subscribed_type: str,
+) -> None:
+    """Authenticate, check family membership/permission, then hold the socket
+    open in the family room. The server pushes events; clients only ping."""
     db = SessionLocal()
     try:
         try:
@@ -759,7 +763,7 @@ async def grocery_family_websocket(
             if not user or not user.is_active or user.deleted_at is not None:
                 await websocket.close(code=4401)
                 return
-            require_permission(db, family_id, user.id, "report.read")
+            require_permission(db, family_id, user.id, permission)
         except (JWTError, HTTPException, Exception):
             await websocket.close(code=4403)
             return
@@ -767,13 +771,12 @@ async def grocery_family_websocket(
         await grocery_realtime_hub.connect(family_id, websocket, user_id=user.id)
         await websocket.send_json(
             {
-                "type": "grocery.subscribed",
+                "type": subscribed_type,
                 "family_id": family_id,
                 "subscribers": grocery_realtime_hub.subscriber_count(family_id),
             }
         )
         while True:
-            # Keepalive / ignore client pings; server pushes grocery.changed events
             message = await websocket.receive_text()
             if message.strip().lower() in {"ping", "heartbeat"}:
                 await websocket.send_json({"type": "pong", "family_id": family_id})
@@ -782,6 +785,17 @@ async def grocery_family_websocket(
     finally:
         await grocery_realtime_hub.disconnect(family_id, websocket)
         db.close()
+
+
+@router.websocket("/ws/{family_id}")
+async def grocery_family_websocket(
+    websocket: WebSocket,
+    family_id: str,
+    token: str = Query(...),
+):
+    await serve_family_socket(
+        websocket, family_id, token, permission="report.read", subscribed_type="grocery.subscribed"
+    )
 
 
 @router.patch("/items/{item_id}")

@@ -1529,8 +1529,6 @@ def test_notifications_and_architecture_helpers(monkeypatch):
 
     rendered = n.render_template("SAVINGS_TARGET_DONE", name="Trip")
     assert "Trip" in rendered["message"]
-    assert n._token_preview("short") == "***"
-    assert "…" in n._token_preview("1234567890abcdef")
 
     exists_db = Db(query_map={FakeNotification: Query(first_row=SimpleNamespace(id="n1"))})
     assert n.create_notification(exists_db, "fam", "T", "t", "m") is None

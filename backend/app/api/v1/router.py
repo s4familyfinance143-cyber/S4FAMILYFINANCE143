@@ -23,6 +23,7 @@ from app.api.v1.loans import router as loans_router
 from app.api.v1.missing_features_api import router as missing_features_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.permissions import router as permission_router
+from app.api.v1.realtime import router as realtime_router
 from app.api.v1.recurring import router as recurring_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.savings import router as savings_router
@@ -52,6 +53,7 @@ api_router.include_router(budgets_router)
 api_router.include_router(notifications_router)
 api_router.include_router(goals_router)
 api_router.include_router(grocery_router)
+api_router.include_router(realtime_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(zakat_router)
 api_router.include_router(architecture_modules_router)

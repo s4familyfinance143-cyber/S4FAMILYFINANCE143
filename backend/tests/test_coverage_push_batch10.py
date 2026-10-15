@@ -137,7 +137,6 @@ def patch_notifications(monkeypatch):
     from app.api.v1 import notifications as n
 
     monkeypatch.setattr(n, "require_permission", lambda **k: MEMBER)
-    monkeypatch.setattr(n, "get_active_member_or_403", lambda *a, **k: MEMBER)
     monkeypatch.setattr(n, "write_audit_log", lambda **k: None)
     return n
 
@@ -859,13 +858,6 @@ def test_create_template_notification(patch_notifications, monkeypatch):
     monkeypatch.setattr(n, "create_notification", lambda **k: created.append(k) or "ok")
     assert n.create_template_notification(Db(), "fam1", "X", name="a") == "ok"
     assert created[0]["title"] == "T | ট"
-
-
-def test_token_preview_lengths():
-    from app.api.v1.notifications import _token_preview
-
-    assert _token_preview("short") == "***"
-    assert "…" in _token_preview("1234567890abcdef")
 
 
 def test_notification_summary_counts(patch_notifications):

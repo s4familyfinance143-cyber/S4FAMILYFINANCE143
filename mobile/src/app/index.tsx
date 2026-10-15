@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as BackgroundTask from "expo-background-task";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
@@ -1871,6 +1871,83 @@ export default function HomeScreen() {
     // Session and local DB setup are one-time app boot tasks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live updates for the whole family over the VPS WebSocket. The server
+  // sends only "what changed"; the app refetches through the REST API.
+  const refreshAllRef = useRef(refreshAll);
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  });
+
+  useEffect(() => {
+    if (!token || !activeFamilyId || isOfflineAccessToken(token)) return;
+    let alive = true;
+    let ws: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    // Keep the socket alive through the Nginx proxy read timeout.
+    const pingTimer = setInterval(() => {
+      try {
+        if (ws?.readyState === 1) ws.send("ping");
+      } catch {
+        /* ignore */
+      }
+    }, 25000);
+
+    const scheduleRetry = () => {
+      if (!alive) return;
+      attempt += 1;
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 1000);
+      retryTimer = setTimeout(connect, delay);
+    };
+
+    function connect() {
+      if (!alive) return;
+      const wsBase = getApiBaseUrl().replace(/\/$/, "").replace(/^http/i, "ws");
+      try {
+        ws = new WebSocket(`${wsBase}/api/v1/realtime/ws/${activeFamilyId}?token=${encodeURIComponent(token)}`);
+      } catch {
+        scheduleRetry();
+        return;
+      }
+      ws.onopen = () => {
+        attempt = 0;
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(String(event.data));
+          if (data?.type !== "family.changed") return;
+        } catch {
+          return;
+        }
+        // Several changes in a burst → one refresh.
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          void refreshAllRef.current(token);
+        }, 1500);
+      };
+      ws.onclose = (event) => {
+        // 4401/4403: token revoked or no longer a member — stop retrying.
+        if (event?.code === 4401 || event?.code === 4403) return;
+        scheduleRetry();
+      };
+    }
+
+    connect();
+    return () => {
+      alive = false;
+      clearInterval(pingTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      try {
+        ws?.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [token, activeFamilyId]);
 
   useEffect(() => {
     if (!token || !autoSyncEnabled) return;

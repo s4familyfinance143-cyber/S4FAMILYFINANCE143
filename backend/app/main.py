@@ -22,6 +22,7 @@ from app.middleware.request_logger import RequestLoggerMiddleware
 from app.middleware.response_formatter import ResponseFormatterMiddleware
 from app.models.base import Base
 import app.models as _all_models  # noqa: F401 — register all ORM tables
+import app.services.family_realtime as _family_realtime  # noqa: F401 — after-commit live-update hooks
 from app.workers.auto_backup_worker import process_auto_backup
 from app.workers.recurring_scheduler import process_recurring_transactions
 from app.api.v1.family_governance_hardened import router as family_governance_hardened_router

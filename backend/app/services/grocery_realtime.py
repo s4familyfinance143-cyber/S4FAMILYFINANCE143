@@ -1,6 +1,7 @@
-"""In-memory grocery realtime fan-out (WebSocket).
+"""In-memory family realtime fan-out (WebSocket): grocery + all family data.
 
-Process-local only — fine for single-instance deploy. Multi-worker needs Redis pub/sub later.
+Process-local only — fine for the single-worker deploy (Dockerfile runs one
+uvicorn worker). Multiple workers/containers would need Redis pub/sub.
 """
 
 from __future__ import annotations
@@ -100,6 +101,14 @@ def publish_grocery_event(family_id: str, *, action: str, entity_type: str, enti
         "title": title,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+    loop = grocery_realtime_hub._main_loop
+    if loop is None or not loop.is_running():
+        return
+    asyncio.run_coroutine_threadsafe(grocery_realtime_hub.broadcast(family_id, event), loop)
+
+
+def publish_family_event(family_id: str, event: dict[str, Any]) -> None:
+    """Thread-safe broadcast of a committed change to every socket in the family room."""
     loop = grocery_realtime_hub._main_loop
     if loop is None or not loop.is_running():
         return

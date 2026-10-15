@@ -63,7 +63,7 @@ import {
   summarizeLifeItems,
   updatePath as lifeUpdatePath,
 } from "./lifeArchitectureApi";
-import { getNotificationPermission, requestBrowserNotifications } from "./lib/browserNotify";
+import { getNotificationPermission, requestBrowserNotifications, showBrowserNotification } from "./lib/browserNotify";
 import { validateProfilePhotoFile } from "./lib/profilePhoto";
 import { buildBackupBlob, restoreBackupBlob } from "./lib/backupPayload";
 import {
@@ -8762,6 +8762,108 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeFamilyId, activeMenu]);
+
+  // Live updates for the whole family over the VPS WebSocket. The server
+  // sends only "what changed"; each change is refetched through the REST API
+  // (so permissions still apply). Latest loaders are read through a ref.
+  const realtimeHandlerRef = useRef(null);
+  useEffect(() => {
+    realtimeHandlerRef.current = (types) => {
+      const has = (re) => [...types].some((t) => re.test(t));
+      const jobs = [];
+      if (has(/WALLET|ACCOUNT|TRANSACTION|INCOME|EXPENSE|TRANSFER/)) jobs.push(loadWallets(), loadTransactions());
+      if (has(/SAVING/)) jobs.push(loadSavings());
+      if (has(/LOAN/)) jobs.push(loadLoans());
+      if (has(/BUDGET/)) jobs.push(loadBudgets());
+      if (has(/RECURRING/)) jobs.push(loadRecurring());
+      if (has(/GOAL/)) jobs.push(loadGoals());
+      if (has(/CATEGOR/)) jobs.push(loadCategories());
+      if (has(/MEMBER|FAMILY|INVITE|JOIN|PERMISSION|ROLE/)) jobs.push(loadFamilyGovernance());
+      if (has(/GROCERY/)) jobs.push(loadGrocery({ silent: true }));
+      jobs.push(loadDashboard(), loadNotifications());
+      Promise.allSettled(jobs).catch(() => undefined);
+    };
+  });
+
+  useEffect(() => {
+    if (!token || !activeFamilyId || typeof WebSocket === "undefined") return undefined;
+    let alive = true;
+    let ws = null;
+    let retryTimer = 0;
+    let flushTimer = 0;
+    let attempt = 0;
+    const pending = new Set();
+    // Keep the socket alive through the Nginx proxy read timeout.
+    const pingTimer = window.setInterval(() => {
+      try {
+        if (ws?.readyState === 1) ws.send("ping");
+      } catch {
+        // ignore
+      }
+    }, 25000);
+
+    const flush = () => {
+      flushTimer = 0;
+      const types = new Set(pending);
+      pending.clear();
+      if (types.size) realtimeHandlerRef.current?.(types);
+    };
+
+    const scheduleRetry = () => {
+      if (!alive) return;
+      attempt += 1;
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 1000);
+      retryTimer = window.setTimeout(connect, delay);
+    };
+
+    function connect() {
+      if (!alive) return;
+      const wsBase = apiBase.replace(/^http/i, "ws");
+      try {
+        ws = new WebSocket(`${wsBase}/realtime/ws/${activeFamilyId}?token=${encodeURIComponent(token)}`);
+      } catch {
+        scheduleRetry();
+        return;
+      }
+      ws.onopen = () => {
+        attempt = 0;
+      };
+      ws.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (data?.type !== "family.changed") return;
+        pending.add(String(data.entity_type || "UNKNOWN"));
+        if (!flushTimer) flushTimer = window.setTimeout(flush, 800);
+        showBrowserNotification(
+          "S4 Family Finance 143",
+          appLanguage === "bn" ? "পরিবারে নতুন পরিবর্তন" : "New family update",
+        );
+      };
+      ws.onclose = (event) => {
+        // 4401/4403: token revoked or no longer a member — do not keep retrying.
+        if (event?.code === 4401 || event?.code === 4403) return;
+        scheduleRetry();
+      };
+    }
+
+    connect();
+    return () => {
+      alive = false;
+      window.clearInterval(pingTimer);
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(flushTimer);
+      try {
+        ws?.close();
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeFamilyId, apiBase]);
 
   const mobileNavItems = [
     ["dashboard", appLanguage === "bn" ? "হোম" : "Home", "⌂"],
