@@ -2,7 +2,7 @@
  * RootNavigator — React Navigation tree:
  * AuthStack (logged out) | Drawer → MainTab + modules (logged in)
  */
-import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { NavigationContainer, NavigationIndependentTree, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React from "react";
 import { AuthStackNavigator } from "./AuthStack";
@@ -32,16 +32,20 @@ export function RootNavigator() {
           colors: { ...DefaultTheme.colors, primary: colors.primary, background: colors.background, card: colors.surface },
         };
 
+  // React Navigation 7 removed the `independent` prop; a container nested
+  // under Expo Router must sit inside NavigationIndependentTree instead.
   return (
-    <NavigationContainer theme={navTheme} independent>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {token ? (
-          <Stack.Screen name="App" component={DrawerNavigator} />
-        ) : (
-          <Stack.Screen name="Auth" component={AuthStackNavigator} />
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <NavigationIndependentTree>
+      <NavigationContainer theme={navTheme}>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {token ? (
+            <Stack.Screen name="App" component={DrawerNavigator} />
+          ) : (
+            <Stack.Screen name="Auth" component={AuthStackNavigator} />
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </NavigationIndependentTree>
   );
 }
 

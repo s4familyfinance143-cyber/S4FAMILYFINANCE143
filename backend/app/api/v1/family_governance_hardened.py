@@ -140,7 +140,9 @@ def has(table: Table, col: str) -> bool:
     return col in table.c
 
 
-def first_col(table: Table, names: list[str]) -> str | None:
+def first_col(table: Table | None, names: list[str]) -> str | None:
+    if table is None:
+        return None
     for n in names:
         if n in table.c:
             return n
@@ -909,6 +911,9 @@ def generate_invite_hardened(
         from app.services.family_audit import write_family_audit
 
         t = tables(db)
+        if t["members"] is None:
+            raise HTTPException(status_code=500, detail="Members table not found")
+
         if not is_owner_or_admin(db, family_id, user_id_value(current_user), t):
             raise HTTPException(status_code=403, detail="Only owner/admin can generate invite")
 
@@ -1316,6 +1321,10 @@ def _phase5b_member_for_user(db: _Phase5BSession, family_id: str, user_id: str) 
     extra = ""
     if "deleted_at" in cols:
         extra += " AND deleted_at IS NULL"
+    # Same rule as permission_service.get_active_member_or_403: a PENDING /
+    # REMOVED / SUSPENDED row is not a member, even while deleted_at is NULL.
+    if "status" in cols:
+        extra += " AND UPPER(status) = 'ACTIVE'"
 
     row = db.execute(
         _phase5b_text(f"""
@@ -1415,6 +1424,7 @@ def _phase5b_permission_row(
     if "created_at" in cols:
         order_cols.append("created_at DESC")
     order_sql = " ORDER BY " + ", ".join(order_cols) if order_cols else ""
+    deleted_sql = " AND deleted_at IS NULL" if "deleted_at" in cols else ""
 
     row = db.execute(
         _phase5b_text(f"""
@@ -1422,6 +1432,7 @@ def _phase5b_permission_row(
             FROM member_permissions
             WHERE {member_col} = :member_id
               AND {key_col} = :permission_key
+              {deleted_sql}
             {order_sql}
             LIMIT 1
         """),
@@ -1446,20 +1457,35 @@ def _phase5b_has_permission(
         or current_member.get("role")
         or current_member.get("member_role")
     )
-    if mapped in PERMISSIONS.get(role, set()):
+    if role == "OWNER":
         return True
 
-    row = _phase5b_permission_row(db, str(current_member.get("id")), permission_key)
-    if not row:
-        row = _phase5b_permission_row(db, str(current_member.get("id")), mapped)
-    if not row:
-        return False
+    # Override rows used to be consulted only when the role did NOT already
+    # grant the key, so an owner's explicit deny (allow=false) on e.g.
+    # transaction.create never reached sync push, and an allow row could hand
+    # a non-owner a PROTECTED_OWNER_PERMISSIONS key. Now: the newest override
+    # row per key decides; deny beats the role grant; allow never grants a
+    # protected key (same contract as permission_service.effective_permission_keys).
+    from app.services.permission_service import PROTECTED_OWNER_PERMISSIONS
 
-    allow_col = "allow" if "allow" in row else None
-    if not allow_col:
-        return False
+    keys = [permission_key] if mapped == permission_key else [permission_key, mapped]
+    allowed_by_override = False
+    denied_by_override = False
+    for key in keys:
+        row = _phase5b_permission_row(db, str(current_member.get("id")), key)
+        if not row or "allow" not in row:
+            continue
+        if _phase5b_bool(row.get("allow")):
+            if key not in PROTECTED_OWNER_PERMISSIONS:
+                allowed_by_override = True
+        else:
+            denied_by_override = True
 
-    return _phase5b_bool(row.get(allow_col))
+    if denied_by_override and not allowed_by_override:
+        return False
+    if mapped in PERMISSIONS.get(role, set()) or permission_key in PERMISSIONS.get(role, set()):
+        return True
+    return allowed_by_override
 
 
 def _phase5b_require_permission(

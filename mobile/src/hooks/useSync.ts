@@ -8,7 +8,7 @@ export function useSync() {
   const familyId = useFamilyStore((s) => s.familyId);
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<{ synced: number; conflicts: number; failed: number } | null>(null);
-  const [status, setStatus] = useState<{ pending: number; conflicts: number; failed: number } | null>(null);
+  const [status, setStatus] = useState<Awaited<ReturnType<typeof syncManager.status>> | null>(null);
 
   const refreshStatus = useCallback(async () => {
     const next = await syncManager.status();

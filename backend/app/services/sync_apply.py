@@ -2277,16 +2277,34 @@ def process_pending_outbox(
     for row in rows:
         outbox_id = str(row.id)
         payload = _load_json(row.payload)
-        result = apply_one_change(
-            db,
-            family_id=family_id,
-            device_id=str(row.device_id or device_id or "default-device"),
-            entity_type=str(row.entity_type or ""),
-            operation=str(row.operation or ""),
-            entity_id=str(row.entity_id) if row.entity_id else None,
-            payload=payload,
-            member_id=member_id,
-        )
+        row_device_id = str(row.device_id or device_id or "default-device")
+        row_entity_type = str(row.entity_type or "")
+        row_operation = str(row.operation or "")
+        row_entity_id = str(row.entity_id) if row.entity_id else None
+        # Each change applies inside its own SAVEPOINT. Applicators return
+        # FAILED after partial writes (e.g. loans CREATE flushes the Loan row,
+        # then the ledger posting raises) and the caller commits the session
+        # afterwards -- without this, a FAILED change still left an orphan
+        # Loan with remaining_amount set and no journal entry behind it.
+        savepoint = db.begin_nested()
+        try:
+            result = apply_one_change(
+                db,
+                family_id=family_id,
+                device_id=row_device_id,
+                entity_type=row_entity_type,
+                operation=row_operation,
+                entity_id=row_entity_id,
+                payload=payload,
+                member_id=member_id,
+            )
+        except Exception:
+            savepoint.rollback()
+            raise
+        if result.get("status") in {"SYNCED", "CONFLICT"}:
+            savepoint.commit()
+        else:
+            savepoint.rollback()
         status = result.get("status")
         if status == "SYNCED":
             _set_outbox_status(db, outbox_id, "SYNCED")

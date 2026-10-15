@@ -39,7 +39,7 @@ describe("utils/formatDate", () => {
 
 describe("database schema", () => {
   test("schema version locked", () => {
-    expect(SCHEMA_VERSION).toBe(4);
+    expect(SCHEMA_VERSION).toBe(7);
   });
 });
 

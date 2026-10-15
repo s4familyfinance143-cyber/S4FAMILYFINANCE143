@@ -513,6 +513,8 @@ def test_sync_apply_process_pending_outbox_without_filters(monkeypatch):
         payload="{}",
     )
     db = Db(query_map={SyncOutbox: Query(rows=[row])})
+    savepoint = MagicMock()
+    db.begin_nested = lambda: savepoint  # each change applies inside a SAVEPOINT
     monkeypatch.setattr(
         sa, "apply_one_change",
         lambda *a, **k: {"status": "SYNCED", "entity_id": "l-new"},
@@ -524,6 +526,7 @@ def test_sync_apply_process_pending_outbox_without_filters(monkeypatch):
     assert summary["processed"] == 1
     assert summary["synced_count"] == 1
     set_status.assert_called_once_with(db, "o1", "SYNCED")
+    savepoint.commit.assert_called_once()
 
 
 def test_sync_apply_conflict_resolution_keep_server_and_merge(monkeypatch):
@@ -689,9 +692,11 @@ def test_phase10b_sync_push_validation_errors(monkeypatch):
 def test_phase10b_sync_push_accepts_change(monkeypatch):
     from app.api.v1 import offline_sync_hardened as mod
 
+    # The real gate returns the caller's member row (dict); push re-checks
+    # each change against it.
     monkeypatch.setattr(
         mod, "_phase10b_require_any_permission",
-        lambda *a, **k: SimpleNamespace(ok=True),
+        lambda *a, **k: {"id": "m1", "role": "OWNER"},
     )
     monkeypatch.setattr(mod, "_phase10b_ensure_sync_tables", lambda db: None)
     monkeypatch.setattr(mod, "_phase10b_register_device", lambda *a, **k: None)
@@ -703,6 +708,7 @@ def test_phase10b_sync_push_accepts_change(monkeypatch):
     monkeypatch.setattr(mod, "_phase10b_insert_audit", lambda *a, **k: None)
 
     db = Db()
+    db.begin_nested = lambda: MagicMock()  # outbox insert runs in a SAVEPOINT
     out = mod.phase10b_sync_push(
         "f1",
         body={

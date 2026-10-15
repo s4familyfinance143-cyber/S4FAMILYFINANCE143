@@ -2,12 +2,14 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy import inspect, text
+from sqlalchemy import DateTime, bindparam, inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -64,8 +66,9 @@ def _phase10b_q(name: str) -> str:
 
 
 def _phase10b_json(value: Any) -> Any:
+    # Money columns are Numeric(18, 4): serialize as exact strings, never float.
     if isinstance(value, Decimal):
-        return float(value)
+        return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
@@ -92,6 +95,31 @@ def _phase10b_load_json(value: Any) -> Any:
 
 def _phase10b_rows(result) -> list[dict[str, Any]]:
     return [dict(row._mapping) for row in result.fetchall()]
+
+
+def _phase10b_numeric_columns(table_name: str) -> set[str]:
+    from sqlalchemy import Numeric
+
+    from app.models.base import Base
+
+    table = Base.metadata.tables.get(table_name)
+    if table is None:
+        return set()
+    return {c.name for c in table.columns if isinstance(c.type, Numeric)}
+
+
+def _phase10b_money_as_text(table_name: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Raw text() SELECTs skip ORM type processing: SQLite hands Numeric(18, 4)
+    money back as float. Return those columns as exact decimal strings."""
+    numeric = _phase10b_numeric_columns(table_name)
+    if not numeric:
+        return rows
+    for row in rows:
+        for col in numeric:
+            value = row.get(col)
+            if value is not None and not isinstance(value, str):
+                row[col] = str(Decimal(str(value)))
+    return rows
 
 
 def _phase10b_tables(db: Session) -> set[str]:
@@ -135,6 +163,194 @@ def _phase10b_require_any_permission(
         raise last_exc
 
     raise HTTPException(status_code=403, detail="Permission denied")
+
+
+def _phase10b_parse_since(since_token: Optional[str]) -> Optional[datetime]:
+    """Parse a pull cursor into a naive-UTC datetime.
+
+    The cursor used to be compared as text: CAST(updated_at AS TEXT) gives
+    "2026-10-15 06:30:00" (space) while the token is "2026-10-15T06:29:59Z"
+    ("T"), and " " < "T", so every row changed later on the same calendar day
+    as the token was skipped -- and never pulled afterwards either.
+    """
+    if not since_token:
+        return None
+    raw = str(since_token).strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="since_token must be an ISO-8601 timestamp")
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _phase10b_token_from(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = _phase10b_parse_since(str(value))
+        except HTTPException:
+            return None
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.isoformat(timespec="microseconds") + "Z"
+
+
+def _phase10b_truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "t", "yes"}
+    return bool(value)
+
+
+def _phase10b_hidden_wallet_ids(member: Any, account_rows: list[dict[str, Any]]) -> set[str]:
+    """Account ids this member may not see (other members' private wallets).
+
+    Same rule as GET /accounts/coa/{family_id}: accounts.can_view_wallet, plus
+    system chart-of-accounts rows stay visible.
+    """
+    from app.api.v1.accounts import can_view_wallet
+
+    if not isinstance(member, dict):
+        return set()
+    viewer = SimpleNamespace(id=member.get("id"), role=member.get("role") or member.get("member_role"))
+    hidden: set[str] = set()
+    for row in account_rows:
+        if _phase10b_truthy(row.get("is_system")):
+            continue
+        acc = SimpleNamespace(
+            owner_member_id=row.get("owner_member_id"),
+            is_shared_family=_phase10b_truthy(row.get("is_shared_family")),
+            is_owner_wallet=_phase10b_truthy(row.get("is_owner_wallet")),
+        )
+        if not can_view_wallet(viewer, acc):
+            hidden.add(str(row.get("id")))
+    return hidden
+
+
+# Wallet references a pushed payload may carry (money moves of every entity type).
+_PHASE10B_WALLET_REF_KEYS = (
+    "account_id",
+    "from_account_id",
+    "to_account_id",
+    "source_account_id",
+    "target_account_id",
+    "wallet_account_id",
+    "payment_account_id",
+    "wallet_id",
+    "from_wallet_id",
+    "to_wallet_id",
+    "source_wallet_id",
+    "target_wallet_id",
+)
+
+
+def _phase10b_required_permission(entity_type: str, operation: str, payload: Any) -> str:
+    """REST permission key that guards the same write (sync must not be a bypass)."""
+    op = str(operation or "").upper()
+    data = payload if isinstance(payload, dict) else {}
+    if entity_type == "transactions":
+        if op == "DELETE":
+            return "transaction.delete"
+        tx_type = str(data.get("transaction_type") or data.get("type") or "").strip().upper()
+        return {
+            "INCOME": "income.create",
+            "EXPENSE": "expense.create",
+            "TRANSFER": "transfer.create",
+        }.get(tx_type, "transaction.create")
+    if entity_type == "accounts":
+        if op in {"CREATE", "UPSERT"}:
+            return "wallet.create"
+        if op == "DELETE":
+            return "wallet.delete"
+        return "wallet.update"
+    if entity_type == "savings_goals":
+        return {"DEPOSIT": "savings.deposit", "WITHDRAW": "savings.withdraw"}.get(op, "savings.create")
+    if entity_type == "loans":
+        return "loan.payment" if op == "PAYMENT" else "loan.create"
+    if entity_type == "loan_payments":
+        return "loan.payment"
+    if entity_type == "financial_goals":
+        return {
+            "CONTRIBUTE": "goal.contribute",
+            "DEPOSIT": "goal.contribute",
+            "WITHDRAW": "goal.withdraw",
+        }.get(op, "goal.create")
+    if entity_type == "recurring_transactions":
+        return "recurring.create"
+    if entity_type in {"budgets", "zakat_records"}:
+        return "budget.create"
+    # grocery_*, architecture tables (investments, documents, ...) and
+    # phase15/16 items are guarded by transaction.create on their REST routes.
+    return "transaction.create"
+
+
+def _phase10b_reject_reason(
+    db: Session,
+    family_id: str,
+    member: Any,
+    entity_type: str,
+    operation: str,
+    entity_id: Any,
+    payload: Any,
+) -> Optional[str]:
+    """None when the caller may apply this change, else the rejection message."""
+    required = _phase10b_required_permission(entity_type, operation, payload)
+    if not _phase5b_has_permission(db, family_id, member, required):
+        return f"Permission denied: {required}"
+
+    from app.api.v1.transactions import can_use_wallet
+    from app.models.account import Account
+    from app.models.family_member import FamilyMember
+
+    if entity_type == "accounts" and entity_id and str(operation).upper() not in {"CREATE", "UPSERT"}:
+        target = (
+            db.query(Account)
+            .filter(Account.id == str(entity_id), Account.family_id == family_id)
+            .first()
+        )
+        if target is not None and target.is_system:
+            return "System accounts cannot be edited"
+
+    data = payload if isinstance(payload, dict) else {}
+    wallet_ids = {str(data[k]) for k in _PHASE10B_WALLET_REF_KEYS if data.get(k)}
+    if not wallet_ids:
+        return None
+    member_row = db.get(FamilyMember, str(member.get("id"))) if isinstance(member, dict) else None
+    if member_row is None:
+        return "Not a member of this family"
+    wallets = (
+        db.query(Account)
+        .filter(Account.family_id == family_id, Account.id.in_(sorted(wallet_ids)))
+        .all()
+    )
+    for wallet in wallets:
+        if wallet.is_system:
+            continue
+        if not can_use_wallet(member_row, wallet):
+            return "You do not have permission to use this wallet"
+    return None
+
+
+def _phase10b_device_key(current_user: Any, device_id: Any) -> str:
+    """Server-side device key: "<user_id>:<client device id>".
+
+    Clients send one fixed id per app ("mobile-expo", "web-dashboard"), so
+    every member of a family used to share one sync_state row, one outbox
+    namespace and one conflict device -- one member's push/pull bookkeeping
+    overwrote another's. Scoping by the authenticated user keeps each
+    member's sync state their own without any client change.
+    """
+    raw = str(device_id or "default-device").strip()[:80] or "default-device"
+    user_id = str(getattr(current_user, "id", "") or "")
+    return f"{user_id}:{raw}" if user_id else raw
 
 
 def _phase10b_ensure_sync_tables(db: Session) -> None:
@@ -430,23 +646,56 @@ def _phase10b_family_rows(
     if deleted_col:
         filters.append(f"{_phase10b_q(deleted_col)} IS NULL")
 
-    if since_token and updated_col:
-        filters.append(f"CAST({_phase10b_q(updated_col)} AS TEXT) >= :since_token")
-        params["since_token"] = since_token
+    since = _phase10b_parse_since(since_token)
+    if since is not None and updated_col:
+        filters.append(f"{_phase10b_q(updated_col)} >= :since_token")
+        params["since_token"] = since
 
     order_col = updated_col or id_col or family_col
+    order_sql = _phase10b_q(order_col)
+    if id_col and id_col != order_col:
+        order_sql += f", {_phase10b_q(id_col)}"
 
-    return _phase10b_rows(
-        db.execute(
-            text(
-                f"SELECT * FROM {_phase10b_q(table_name)} "
-                f"WHERE {' AND '.join(filters)} "
-                f"ORDER BY {_phase10b_q(order_col)} ASC "
-                f"LIMIT :limit"
-            ),
-            params,
-        )
+    stmt = text(
+        f"SELECT * FROM {_phase10b_q(table_name)} "
+        f"WHERE {' AND '.join(filters)} "
+        f"ORDER BY {order_sql} ASC "
+        f"LIMIT :limit"
     )
+    if "since_token" in params:
+        stmt = stmt.bindparams(bindparam("since_token", type_=DateTime()))
+    return _phase10b_money_as_text(table_name, _phase10b_rows(db.execute(stmt, params)))
+
+
+def _phase10b_tombstones(
+    db: Session,
+    table_name: str,
+    family_id: str,
+    since_token: Optional[str],
+    limit: int,
+) -> list[str]:
+    """Ids soft-deleted since the cursor, so other devices can drop them."""
+    since = _phase10b_parse_since(since_token)
+    if since is None or table_name not in _phase10b_tables(db):
+        return []
+    cols = _phase10b_columns(db, table_name)
+    family_col = _phase10b_first(cols, ["family_id"])
+    deleted_col = _phase10b_first(cols, ["deleted_at"])
+    id_col = _phase10b_first(cols, ["id"])
+    if not family_col or not deleted_col or not id_col:
+        return []
+    stmt = text(
+        f"SELECT {_phase10b_q(id_col)} FROM {_phase10b_q(table_name)} "
+        f"WHERE {_phase10b_q(family_col)} = :family_id "
+        f"AND {_phase10b_q(deleted_col)} IS NOT NULL "
+        f"AND {_phase10b_q(deleted_col)} >= :since_token "
+        f"ORDER BY {_phase10b_q(deleted_col)} ASC "
+        f"LIMIT :limit"
+    ).bindparams(bindparam("since_token", type_=DateTime()))
+    return [
+        str(r[0])
+        for r in db.execute(stmt, {"family_id": family_id, "since_token": since, "limit": limit}).fetchall()
+    ]
 
 
 def _phase10b_transaction_line_rows(
@@ -475,24 +724,23 @@ def _phase10b_transaction_line_rows(
     if deleted_col:
         filters.append(f"tl.{_phase10b_q(deleted_col)} IS NULL")
 
-    if since_token and updated_col:
-        filters.append(f"CAST(tl.{_phase10b_q(updated_col)} AS TEXT) >= :since_token")
-        params["since_token"] = since_token
+    since = _phase10b_parse_since(since_token)
+    if since is not None and updated_col:
+        filters.append(f"tl.{_phase10b_q(updated_col)} >= :since_token")
+        params["since_token"] = since
 
     order_col = f"tl.{_phase10b_q(updated_col)}" if updated_col else f"tl.{_phase10b_q(line_tx)}"
 
-    return _phase10b_rows(
-        db.execute(
-            text(
-                f"SELECT tl.* FROM transaction_lines tl "
-                f"JOIN transactions t ON t.{_phase10b_q(tx_id)} = tl.{_phase10b_q(line_tx)} "
-                f"WHERE {' AND '.join(filters)} "
-                f"ORDER BY {order_col} ASC "
-                f"LIMIT :limit"
-            ),
-            params,
-        )
+    stmt = text(
+        f"SELECT tl.* FROM transaction_lines tl "
+        f"JOIN transactions t ON t.{_phase10b_q(tx_id)} = tl.{_phase10b_q(line_tx)} "
+        f"WHERE {' AND '.join(filters)} "
+        f"ORDER BY {order_col} ASC "
+        f"LIMIT :limit"
     )
+    if "since_token" in params:
+        stmt = stmt.bindparams(bindparam("since_token", type_=DateTime()))
+    return _phase10b_money_as_text("transaction_lines", _phase10b_rows(db.execute(stmt, params)))
 
 
 @router.get("/families/{family_id}/sync/status")
@@ -512,6 +760,8 @@ def phase10b_sync_status(
         ["sync.view", "sync.manage", "audit.view", "reports.view", "accounts.view_all"],
     )
 
+    client_device_id = device_id
+    device_id = _phase10b_device_key(current_user, client_device_id)
     _phase10b_register_device(db, family_id, device_id, device_name, platform, app_version)
 
     counts = {}
@@ -557,7 +807,7 @@ def phase10b_sync_status(
     return {
         "status": "ok",
         "family_id": family_id,
-        "device_id": device_id,
+        "device_id": client_device_id,
         "offline_first": True,
         "sync_tables_ready": True,
         "local_write_first": True,
@@ -577,7 +827,7 @@ def phase10b_sync_push(
     db: Session = Depends(get_db),
     current_user: Any = Depends(_phase5b_get_current_user),
 ):
-    _phase10b_require_any_permission(
+    member = _phase10b_require_any_permission(
         db,
         family_id,
         current_user,
@@ -586,7 +836,8 @@ def phase10b_sync_push(
 
     _phase10b_ensure_sync_tables(db)
 
-    device_id = str(body.get("device_id") or "default-device")
+    client_device_id = str(body.get("device_id") or "default-device")
+    device_id = _phase10b_device_key(current_user, client_device_id)
     device_name = body.get("device_name")
     platform = body.get("platform")
     app_version = body.get("app_version")
@@ -602,6 +853,7 @@ def phase10b_sync_push(
 
     accepted_ids: list[str] = []
     conflict_ids: list[str] = []
+    rejected: list[dict[str, Any]] = []
 
     for change in changes:
         if not isinstance(change, dict):
@@ -662,27 +914,81 @@ def phase10b_sync_push(
                 {"family_id": family_id, "device_id": device_id, "client_change_id": client_change_id},
             ).scalar()
 
+        # The gate above only proves the caller may sync at all. Each change
+        # must also pass the permission (and wallet-access rule) of the REST
+        # route that performs the same write -- otherwise a MEMBER could push
+        # e.g. accounts DELETE on the owner's wallet, loans CREATE, or an
+        # EXPENSE from another member's private wallet.
+        if not existing_id:
+            reason = _phase10b_reject_reason(
+                db, family_id, member, entity_type, operation, entity_id, payload
+            )
+            if reason:
+                rejected_id = str(uuid.uuid4())
+                db.execute(
+                    text(
+                        "INSERT INTO sync_outbox "
+                        "(id, family_id, device_id, client_change_id, entity_type, entity_id, operation, payload, status, error_message, created_at, updated_at) "
+                        "VALUES (:id, :family_id, :device_id, :client_change_id, :entity_type, :entity_id, :operation, :payload, 'FAILED', :error, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {
+                        "id": rejected_id,
+                        "family_id": family_id,
+                        "device_id": device_id,
+                        # Rejected rows never claim the idempotency key: a
+                        # later push of the same change (e.g. after the owner
+                        # grants the permission) must still be able to apply.
+                        "client_change_id": None,
+                        "entity_type": entity_type,
+                        "entity_id": str(entity_id) if entity_id is not None else None,
+                        "operation": operation,
+                        "payload": _phase10b_json_text(payload),
+                        "error": reason,
+                    },
+                )
+                rejected.append({"outbox_id": rejected_id, "error": reason})
+                continue
+
         if existing_id:
             outbox_id = str(existing_id)
         else:
             outbox_id = str(uuid.uuid4())
-            db.execute(
-                text(
-                    "INSERT INTO sync_outbox "
-                    "(id, family_id, device_id, client_change_id, entity_type, entity_id, operation, payload, status, created_at, updated_at) "
-                    "VALUES (:id, :family_id, :device_id, :client_change_id, :entity_type, :entity_id, :operation, :payload, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                ),
-                {
-                    "id": outbox_id,
-                    "family_id": family_id,
-                    "device_id": device_id,
-                    "client_change_id": client_change_id,
-                    "entity_type": entity_type,
-                    "entity_id": str(entity_id) if entity_id is not None else None,
-                    "operation": operation,
-                    "payload": _phase10b_json_text(payload),
-                },
-            )
+            # Two pushes of the same change can race past the lookup above;
+            # the unique index uq_sync_outbox_change (migration 0026) then
+            # rejects the second insert -- reuse the winner's row instead.
+            savepoint = db.begin_nested()
+            try:
+                db.execute(
+                    text(
+                        "INSERT INTO sync_outbox "
+                        "(id, family_id, device_id, client_change_id, entity_type, entity_id, operation, payload, status, created_at, updated_at) "
+                        "VALUES (:id, :family_id, :device_id, :client_change_id, :entity_type, :entity_id, :operation, :payload, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {
+                        "id": outbox_id,
+                        "family_id": family_id,
+                        "device_id": device_id,
+                        "client_change_id": client_change_id or None,
+                        "entity_type": entity_type,
+                        "entity_id": str(entity_id) if entity_id is not None else None,
+                        "operation": operation,
+                        "payload": _phase10b_json_text(payload),
+                    },
+                )
+                savepoint.commit()
+            except IntegrityError:
+                savepoint.rollback()
+                winner = db.execute(
+                    text(
+                        "SELECT id FROM sync_outbox "
+                        "WHERE family_id = :family_id AND device_id = :device_id "
+                        "AND client_change_id = :client_change_id LIMIT 1"
+                    ),
+                    {"family_id": family_id, "device_id": device_id, "client_change_id": client_change_id},
+                ).scalar()
+                if not winner:
+                    raise
+                outbox_id = str(winner)
         accepted_ids.append(outbox_id)
 
         # Client-flagged conflict still recorded; auto conflicts also created during apply.
@@ -706,15 +1012,40 @@ def phase10b_sync_push(
             )
             conflict_ids.append(conflict_id)
 
-    member_id = _phase10b_get_current_member_id(db, family_id, current_user)
-    apply_result = process_pending_outbox(
-        db,
-        family_id=family_id,
-        device_id=device_id,
-        member_id=member_id,
-        outbox_ids=accepted_ids,
+    # The gate returned the caller's ACTIVE member row; the generic lookup can
+    # pick an older removed row for a user who left and re-joined.
+    member_id = (
+        str(member["id"])
+        if isinstance(member, dict) and member.get("id")
+        else _phase10b_get_current_member_id(db, family_id, current_user)
     )
+    if accepted_ids:
+        apply_result = process_pending_outbox(
+            db,
+            family_id=family_id,
+            device_id=device_id,
+            member_id=member_id,
+            outbox_ids=accepted_ids,
+        )
+    else:
+        # process_pending_outbox treats an empty id list as "every PENDING row
+        # of this device" -- device_id is client-supplied (often the shared
+        # "default-device"), so that would apply other members' queued changes
+        # as if this caller had made them.
+        apply_result = {
+            "processed": 0,
+            "synced": [],
+            "synced_count": 0,
+            "failed": [],
+            "failed_count": 0,
+            "conflict_ids": [],
+            "conflict_count": 0,
+            "conflicted_outbox_ids": [],
+        }
     conflict_ids.extend(apply_result.get("conflict_ids") or [])
+    if rejected:
+        apply_result["failed"] = list(apply_result.get("failed") or []) + rejected
+        apply_result["failed_count"] = int(apply_result.get("failed_count") or 0) + len(rejected)
 
     # de-dupe while preserving order
     seen: set[str] = set()
@@ -761,7 +1092,7 @@ def phase10b_sync_push(
         upsert_device_registry(
             db,
             user_id=current_user.id,
-            device_fingerprint=device_id,
+            device_fingerprint=client_device_id,
             family_id=family_id,
         )
         db.commit()
@@ -797,9 +1128,11 @@ def phase10b_sync_push(
     return {
         "status": "accepted",
         "family_id": family_id,
-        "device_id": device_id,
+        "device_id": client_device_id,
         "accepted_count": len(accepted_ids),
         "accepted_outbox_ids": accepted_ids,
+        "rejected_count": len(rejected),
+        "rejected": rejected,
         "applied": apply_result,
         "conflict_count": len(conflict_ids),
         "conflict_ids": conflict_ids,
@@ -823,7 +1156,14 @@ def phase10b_sync_pull(
         ["sync.pull", "sync.manage", "reports.view", "accounts.view_all"],
     )
 
+    client_device_id = device_id
+    device_id = _phase10b_device_key(current_user, client_device_id)
     _phase10b_register_device(db, family_id, device_id)
+
+    # Taken before reading, so a row committed while this pull runs is
+    # returned by the next pull instead of falling between two cursors.
+    pull_started_token = _phase10b_now_token()
+    _phase10b_parse_since(since_token)  # 422 on a malformed cursor
 
     server_changes = {
         "families": _phase10b_family_rows(db, "families", family_id, since_token, limit),
@@ -876,7 +1216,43 @@ def phase10b_sync_pull(
         "loan_payments": _phase10b_family_rows(db, "loan_payments", family_id, since_token, limit),
     }
 
-    sync_token = _phase10b_now_token()
+    # Other members' private wallets (and their journal lines) are hidden
+    # from non-owners on every REST list; sync must not be the side door.
+    hidden_wallets = _phase10b_hidden_wallet_ids(member, server_changes["accounts"])
+    if hidden_wallets:
+        server_changes["accounts"] = [
+            r for r in server_changes["accounts"] if str(r.get("id")) not in hidden_wallets
+        ]
+        server_changes["transaction_lines"] = [
+            r for r in server_changes["transaction_lines"] if str(r.get("account_id")) not in hidden_wallets
+        ]
+
+    tombstones: dict[str, list[str]] = {}
+    if since_token:
+        for table_name in server_changes:
+            if table_name in {"transaction_lines", "audit_logs"}:
+                continue
+            ids = _phase10b_tombstones(db, table_name, family_id, since_token, limit)
+            if table_name == "accounts":
+                ids = [i for i in ids if i not in hidden_wallets]
+            if ids:
+                tombstones[table_name] = ids
+
+    # A table that filled `limit` rows has more after its last row: hand back
+    # that row's timestamp as the cursor so the rest is pulled next time
+    # (clients upsert by id, so the overlap is harmless). Otherwise the cursor
+    # is the moment this pull started.
+    sync_token = pull_started_token
+    has_more = False
+    for rows in server_changes.values():
+        if len(rows) < limit or not rows:
+            continue
+        last = rows[-1].get("updated_at") or rows[-1].get("created_at")
+        last_token = _phase10b_token_from(last)
+        if last_token and last_token != since_token:
+            has_more = True
+            if _phase10b_parse_since(last_token) < _phase10b_parse_since(sync_token):
+                sync_token = last_token
 
     db.execute(
         text(
@@ -920,10 +1296,12 @@ def phase10b_sync_pull(
     return {
         "status": "ok",
         "family_id": family_id,
-        "device_id": device_id,
+        "device_id": client_device_id,
         "since_token": since_token,
         "sync_token": sync_token,
         "change_counts": counts,
+        "has_more": has_more,
+        "tombstones": tombstones,
         "changes": _phase10b_json(server_changes),
     }
 
@@ -1008,7 +1386,11 @@ def phase10b_resolve_conflict(
         }
 
     member_id = _phase10b_get_current_member_id(db, family_id, current_user)
-    device_id = str(body.get("device_id") or existing.get("device_id") or "default-device")
+    device_id = (
+        _phase10b_device_key(current_user, body.get("device_id"))
+        if body.get("device_id")
+        else str(existing.get("device_id") or "default-device")
+    )
 
     apply_info = apply_conflict_resolution(
         db,

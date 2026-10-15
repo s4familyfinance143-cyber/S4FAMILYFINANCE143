@@ -586,6 +586,9 @@ def set_member_role(
     target.role = role
     db.commit()
     db.refresh(target)
+    from app.services.grocery_realtime import revoke_grocery_sockets
+
+    revoke_grocery_sockets(family_id, target.user_id)
     return {
         "id": target.id,
         "role": target.role,
@@ -621,6 +624,9 @@ def remove_family_member(
     target.status = "REMOVED"
     target.deleted_at = datetime.now(timezone.utc)
     db.commit()
+    from app.services.grocery_realtime import revoke_grocery_sockets
+
+    revoke_grocery_sockets(family_id, target.user_id)
     return {"success": True, "id": member_id}
 
 

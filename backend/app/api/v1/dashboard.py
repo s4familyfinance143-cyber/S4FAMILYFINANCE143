@@ -14,10 +14,35 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.family import Family
 from app.models.currency import ExchangeRate
+from app.services.chart_of_accounts import is_spend_wallet
 from app.services.finance_posting import _ensure_client_request_id_column
 from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+
+def visible_wallets(db: Session, family_id: str, member) -> list[Account]:
+    """User-facing wallets this member may see.
+
+    Same rule as GET /accounts/family/{family_id}: system chart-of-accounts
+    rows ("Salary Income", "General Expense", ...) are not wallets, and
+    another member's private wallet is hidden from non-owners. Dashboards
+    used to sum every Account row: that double-counted every posting (the
+    wallet leg plus its income/expense ledger leg) and listed other
+    members' private wallet names and balances.
+    """
+    from app.api.v1.accounts import can_view_wallet
+
+    rows = (
+        db.query(Account)
+        .filter(
+            Account.family_id == family_id,
+            Account.is_active.is_(True),
+            Account.deleted_at.is_(None),
+        )
+        .all()
+    )
+    return [a for a in rows if is_spend_wallet(a) and can_view_wallet(member, a)]
 
 
 
@@ -83,7 +108,7 @@ def dashboard_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(
+    member = require_permission(
         db=db,
         family_id=family_id,
         user_id=current_user.id,
@@ -92,7 +117,8 @@ def dashboard_summary(
 
     from app.services.redis_cache import cache_get, cache_set
 
-    cache_key = f"dashboard:summary:{family_id}"
+    # Per member: the wallet list depends on who is asking.
+    cache_key = f"dashboard:summary:{family_id}:{member.id}"
     cached = cache_get(cache_key)
     if isinstance(cached, dict):
         return {**cached, "_cache": "hit"}
@@ -102,15 +128,7 @@ def dashboard_summary(
     family = db.get(Family, family_id)
     base_currency = (family.default_currency if family and family.default_currency else "BDT").upper()
 
-    accounts = (
-        db.query(Account)
-        .filter(
-            Account.family_id == family_id,
-            Account.is_active.is_(True),
-            Account.deleted_at.is_(None),
-        )
-        .all()
-    )
+    accounts = visible_wallets(db, family_id, member)
 
     transactions = (
         db.query(Transaction)
@@ -327,7 +345,7 @@ def dashboard_currency_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(
+    member = require_permission(
         db=db,
         family_id=family_id,
         user_id=current_user.id,
@@ -341,15 +359,7 @@ def dashboard_currency_summary(
 
     base_currency = family.default_currency
 
-    accounts = (
-        db.query(Account)
-        .filter(
-            Account.family_id == family_id,
-            Account.is_active.is_(True),
-            Account.deleted_at.is_(None),
-        )
-        .all()
-    )
+    accounts = visible_wallets(db, family_id, member)
 
     total_balance = Decimal("0")
     unconverted_wallet_count = 0
@@ -401,7 +411,7 @@ def networth_currency_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(
+    member = require_permission(
         db=db,
         family_id=family_id,
         user_id=current_user.id,
@@ -415,11 +425,7 @@ def networth_currency_summary(
 
     base_currency = family.default_currency
 
-    accounts = db.query(Account).filter(
-        Account.family_id == family_id,
-        Account.is_active.is_(True),
-        Account.deleted_at.is_(None),
-    ).all()
+    accounts = visible_wallets(db, family_id, member)
 
     savings_goals = db.query(SavingsGoal).filter(
         SavingsGoal.family_id == family_id,
@@ -532,7 +538,7 @@ def full_currency_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(
+    member = require_permission(
         db=db,
         family_id=family_id,
         user_id=current_user.id,
@@ -546,11 +552,7 @@ def full_currency_dashboard(
 
     base_currency = family.default_currency
 
-    accounts = db.query(Account).filter(
-        Account.family_id == family_id,
-        Account.is_active.is_(True),
-        Account.deleted_at.is_(None),
-    ).all()
+    accounts = visible_wallets(db, family_id, member)
 
     transactions = db.query(Transaction).filter(
         Transaction.family_id == family_id,

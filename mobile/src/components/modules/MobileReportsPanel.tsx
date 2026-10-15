@@ -48,7 +48,8 @@ async function downloadExportBlob(
 
   // Native: write cache file and open share sheet when available
   try {
-    const FileSystem = await import("expo-file-system");
+    // SDK 54+: cacheDirectory / writeAsStringAsync / EncodingType live in the legacy entry.
+    const FileSystem = await import("expo-file-system/legacy");
     const Sharing = await import("expo-sharing");
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);

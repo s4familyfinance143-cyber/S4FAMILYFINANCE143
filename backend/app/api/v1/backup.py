@@ -1,5 +1,7 @@
-﻿from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
+import json
 import os
 import shutil
 import sqlite3
@@ -8,7 +10,7 @@ import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, engine
@@ -24,6 +26,30 @@ POSTGRES_DOCKER_CONTAINER = os.getenv(
     "BACKUP_POSTGRES_DOCKER_CONTAINER",
     "s4-family-finance-postgres",
 )
+
+# Family backups are a logical, family-scoped JSON export. The whole-database
+# copy (sqlite file copy / pg_dump) used to be zipped here and handed to the
+# requesting family OWNER -- but registration is public, so any stranger could
+# register, create a family, become its OWNER and download every family's data
+# plus every user's password hash. Whole-database dumps belong to the server
+# operator only (deploy/scripts, auto_backup_worker), never to an API caller.
+FAMILY_EXPORT_FORMAT = "s4-family-export"
+FAMILY_EXPORT_VERSION = 1
+
+# Never exported, even when the table carries a family_id.
+_EXPORT_EXCLUDED_TABLES = {
+    "alembic_version",
+    "users",
+    "auth_session",
+    "auth_sessions",
+    "refresh_tokens",
+    "otp_codes",
+    "password_reset_tokens",
+    "email_verification_tokens",
+}
+# Column names containing any of these fragments are stripped from every row.
+_EXPORT_SENSITIVE_COLUMN_FRAGMENTS = ("password", "secret", "token", "otp", "api_key")
+_USER_EXPORT_COLUMNS = ("id", "full_name", "email", "phone", "preferred_language")
 
 
 def _ensure_backup_dir():
@@ -45,13 +71,14 @@ def _engine_backend() -> str:
 
 def _sqlite_db_path() -> Path:
     url = str(engine.url)
-    if not url.startswith("sqlite:///"):
+    # Accept driver-qualified URLs too ("sqlite+pysqlite:///...").
+    if not url.startswith("sqlite") or ":///" not in url:
         raise HTTPException(
             status_code=400,
             detail="Active database is not SQLite.",
         )
 
-    raw_path = url.replace("sqlite:///", "", 1)
+    raw_path = url.split(":///", 1)[1]
     db_path = Path(raw_path)
     if not db_path.is_absolute():
         db_path = BASE_DIR / db_path
@@ -79,7 +106,11 @@ def _docker_available() -> bool:
 
 
 def _create_postgres_dump_file(dest: Path) -> str:
-    """Write a custom-format pg_dump to dest. Returns method used."""
+    """Write a custom-format pg_dump to dest. Returns method used.
+
+    Server-operator helper only (whole database). Not reachable from any
+    family-facing endpoint -- see FAMILY_EXPORT_FORMAT above.
+    """
     url = engine.url
     user = url.username or "s4_user"
     database = url.database or "s4_family_finance"
@@ -154,6 +185,135 @@ def _zip_payload(zip_path: Path, payload_path: Path, arcname: str) -> None:
         zf.write(payload_path, arcname=arcname)
 
 
+def _q(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _export_value(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return None
+    return value
+
+
+def _is_sensitive_column(name: str) -> bool:
+    lowered = name.lower()
+    return any(fragment in lowered for fragment in _EXPORT_SENSITIVE_COLUMN_FRAGMENTS)
+
+
+def _clean_rows(rows) -> list[dict]:
+    out = []
+    for row in rows:
+        out.append(
+            {
+                k: _export_value(v)
+                for k, v in dict(row._mapping).items()
+                if not _is_sensitive_column(str(k))
+            }
+        )
+    return out
+
+
+def _chunks(items: list, size: int = 500):
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+def build_family_export(db: Session, family_id: str) -> dict:
+    """Collect only rows that belong to family_id.
+
+    - families: the family row itself.
+    - every table with a family_id column: rows WHERE family_id = :family_id.
+    - tables without family_id (e.g. transaction_lines): rows whose foreign key
+      points at an already-exported family row.
+    - users: public profile columns of this family's members only.
+    Identifiers come from the live schema (inspect()), values are bound.
+    """
+    insp = inspect(db.get_bind())
+    table_names = sorted(insp.get_table_names())
+    columns = {t: [c["name"] for c in insp.get_columns(t)] for t in table_names}
+
+    tables: dict[str, list[dict]] = {}
+    exported_ids: dict[str, set] = {}
+
+    if "families" in columns:
+        rows = db.execute(text("SELECT * FROM families WHERE id = :fid"), {"fid": family_id}).fetchall()
+        tables["families"] = _clean_rows(rows)
+        exported_ids["families"] = {family_id}
+
+    for table in table_names:
+        if table in _EXPORT_EXCLUDED_TABLES or table == "families":
+            continue
+        if "family_id" not in columns[table]:
+            continue
+        rows = db.execute(
+            text(f"SELECT * FROM {_q(table)} WHERE {_q('family_id')} = :fid"),
+            {"fid": family_id},
+        ).fetchall()
+        cleaned = _clean_rows(rows)
+        tables[table] = cleaned
+        if "id" in columns[table]:
+            exported_ids[table] = {r.get("id") for r in cleaned if r.get("id") is not None}
+
+    for table in table_names:
+        if table in tables or table in _EXPORT_EXCLUDED_TABLES:
+            continue
+        collected: dict = {}
+        for fk in insp.get_foreign_keys(table):
+            parent = fk.get("referred_table")
+            local_cols = fk.get("constrained_columns") or []
+            if parent not in exported_ids or fk.get("referred_columns") != ["id"] or len(local_cols) != 1:
+                continue
+            parent_ids = sorted(str(x) for x in exported_ids[parent])
+            for chunk in _chunks(parent_ids):
+                params = {f"p{i}": v for i, v in enumerate(chunk)}
+                placeholders = ", ".join(f":p{i}" for i in range(len(chunk)))
+                rows = db.execute(
+                    text(f"SELECT * FROM {_q(table)} WHERE {_q(local_cols[0])} IN ({placeholders})"),
+                    params,
+                ).fetchall()
+                for row in _clean_rows(rows):
+                    key = row.get("id") or json.dumps(row, sort_keys=True, default=str)
+                    collected[key] = row
+        if collected:
+            tables[table] = list(collected.values())
+
+    member_user_ids = sorted(
+        {str(r.get("user_id")) for r in tables.get("family_members", []) if r.get("user_id")}
+    )
+    users: list[dict] = []
+    if member_user_ids and "users" in columns:
+        cols = [c for c in _USER_EXPORT_COLUMNS if c in columns["users"]]
+        for chunk in _chunks(member_user_ids):
+            params = {f"u{i}": v for i, v in enumerate(chunk)}
+            placeholders = ", ".join(f":u{i}" for i in range(len(chunk)))
+            rows = db.execute(
+                text(f"SELECT {', '.join(_q(c) for c in cols)} FROM users WHERE id IN ({placeholders})"),
+                params,
+            ).fetchall()
+            users.extend(_clean_rows(rows))
+    tables["users"] = users
+
+    return {
+        "format": FAMILY_EXPORT_FORMAT,
+        "version": FAMILY_EXPORT_VERSION,
+        "family_id": family_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "database_backend": _engine_backend(),
+        "row_counts": {name: len(rows) for name, rows in tables.items()},
+        "tables": tables,
+    }
+
+
+def _zip_contains_full_database(zip_path: Path) -> bool:
+    """Legacy backups (before family-scoped export) hold the whole database."""
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        return any(not n.endswith(".json") for n in zf.namelist())
+
+
 @router.post("/create/{family_id}")
 def create_backup(
     family_id: str,
@@ -172,40 +332,26 @@ def create_backup(
     ts = _timestamp()
     backup_zip_name = f"s4_backup_{family_id}_{ts}.zip"
     backup_zip_path = BACKUP_DIR / backup_zip_name
+    payload_name = f"s4_backup_{family_id}_{ts}.json"
 
-    if backend == "sqlite":
-        source_db = _sqlite_db_path()
-        payload_name = f"s4_backup_{family_id}_{ts}.db"
-        payload_path = BACKUP_DIR / payload_name
-        shutil.copy2(source_db, payload_path)
-        method = "sqlite_file_copy"
-    elif backend == "postgresql":
-        payload_name = f"s4_backup_{family_id}_{ts}.dump"
-        payload_path = BACKUP_DIR / payload_name
-        method = _create_postgres_dump_file(payload_path)
-    else:
+    export = build_family_export(db, family_id)
+    payload = json.dumps(export, ensure_ascii=False, default=str).encode("utf-8")
+    if not payload:
         raise HTTPException(
-            status_code=400,
-            detail=f"Backup does not support database backend: {backend}",
+            status_code=500,
+            detail="Backup failed: family export is empty.",
         )
-
-    try:
-        if payload_path.stat().st_size <= 0:
-            raise HTTPException(
-                status_code=500,
-                detail="Backup failed: created dump/copy is empty.",
-            )
-        _zip_payload(backup_zip_path, payload_path, payload_name)
-    finally:
-        payload_path.unlink(missing_ok=True)
+    with zipfile.ZipFile(backup_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(payload_name, payload)
 
     return {
         "success": True,
         "family_id": family_id,
         "database_backend": backend,
-        "method": method,
+        "method": "family_json_export",
         "backup_file": backup_zip_name,
         "backup_path": str(backup_zip_path),
+        "row_counts": export["row_counts"],
         "created_at": datetime.now(timezone.utc),
     }
 
@@ -266,6 +412,14 @@ def download_backup(
     )
 
     path = _validate_backup_name(family_id, file_name)
+    if _zip_contains_full_database(path):
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Legacy full-database backup: download disabled because it contains other "
+                "families' data. Create a new backup, or ask the server operator."
+            ),
+        )
 
     return FileResponse(
         path=path,
@@ -290,7 +444,9 @@ def database_integrity_check(
             conn.close()
         return {
             "database_backend": backend,
-            "database": str(source_db),
+            # File name only: any signed-in user can call this endpoint, and
+            # the absolute server path told them the host's directory layout.
+            "database": source_db.name,
             "integrity_check": result,
             "ok": result == "ok",
         }
@@ -333,6 +489,8 @@ def _preview_payload(family_id: str, file_name: str) -> dict:
         kind = "sqlite"
     elif any(n.endswith(".dump") or n.endswith(".sql") for n in names):
         kind = "postgresql"
+    elif any(n.endswith(".json") for n in names):
+        kind = "family_export"
     return {
         "success": True,
         "family_id": family_id,
@@ -342,7 +500,8 @@ def _preview_payload(family_id: str, file_name: str) -> dict:
         "restore_safe": True,
         "message": (
             "Backup file is valid. Full restore must be done with API stopped. "
-            "SQLite: replace .db file. PostgreSQL: pg_restore / psql the dump."
+            "SQLite: replace .db file. PostgreSQL: pg_restore / psql the dump. "
+            "Family export (.json): rows of this family only, import manually."
         ),
     }
 
@@ -362,6 +521,7 @@ def _prepare_payload(family_id: str, file_name: str) -> dict:
     extracted_db = [x.name for x in restore_dir.glob("*.db")]
     extracted_dump = [x.name for x in restore_dir.glob("*.dump")]
     extracted_sql = [x.name for x in restore_dir.glob("*.sql")]
+    extracted_json = [x.name for x in restore_dir.glob("*.json")]
 
     if extracted_db:
         next_step = "Stop server, verify extracted DB, then replace current SQLite database manually."
@@ -375,8 +535,13 @@ def _prepare_payload(family_id: str, file_name: str) -> dict:
             "Stop writers, then: "
             f"psql -h HOST -U USER -d DB -f {restore_dir / extracted_sql[0]}"
         )
+    elif extracted_json:
+        next_step = (
+            "Family export (JSON, this family's rows only). Review "
+            f"{restore_dir / extracted_json[0]} and re-import rows table by table."
+        )
     else:
-        next_step = "No .db/.dump/.sql found in archive — inspect prepared_dir."
+        next_step = "No .db/.dump/.sql/.json found in archive — inspect prepared_dir."
 
     return {
         "success": True,
@@ -386,6 +551,7 @@ def _prepare_payload(family_id: str, file_name: str) -> dict:
         "extracted_db_files": extracted_db,
         "extracted_dump_files": extracted_dump,
         "extracted_sql_files": extracted_sql,
+        "extracted_json_files": extracted_json,
         "next_step": next_step,
     }
 

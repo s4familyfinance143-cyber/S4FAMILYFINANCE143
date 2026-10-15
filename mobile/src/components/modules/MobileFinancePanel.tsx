@@ -277,8 +277,8 @@ export function MobileFinancePanel({
             category_id: row.category_id,
           }))
         );
-        setBudgets(localBud || []);
-        setLoans(localLoan || []);
+        setBudgets((localBud || []) as Budget[]);
+        setLoans((localLoan || []) as Loan[]);
         setCategories(
           (localCat || []).map((row: any) => ({
             id: String(row.server_id || row.id),
@@ -397,8 +397,8 @@ export function MobileFinancePanel({
               category_id: row.category_id,
             }))
           );
-          setBudgets(localBud || []);
-          setLoans(localLoan || []);
+          setBudgets((localBud || []) as Budget[]);
+          setLoans((localLoan || []) as Loan[]);
           onMessage("Showing offline finance data", true);
           return;
         }

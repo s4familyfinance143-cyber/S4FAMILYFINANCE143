@@ -1,8 +1,16 @@
-import { colors, darkColors } from "./colors";
+import { colors, darkColors, type AppColors } from "./colors";
 import { spacing, radii } from "./spacing";
 import { typography } from "./typography";
 
-export const lightTheme = {
+export type AppTheme = {
+  mode: "light" | "dark";
+  colors: AppColors;
+  spacing: typeof spacing;
+  radii: typeof radii;
+  typography: typeof typography;
+};
+
+export const lightTheme: AppTheme = {
   mode: "light" as const,
   colors,
   spacing,
@@ -10,15 +18,13 @@ export const lightTheme = {
   typography,
 };
 
-export const darkTheme = {
+export const darkTheme: AppTheme = {
   mode: "dark" as const,
   colors: darkColors,
   spacing,
   radii,
   typography,
 };
-
-export type AppTheme = typeof lightTheme;
 
 export function getTheme(mode: "light" | "dark"): AppTheme {
   return mode === "dark" ? darkTheme : lightTheme;

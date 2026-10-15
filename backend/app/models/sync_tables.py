@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -37,6 +37,19 @@ class SyncState(UUIDPrimaryKeyMixin, Base):
 
 class SyncOutbox(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "sync_outbox"
+    __table_args__ = (
+        # Idempotency key of a pushed change (migration 0026). Partial: rows
+        # without a client_change_id (legacy, rejected) are not constrained.
+        Index(
+            "uq_sync_outbox_change",
+            "family_id",
+            "device_id",
+            "client_change_id",
+            unique=True,
+            sqlite_where=text("client_change_id IS NOT NULL AND client_change_id <> ''"),
+            postgresql_where=text("client_change_id IS NOT NULL AND client_change_id <> ''"),
+        ),
+    )
 
     family_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
     device_id: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
