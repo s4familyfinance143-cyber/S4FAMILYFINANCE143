@@ -29,7 +29,6 @@ def _bootstrap_batch12_env() -> None:
             "AUTO_CREATE_TABLES": "true",
             "ENABLE_RECURRING_WORKER": "false",
             "ENABLE_AUTO_BACKUP_WORKER": "false",
-            "NOTIFICATION_FCM_ENABLED": "false",
             "NOTIFICATION_EMAIL_ENABLED": "false",
             "DOCUMENT_VAULT_BACKEND": "local",
             "CELERY_ENABLED": "false",

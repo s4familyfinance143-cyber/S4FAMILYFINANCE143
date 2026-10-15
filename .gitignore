@@ -82,7 +82,7 @@ frontend/fix-*.py
 **/*.before-*
 frontend/src/App.backup-before-history.css
 
-# Optional design mockups / legacy installer binaries (not used by Firebase-first app)
+# Optional design mockups / legacy installer binaries (not used by the app)
 deploy/mockups/
 deploy/installer/Output/
 deploy/installer/OutputClean*/

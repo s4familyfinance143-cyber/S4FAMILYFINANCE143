@@ -32,7 +32,6 @@ else:
     os.environ["AUTO_CREATE_TABLES"] = "true"
     os.environ["ENABLE_RECURRING_WORKER"] = "false"
     os.environ["ENABLE_AUTO_BACKUP_WORKER"] = "false"
-    os.environ["NOTIFICATION_FCM_ENABLED"] = "false"
     os.environ["NOTIFICATION_EMAIL_ENABLED"] = "false"
     os.environ["DOCUMENT_VAULT_BACKEND"] = "local"
     os.environ.pop("S3_ENDPOINT_URL", None)

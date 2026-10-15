@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const NOTIFY_TABS = ["inbox", "delivery", "devices"];
+const NOTIFY_TABS = ["inbox", "delivery"];
 
 const TITLE_BN = {
   BUDGET_OVER: "বাজেট অতিক্রম",
@@ -25,14 +25,9 @@ function extractInviteCode(item) {
   return match ? match[0].toUpperCase() : "";
 }
 
-function isInviteNotification(item) {
-  const type = String(item?.notification_type || item?.type || "").toUpperCase();
-  return type === "INVITE" || Boolean(extractInviteCode(item));
-}
-
+/** Every notification comes from the VPS server, so invite codes in it are real. */
 function isShareableInviteNotification(item) {
-  if (!isInviteNotification(item)) return true;
-  return item?.cloud_ok === true || item?.cloud_published === true;
+  return Boolean(item);
 }
 
 function shortTime(value, digits, t) {
@@ -88,20 +83,12 @@ export function NotificationsPanel({
   notificationSummary,
   notificationDelivery,
   notificationsLoading,
-  pushDevices = [],
-  pushTokenDraft = "",
-  setPushTokenDraft,
-  pushPlatform = "WEB",
-  setPushPlatform,
   onRefresh,
   onScan,
   onMarkAllRead,
   onMarkRead,
   onDelete,
   onTestEmail,
-  onRegisterDevice,
-  onUnregisterDevice,
-  onTestPush,
   onEnableBrowserPush,
 }) {
   const [notifyTab, setNotifyTab] = useState("inbox");
@@ -111,19 +98,14 @@ export function NotificationsPanel({
   const high = Number(notificationSummary?.high_notifications || 0);
   const medium = Number(notificationSummary?.medium_notifications || 0);
   const templates = notificationDelivery?.templates || [];
-  const fcmOn = Boolean(
-    notificationDelivery?.fcm_configured ||
-      notificationDelivery?.web_fcm?.vapid_configured ||
-      notificationDelivery?.web_fcm?.token_ready ||
-      (pushDevices.length > 0 &&
-        String(notificationDelivery?.browser_permission || "").toLowerCase() === "granted")
-  );
+  // Browser-native notifications for live VPS events (no push service).
+  const browserOn = String(notificationDelivery?.browser_permission || "").toLowerCase() === "granted";
   const emailOn = Boolean(notificationDelivery?.email_configured);
   const smtpHost = notificationDelivery?.smtp?.configured
     ? notificationDelivery.smtp.host
     : null;
   const deliveryMode = notificationDelivery?.delivery_mode || "IN_APP_ONLY";
-  const fcmNote = notificationDelivery?.fcm?.note || notificationDelivery?.smtp?.note;
+  const smtpNote = notificationDelivery?.smtp?.note;
 
   return (
     <section className="panel settings-panel settings-smart notify-smart">
@@ -166,8 +148,8 @@ export function NotificationsPanel({
             {templates.length ? ` · ${digits(templates.length)} ${t("templates")}` : ""}
           </p>
           <div className="settings-badges">
-            <span className={`settings-badge ${fcmOn ? "ok" : "warn"}`}>
-              {fcmOn ? t("fcmOn") : t("fcmOff")}
+            <span className={`settings-badge ${browserOn ? "ok" : "warn"}`}>
+              Browser: {browserOn ? "ON" : "OFF"}
             </span>
             <span className={`settings-badge ${emailOn ? "ok" : "warn"}`}>
               Email: {emailOn ? "ON" : "OFF"}
@@ -175,9 +157,6 @@ export function NotificationsPanel({
             </span>
             <span className={`settings-badge ${high ? "warn" : "ok"}`}>
               {t("highSeverity")}: {digits(high)}
-            </span>
-            <span className={`settings-badge ${pushDevices.length ? "ok" : "warn"}`}>
-              {t("pushDevices") || "Devices"}: {digits(pushDevices.length)}
             </span>
           </div>
         </div>
@@ -307,17 +286,20 @@ export function NotificationsPanel({
               <div>
                 <h4>{t("deliveryMode")}</h4>
                 <p>
-                  {deliveryMode} · FCM {fcmOn ? "ON" : "OFF"} · Email {emailOn ? "ON" : "OFF"}
+                  {deliveryMode} · Browser {browserOn ? "ON" : "OFF"} · Email {emailOn ? "ON" : "OFF"}
                 </p>
               </div>
               <div className="notify-actions">
                 <button type="button" className="btn btn-primary" disabled={notificationsLoading} onClick={onTestEmail}>
                   {t("testNotificationEmail")}
                 </button>
+                <button type="button" className="btn" disabled={notificationsLoading || browserOn} onClick={onEnableBrowserPush}>
+                  {t("enableBrowserNotifications") || "Enable browser notifications"}
+                </button>
               </div>
             </div>
 
-            {fcmNote ? <p className="settings-help">{String(fcmNote)}</p> : null}
+            {smtpNote ? <p className="settings-help">{String(smtpNote)}</p> : null}
             {notificationDelivery?.pipeline?.architecture_status ? (
               <p className="budget-hero-sub">
                 Delivery pipeline: {notificationDelivery.pipeline.architecture_status}
@@ -341,97 +323,6 @@ export function NotificationsPanel({
         </div>
       ) : null}
 
-      {notifyTab === "devices" ? (
-        <div className="settings-stack">
-          <div className="settings-block">
-            <div className="settings-block-head">
-              <div>
-                <h4>{t("registerPushDevice") || "Register push device"}</h4>
-                <p>
-                  FCM {fcmOn ? "ON" : "OFF"} · {digits(pushDevices.length)}{" "}
-                  {t("pushDevices") || "devices"}
-                </p>
-              </div>
-              <div className="notify-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={notificationsLoading}
-                  onClick={onEnableBrowserPush}
-                >
-                  {t("enableBrowserNotifications") || "Enable browser notifications"}
-                </button>
-                <button type="button" className="btn" disabled={notificationsLoading} onClick={onTestPush}>
-                  {t("sendTestPush") || "Send test push"}
-                </button>
-              </div>
-            </div>
-
-            <div className="settings-badges" style={{ marginBottom: 12 }}>
-              {["WEB", "ANDROID", "IOS"].map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={`settings-badge ${pushPlatform === item ? "ok" : "role"}`}
-                  disabled={notificationsLoading}
-                  onClick={() => setPushPlatform?.(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            <div className="finance-form">
-              <input
-                placeholder={t("pastePushToken") || "Paste FCM / Expo push token"}
-                value={pushTokenDraft}
-                disabled={notificationsLoading}
-                onChange={(e) => setPushTokenDraft?.(e.target.value)}
-              />
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={notificationsLoading || !onRegisterDevice}
-                onClick={onRegisterDevice}
-              >
-                {t("registerDevice") || "Register device"}
-              </button>
-            </div>
-          </div>
-
-          <div className="settings-block">
-            <h4>{t("pushDevices") || "Registered devices"}</h4>
-            {pushDevices.length === 0 ? (
-              <p className="settings-empty">{t("noPushDevices") || "No devices registered"}</p>
-            ) : (
-              <div className="notify-feed">
-                {pushDevices.map((device) => (
-                  <div className="notify-card is-read" key={device.id}>
-                    <div className="notify-card-main">
-                      <div className="audit-feed-tags">
-                        <span className="settings-badge role">{device.platform || "WEB"}</span>
-                        <span className="settings-badge ok">{device.provider || "FCM"}</span>
-                      </div>
-                      <strong>{device.device_label || device.platform || "Device"}</strong>
-                      <p>{device.token_preview || device.id}</p>
-                    </div>
-                    <div className="notify-card-actions">
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={notificationsLoading}
-                        onClick={() => onUnregisterDevice?.(device.id)}
-                      >
-                        {t("unregisterDevice") || "Unregister"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

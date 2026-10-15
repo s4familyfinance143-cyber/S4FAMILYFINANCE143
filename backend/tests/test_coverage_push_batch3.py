@@ -1567,5 +1567,5 @@ def test_notifications_and_architecture_helpers(monkeypatch):
     got = asa.get_user_preferences(Db(), SimpleNamespace(id="u"))
     assert got["currency"] == "BDT"
 
-    monkeypatch.setattr(n, "fcm_status", lambda: {"configured": False})
-    assert n.notification_fcm_status(SimpleNamespace(id="u"))["configured"] is False
+    # FCM status endpoint removed with Firebase.
+    assert not hasattr(n, "notification_fcm_status")

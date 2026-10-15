@@ -296,7 +296,7 @@ export function TopHeader({
     setNotifyDropdownOpen?.(next);
     if (next) {
       onRefreshNotifications?.();
-      // User gesture: request permission + register FCM / SW when opening the bell
+      // User gesture: ask for browser notification permission when opening the bell
       onEnablePush?.();
     }
   }

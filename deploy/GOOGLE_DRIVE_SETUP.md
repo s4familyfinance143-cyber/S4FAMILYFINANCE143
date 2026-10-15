@@ -4,13 +4,12 @@ Use your own Google account. Backup files are stored in your Drive under the app
 
 ## Prerequisites
 
-- Firebase project already created (see `deploy/FIREBASE_SETUP.md`)
-- Same Google Cloud project powers Firebase and OAuth
+- A Google Cloud project for the OAuth client (Drive backup is optional)
 
 ## 1. Enable Google Drive API
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/)
-2. Select your Firebase project
+2. Select your Google Cloud project
 3. **APIs & Services → Library**
 4. Search **Google Drive API** → **Enable**
 
@@ -58,7 +57,7 @@ Full production checklist: `deploy/PER_USER_GOOGLE_DRIVE.md`.
 - `drive.file` scope only sees files created by this app (not your whole Drive)
 - Access tokens live in `sessionStorage` (reconnect after a full browser session ends)
 - This is **per-user** Drive backup — not the company service-account document vault
-- Drive backup can run alongside Firebase/API cloud sync
+- Drive backup is an optional extra copy; the VPS stays the source of truth
 
 ## Troubleshooting
 

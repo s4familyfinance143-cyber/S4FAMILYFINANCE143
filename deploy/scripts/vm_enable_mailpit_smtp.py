@@ -69,7 +69,6 @@ p = Path("{ENV_REMOTE}")
 text = p.read_text(encoding="utf-8")
 keys = {{
   "NOTIFICATION_EMAIL_ENABLED": "true",
-  "NOTIFICATION_FCM_ENABLED": "false",
   "AUTH_EMAIL_ENABLED": "true",
   "SMTP_HOST": "mailpit",
   "SMTP_PORT": "1025",

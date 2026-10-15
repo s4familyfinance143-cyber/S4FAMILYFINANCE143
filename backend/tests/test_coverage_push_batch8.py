@@ -473,22 +473,6 @@ def test_smtp_status_returns_dict():
 # 10. job_queue.py
 # ---------------------------------------------------------------------------
 
-def test_job_queue_enqueue_push_inline():
-    """When CELERY_ENABLED=False, calls task directly and returns result."""
-    fake_result = {"status": "ok"}
-    fake_task = MagicMock(return_value=fake_result)
-    with patch("app.services.job_queue.settings") as s, \
-         patch("app.services.job_queue.send_push_task", fake_task, create=True):
-        s.CELERY_ENABLED = False
-        # Simulate the module import path used inside enqueue_push
-        import importlib, sys
-        # We need to bypass the internal import; mock at module level
-        import app.services.job_queue as jq_mod
-        orig = getattr(jq_mod, "_celery_push", None)
-        with patch.object(s, "CELERY_ENABLED", False):
-            pass  # settings already patched
-
-
 def test_job_queue_enqueue_email_inline():
     """enqueue_email without Celery calls send_email_task directly."""
     fake_result = {"status": "sent"}
@@ -533,7 +517,7 @@ def test_architecture_readiness_full():
     with patch("app.services.architecture_readiness_service.object_storage_status", return_value={"status": "ok"}), \
          patch("app.services.architecture_readiness_service.notification_pipeline_status", return_value={"status": "ok"}), \
          patch("app.services.architecture_readiness_service.ocr_status", return_value={"status": "ok"}), \
-         patch("app.services.architecture_readiness_service.fcm_status", return_value={"status": "ok"}), \
+\
          patch("app.services.architecture_readiness_service.smtp_status", return_value={"configured": False}):
         result = architecture_readiness()
     assert "modules" in result

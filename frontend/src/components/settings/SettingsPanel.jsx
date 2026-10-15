@@ -13,7 +13,7 @@ const APP_VERSION = packageJson.version;
 
 function resolveSettingsGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily }) {
   const uid = String(
-    currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+    currentUser?.uid || currentUser?.id || currentUser?.user_id || "",
   ).trim();
   const mail = String(currentUser?.email || email || "")
     .trim()
@@ -287,7 +287,6 @@ export function SettingsPanel({
   onDriveDisconnect,
   onDriveUpload,
   onDriveRestore,
-  cloudOnlyMode = false,
   categories = [],
   categoriesSaving = false,
   categoryDeletingId = "",
@@ -332,9 +331,8 @@ export function SettingsPanel({
   const isLocalDev = Boolean(import.meta.env.DEV);
   const cloudSessionReady = false;
   const canRefreshSession = Boolean(refreshToken) || cloudSessionReady;
-  // Family cloud/Firebase users never need localhost API URL.
-  // Show only when Developer Mode is on AND not in cloud-only mode.
-  const showApiBaseCard = Boolean(developerMode) && !cloudOnlyMode;
+  // Show only when Developer Mode is on.
+  const showApiBaseCard = Boolean(developerMode);
   const [permMobile, setPermMobile] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)").matches : false,
   );

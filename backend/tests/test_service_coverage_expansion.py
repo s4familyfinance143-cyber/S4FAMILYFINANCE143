@@ -16,7 +16,7 @@ from app.core.errors import register_exception_handlers
 from app.services import accounting_service as accounting
 from app.services import architecture_readiness_service, finance_posting, job_queue
 from app.services import chart_of_accounts as coa
-from app.services import email_service, fcm_service, notification_delivery_service, permission_service
+from app.services import email_service, notification_delivery_service, permission_service
 from app.utils import currency, date_helper
 
 
@@ -421,23 +421,6 @@ def test_email_disabled_validation_and_mocked_delivery(monkeypatch):
     assert email_service.EmailSendResult(True, "sent").as_dict()["sent"]
 
 
-def test_fcm_disabled_status_and_send():
-    # Firebase Admin / FCM was permanently removed from the product (see
-    # app/services/fcm_service.py) -- it's a hardcoded-disabled stub now,
-    # not settings-driven, so there's nothing left to toggle here.
-    status = fcm_service.fcm_status()
-    assert not status["enabled"]
-    assert not status["configured"]
-    assert not fcm_service.is_fcm_configured()
-    assert fcm_service.send_fcm_push(token="", title="T", body="B").reason == "Push token missing"
-    assert fcm_service.send_fcm_push(token="tok", title="", body="B").reason == "Title missing"
-    result = fcm_service.send_fcm_push(token="tok", title="T", body="B")
-    assert not result.sent
-    assert result.as_dict()["token"] == "tok"
-    with pytest.raises(RuntimeError, match="removed"):
-        fcm_service._get_firebase_app()
-
-
 def test_rate_limit_keys(monkeypatch):
     request = SimpleNamespace(
         headers={"authorization": "Bearer abc"}, client=SimpleNamespace(host="127.0.0.1")
@@ -571,11 +554,7 @@ def test_finance_posting_helpers_and_flushes(monkeypatch):
 
 def test_notification_delivery_disabled_and_helpers(monkeypatch):
     monkeypatch.setattr(notification_delivery_service.settings, "NOTIFICATION_EMAIL_ENABLED", False)
-    monkeypatch.setattr(notification_delivery_service.settings, "NOTIFICATION_FCM_ENABLED", False)
     monkeypatch.setattr(notification_delivery_service, "smtp_status", lambda: {"configured": False})
-    monkeypatch.setattr(
-        notification_delivery_service, "fcm_status", lambda: {"configured": False, "note": "off"}
-    )
     notification = SimpleNamespace(
         id="n",
         family_id="f",
@@ -586,7 +565,7 @@ def test_notification_delivery_disabled_and_helpers(monkeypatch):
     )
     result = notification_delivery_service.deliver_notification_channels(Db(), notification)
     assert result["email"][0]["reason"].endswith("false")
-    assert result["push"][0]["reason"].endswith("false")
+    assert "push" not in result
     assert notification_delivery_service.fanout_notification_ids(Db(), "f", [])["delivered"] == 0
 
     assert notification_delivery_service._member_user_ids(
@@ -601,19 +580,6 @@ def test_notification_delivery_disabled_and_helpers(monkeypatch):
         Db([[("u",)], users]), "f"
     ) == ["b@example.com"]
     assert notification_delivery_service._emails_for_family(Db([[]]), "f") == []
-    token = SimpleNamespace(id="d", fcm_token="1234567890123456")
-    assert notification_delivery_service._push_tokens(Db([[token]]), "f", "u") == [token]
-    db = Db()
-    outbox = notification_delivery_service._record_push_outbox(
-        db,
-        family_id="f",
-        notification_id="n",
-        token=token.fcm_token,
-        title="T",
-        body="B",
-        status="SENT",
-    )
-    assert outbox.status == "SENT" and outbox.sent_at is not None
     status = notification_delivery_service.pipeline_status()
     assert status["architecture_status"] == "DONE"
 
@@ -647,9 +613,6 @@ def test_architecture_readiness(monkeypatch):
         lambda: {"architecture_status": "DONE"},
     )
     monkeypatch.setattr(
-        architecture_readiness_service, "fcm_status", lambda: {"configured": False}
-    )
-    monkeypatch.setattr(
         architecture_readiness_service, "smtp_status", lambda: {"configured": False}
     )
     result = architecture_readiness_service.architecture_readiness()
@@ -660,12 +623,10 @@ def test_architecture_readiness(monkeypatch):
 def test_job_queue_inline_and_delayed(monkeypatch):
     from app.workers import celery_tasks
 
-    monkeypatch.setattr(celery_tasks, "send_push_task", lambda *a: {"kind": "push"})
     monkeypatch.setattr(celery_tasks, "send_email_task", lambda *a: {"kind": "email"})
     monkeypatch.setattr(celery_tasks, "generate_report_task", lambda *a: {"kind": "report"})
     monkeypatch.setattr(celery_tasks, "export_job_task", lambda *a: {"kind": "export"})
     monkeypatch.setattr(job_queue.settings, "CELERY_ENABLED", False)
-    assert job_queue.enqueue_push("t", "T", "B")["kind"] == "push"
     assert job_queue.enqueue_email("a@b.com", "S", "B")["kind"] == "email"
     assert job_queue.enqueue_report("f")["kind"] == "report"
     assert job_queue.enqueue_export_job("j")["kind"] == "export"

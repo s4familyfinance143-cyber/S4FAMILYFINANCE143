@@ -28,7 +28,6 @@ jobs:
       AUTO_CREATE_TABLES: "true"
       DATABASE_URL: sqlite:///./ci_pytest.db
       JWT_SECRET_KEY: ci_test_secret_key_at_least_32_chars_long
-      NOTIFICATION_FCM_ENABLED: "false"
       NOTIFICATION_EMAIL_ENABLED: "false"
       AUTH_EMAIL_ENABLED: "true"
       DOCUMENT_VAULT_BACKEND: local
@@ -76,7 +75,6 @@ jobs:
       AUTO_CREATE_TABLES: "false"
       DATABASE_URL: postgresql+psycopg://s4_ci:ci_postgres_password@localhost:5432/s4_family_finance_ci
       JWT_SECRET_KEY: ci_test_secret_key_at_least_32_chars_long
-      NOTIFICATION_FCM_ENABLED: "false"
       NOTIFICATION_EMAIL_ENABLED: "false"
       AUTH_EMAIL_ENABLED: "true"
       DOCUMENT_VAULT_BACKEND: local

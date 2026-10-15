@@ -1,4 +1,6 @@
-# Email (SMTP) + Push (FCM) — S4 Family Finance
+# Email (SMTP) — S4 Family Finance
+
+In-app notifications and live updates run on the VPS (database + WebSocket). Email is the only external channel; there is no push service.
 
 ## Local development — Mailpit (recommended)
 
@@ -40,33 +42,15 @@ APP_PUBLIC_URL=https://your-domain.com
 
 **Gmail:** use [App Password](https://myaccount.google.com/apppasswords), not your main password.
 
-## Firebase Cloud Messaging (push)
-
-1. Firebase Console → Project settings → **Service accounts**
-2. **Generate new private key** → save as `backend/secrets/firebase-service-account.json`
-3. Add to `backend/.env`:
-
-```env
-NOTIFICATION_FCM_ENABLED=true
-FCM_PROJECT_ID=your-firebase-project-id
-FCM_CREDENTIALS_PATH=./secrets/firebase-service-account.json
-```
-
-4. Restart backend + Celery worker.
-
-**Never commit** the JSON key to git. Add `backend/secrets/` to `.gitignore` if needed.
-
 ## Verify
 
 | Feature | Test |
 |---------|------|
 | Email | Forgot password on login screen → check Mailpit |
-| FCM | Trigger in-app notification that uses push worker |
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
 | Email not sent | Check `AUTH_EMAIL_ENABLED`, SMTP host/port, Celery worker running |
-| FCM disabled | `NOTIFICATION_FCM_ENABLED=true` + valid credentials path |
 | Connection refused :1025 | Run `docker-compose.local.yml` |

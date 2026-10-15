@@ -321,22 +321,6 @@ class TestRecurringSchedulerHelpers:
 # ===========================================================================
 
 class TestCeleryTaskHelpers:
-    def test_send_push_task_ok(self):
-        from app.workers import celery_tasks
-        fake_result = SimpleNamespace(sent=True, reason=None, ok=True, success=False, detail=None)
-        with patch("app.services.fcm_service.send_fcm_push", return_value=fake_result):
-            result = celery_tasks.send_push_task.run("tok", "title", "body", {})
-        assert result["ok"] is True
-        assert result["task"] == "push"
-
-    def test_send_push_task_failure(self):
-        from app.workers import celery_tasks
-        fake_result = SimpleNamespace(sent=False, reason="token_expired", ok=False, success=False, detail=None)
-        with patch("app.services.fcm_service.send_fcm_push", return_value=fake_result):
-            result = celery_tasks.send_push_task.run("tok", "title", "body")
-        assert result["ok"] is False
-        assert result["detail"] == "token_expired"
-
     def test_process_recurring_task_delegates(self):
         from app.workers import celery_tasks
         with patch("app.workers.celery_tasks.process_recurring_transactions") as mock_fn:

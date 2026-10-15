@@ -94,22 +94,9 @@ SENTRY_ENVIRONMENT=production
 VITE_SENTRY_DSN=https://...@o....ingest.sentry.io/...
 ```
 
-## 7) FCM push (Step 12 live)
+## 7) Notifications
 
-1. Firebase Console → service account JSON on VPS (e.g. `/secrets/firebase.json`).
-2. In `.env.production`:
-
-```
-NOTIFICATION_FCM_ENABLED=true
-FCM_PROJECT_ID=your-project
-FCM_CREDENTIALS_PATH=/secrets/firebase.json
-```
-
-3. Verify:
-
-```bash
-bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production
-```
+In-app notifications and live updates run on the VPS (database + WebSocket). Email is optional (SMTP, see `deploy/EMAIL_SETUP.md`). There is no push service to configure.
 
 ## 8) Alert webhooks
 

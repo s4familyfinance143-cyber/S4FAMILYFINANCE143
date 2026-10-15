@@ -1,6 +1,6 @@
 /**
  * Expo config — loads EXPO_PUBLIC_* from .env into app extra.
- * The app talks only to the VPS API (no Firebase / cloud mode).
+ * The app talks only to the VPS API.
  */
 const appJson = require("./app.json");
 

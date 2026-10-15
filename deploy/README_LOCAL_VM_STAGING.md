@@ -15,7 +15,6 @@ server-side practice on your PC.
 | Nginx reverse proxy | Yes |
 | Self-signed TLS practice | Yes |
 | Real public DNS + Let's Encrypt | No (needs public IP/domain) |
-| Real FCM push | Needs Firebase JSON (any host) |
 | Real SMTP provider | Needs provider credentials |
 
 ## Recommended VM shape
@@ -206,7 +205,6 @@ See `deploy/postgres/README.md`.
 ## After VM staging works — still blocked on you
 
 1. Public VPS **or** port-forward + real domain (only for true go-live)
-2. Firebase service-account JSON → FCM
 3. Production SMTP credentials
 
 ## Safety

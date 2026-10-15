@@ -1,6 +1,6 @@
 import { api, setAuthToken } from "./api";
 
-/** Auth against the VPS API (JWT). There is no Firebase / cloud login. */
+/** Auth against the VPS API (JWT). */
 export type AuthUser = {
   id: string;
   full_name: string;

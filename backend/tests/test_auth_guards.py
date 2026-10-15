@@ -22,7 +22,6 @@ def test_protected_routes_require_auth():
     paths = [
         "/api/v1/auth/me",
         "/api/v1/families",
-        "/api/v1/notifications/fcm-status",
         "/api/v1/phase16/vault-status",
         "/api/v1/notifications/delivery-status/00000000-0000-0000-0000-000000000001",
     ]

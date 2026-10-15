@@ -33,7 +33,6 @@ Write-Host "  - s4-pwa-dist.zip (PWA)"
 Write-Host "  - s4-family-finance-143-debug.apk (Android)"
 Write-Host ""
 Write-Host "PWA live (run once on your PC):" -ForegroundColor Cyan
-Write-Host "  .\deploy\scripts\deploy_firebase_hosting.ps1"
 Write-Host "  URL: https://s4-family-finance.web.app"
 Write-Host ""
 Write-Host "Windows EXE (manual on your PC):" -ForegroundColor Cyan

@@ -5,7 +5,7 @@ One operator path from **validate → package → stage (VM) → VPS go-live →
 Canonical env for Docker Compose: **`deploy/docker/.env.production`**  
 (Windows-only Postgres bat still uses `backend/.env.production` — do not mix those paths.)
 
-Domain, DNS, Let's Encrypt, real SMTP, and Firebase JSON remain **operator-owned**. This kit refuses placeholders; it does not invent secrets.
+Domain, DNS, Let's Encrypt, and real SMTP remain **operator-owned**. This kit refuses placeholders; it does not invent secrets.
 
 ---
 
@@ -132,7 +132,6 @@ Never commit filled `.env.production`. Never ship `CHANGE_ME` / `your-domain.exa
 1. Public VPS + DNS A/AAAA  
 2. Let's Encrypt / TLS  
 3. Production SMTP provider  
-4. Firebase service-account JSON for FCM  
 5. Mobile `EXPO_PUBLIC_API_BASE_URL=https://your-domain`
 
 Related: [`README_PRODUCTION_DEPLOYMENT.md`](README_PRODUCTION_DEPLOYMENT.md) · cutovers in `deploy/postgres` · `deploy/minio`

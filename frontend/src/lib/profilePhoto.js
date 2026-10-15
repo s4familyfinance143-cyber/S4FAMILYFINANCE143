@@ -1,4 +1,4 @@
-/** Client-side profile photo checks (VPS upload). Firebase Storage removed. */
+/** Client-side profile photo checks before uploading to the VPS (/auth/me/avatar). */
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -39,21 +39,4 @@ export function validateProfilePhotoFile(file) {
   }
 
   return { ok: true, contentType, file };
-}
-
-async function removed() {
-  throw new Error("Firebase Storage has been removed. Use the VPS server.");
-}
-
-export async function uploadFamilyDocument() {
-  return removed();
-}
-export async function uploadTransactionAttachment() {
-  return removed();
-}
-export async function uploadProfilePhotoToFirebase() {
-  return removed();
-}
-export async function removeProfilePhotoFromFirebase() {
-  return removed();
 }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core import config as config_module
-from app.services import document_vault_service, email_service, fcm_service
+from app.services import document_vault_service, email_service
 
 
 def test_smtp_not_configured_is_honest(monkeypatch):
@@ -13,15 +13,6 @@ def test_smtp_not_configured_is_honest(monkeypatch):
     result = email_service.send_email(to_email="a@b.com", subject="t", text_body="x")
     assert result.sent is False
     assert "SMTP not configured" in result.reason
-
-
-def test_fcm_not_configured_is_honest(monkeypatch):
-    status = fcm_service.fcm_status()
-    assert status["configured"] is False
-    assert status["firebase_admin_available"] is False
-    result = fcm_service.send_fcm_push(token="tok", title="t", body="b")
-    assert result.sent is False
-    assert "removed" in result.reason.lower() or "fcm" in result.reason.lower()
 
 
 def test_s3_not_configured_falls_back_local(monkeypatch):

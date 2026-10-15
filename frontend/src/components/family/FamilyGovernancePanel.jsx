@@ -134,7 +134,7 @@ function preferElevatedRole(...roles) {
 /** Stable global family role — never derived from join-request rows or active tab. */
 function resolveMyGlobalRole({ myPermissions, governanceMembers, currentUser, email, activeFamily, loadingLabel }) {
   const uid = String(
-    currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+    currentUser?.uid || currentUser?.id || currentUser?.user_id || "",
   ).trim();
   const mail = String(currentUser?.email || email || "")
     .trim()
@@ -347,7 +347,7 @@ export function FamilyGovernancePanel({
       governanceMembers.find((m) => {
         const memberUid = String(m.user_id || m.uid || m.member_id || m.id || "").trim();
         const myUid = String(
-          currentUser?.uid || currentUser?.firebase_uid || currentUser?.id || currentUser?.user_id || "",
+          currentUser?.uid || currentUser?.id || currentUser?.user_id || "",
         ).trim();
         if (myUid && memberUid && memberUid === myUid) return true;
         return (
@@ -356,7 +356,7 @@ export function FamilyGovernancePanel({
         );
       }) || {},
     ) ||
-    String(currentUser?.uid || currentUser?.firebase_uid || "").trim();
+    String(currentUser?.uid || "").trim();
 
   const loadTransfers = useCallback(async () => {
     if (!familyId || !apiGet) return;
@@ -956,7 +956,7 @@ export function FamilyGovernancePanel({
                     Boolean(myMemberId) &&
                     (String(row.to_member_id || "") === String(myMemberId) ||
                       String(row.to_member_id || "") ===
-                        String(currentUser?.uid || currentUser?.firebase_uid || ""));
+                        String(currentUser?.uid || ""));
                   const canAdminApprove =
                     ["PENDING_ADMIN", "PENDING"].includes(status) &&
                     String(role || "").toUpperCase().includes("ADMIN") &&
@@ -1039,7 +1039,7 @@ export function FamilyGovernancePanel({
             <h4>{t("generateInvite")}</h4>
             <p className="budget-hero-sub" style={{ marginTop: 4 }}>
               {t("inviteShareCodeHint") ||
-                "Primary flow: generate a code and share it manually (WhatsApp, SMS, in person). Email send is optional and only works if SMTP is configured on a backend — cloud Firebase mode does not send mail."}
+                "Primary flow: generate a code and share it manually (WhatsApp, SMS, in person). Email send is optional and needs SMTP configured on the server."}
             </p>
             <div className="finance-form">
               <input
@@ -1089,7 +1089,7 @@ export function FamilyGovernancePanel({
                   className="btn"
                   disabled={inviteGenerating || !(inviteForm.invitee_email || "").includes("@")}
                   onClick={onInviteEmail}
-                  title="Requires optional SMTP on PC backend — not used in Firebase cloud mode"
+                  title="Requires SMTP configured on the server"
                 >
                   Email invite (optional SMTP)
                 </button>

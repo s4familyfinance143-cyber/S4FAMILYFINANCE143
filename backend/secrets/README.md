@@ -1,3 +1,2 @@
-# Firebase Admin / FCM removed from S4.
-# Do not place firebase-service-account.json here — it will not be used.
-# Push notifications are disabled; in-app notifications use the VPS API.
+# Local secrets (never committed): JWT RS256 key pair, DB/Redis passwords.
+# The app uses no third-party cloud credentials.

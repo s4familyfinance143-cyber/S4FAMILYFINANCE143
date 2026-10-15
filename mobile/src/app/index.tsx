@@ -112,12 +112,12 @@ function normalizeApiBaseUrl(value: string) {
   return cleaned.replace(/\/api\/v[12]$/i, "");
 }
 
-/** Sessions saved by the removed Firebase cloud mode ("firebase.<uid>"). */
+/** Sessions saved by the old, removed cloud mode used a "firebase.<uid>" token. */
 function isLegacyCloudToken(value: string | null | undefined) {
   return String(value || "").startsWith("firebase.");
 }
 
-// All data lives on the VPS API (no Firebase / cloud mode).
+// All data lives on the VPS API.
 const PRODUCTION_API_BASE_URL = "https://app.s4businessthinking.com";
 const DEFAULT_API_BASE_URL = normalizeApiBaseUrl(
   process.env.EXPO_PUBLIC_API_BASE_URL ||
@@ -826,7 +826,7 @@ export default function HomeScreen() {
       const session = JSON.parse(raw) as StoredSession;
       if (!session.access_token) return;
       if (isLegacyCloudToken(session.access_token)) {
-        // Firebase cloud mode was removed; its tokens mean nothing to the VPS API.
+        // The old cloud mode was removed; its tokens mean nothing to the VPS API.
         await SecureStore.deleteItemAsync(SESSION_KEY);
         setEmail(session.email || session.user?.email || "");
         setMessage("Cloud mode ended — please log in to the server again.");

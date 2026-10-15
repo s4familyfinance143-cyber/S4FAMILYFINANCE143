@@ -5,15 +5,6 @@ from __future__ import annotations
 from app.core.config import settings
 
 
-def enqueue_push(token: str, title: str, body: str, data: dict | None = None) -> dict:
-    from app.workers.celery_tasks import send_push_task
-
-    if settings.CELERY_ENABLED:
-        async_result = send_push_task.delay(token, title, body, data or {})
-        return {"queued": True, "task_id": async_result.id}
-    return send_push_task(token, title, body, data or {})
-
-
 def enqueue_email(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> dict:
     from app.workers.celery_tasks import send_email_task
 

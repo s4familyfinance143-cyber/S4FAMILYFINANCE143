@@ -1,5 +1,5 @@
 # Point live document vault at local MinIO and restart API on :8000.
-# Does not change DATABASE_URL / SMTP / FCM settings.
+# Does not change DATABASE_URL / SMTP settings.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot

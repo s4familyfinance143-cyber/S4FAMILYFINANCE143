@@ -12,7 +12,7 @@ This is **not** the company service-account vault (`deploy/GOOGLE_DRIVE_VAULT_SE
 
 ## Operator setup (OAuth Web client)
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → select project (e.g. Firebase `s4-family-finance` or your Drive project).
+1. [Google Cloud Console](https://console.cloud.google.com/) → select your Google Cloud project for Drive.
 2. Enable **Google Drive API**.
 3. **OAuth consent screen** — add scope `https://www.googleapis.com/auth/drive.file`. While in Testing, add test users.
 4. **Credentials → Create OAuth client ID → Web application**:
