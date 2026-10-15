@@ -44,10 +44,10 @@ def create_development_tables() -> None:
     Development safety:
     - SQLite local dev can auto-create tables.
     - Production PostgreSQL must use Alembic migrations, not create_all.
-    - Deprecated alias tables (auth_sessions, push_devices) must not be recreated.
+    - Deprecated alias table auth_sessions must not be recreated.
     """
     if settings.AUTO_CREATE_TABLES and settings.IS_SQLITE:
-        for deprecated in ("auth_sessions", "push_devices"):
+        for deprecated in ("auth_sessions",):
             table = Base.metadata.tables.get(deprecated)
             if table is not None:
                 Base.metadata.remove(table)

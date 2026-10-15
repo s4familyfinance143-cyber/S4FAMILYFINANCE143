@@ -19,16 +19,15 @@ from app.models.zakat import ZakatRecord
 from app.models.phase15 import Phase15Item
 from app.models.phase16 import Phase16Item
 from app.models.grocery import GroceryItem, GroceryList, GroceryVendor
-from app.models.push_device import PushDevice
 from app.models.life_planner import CalendarEvent, FamilyTask, OwnershipTransferRequest
 from app.models.auth_session import AuthSession
 from app.models.currency import Currency, ExchangeRate
 from app.models.audit_log import AuditLog
 from app.models.sync_tables import SyncConflict, SyncDevice, SyncInbox, SyncOutbox, SyncState
-from app.models.infra_jobs import EmailOutbox, ExportJob, PushOutbox, ReminderSchedule
+from app.models.infra_jobs import EmailOutbox, ExportJob, ReminderSchedule
 
 # Architecture 42+ checklist tables
-from app.models.architecture_auth import DeviceSession, PushToken, RefreshToken, UserPreference
+from app.models.architecture_auth import DeviceSession, RefreshToken, UserPreference
 from app.models.architecture_feature import (
     ExpenseCategory,
     GroceryListItem,
@@ -89,7 +88,6 @@ __all__ = [
     "GroceryList",
     "GroceryItem",
     "GroceryVendor",
-    "PushDevice",
     "FamilyTask",
     "CalendarEvent",
     "OwnershipTransferRequest",
@@ -103,13 +101,11 @@ __all__ = [
     "SyncInbox",
     "SyncConflict",
     "EmailOutbox",
-    "PushOutbox",
     "ExportJob",
     "ReminderSchedule",
     "UserPreference",
     "RefreshToken",
     "DeviceSession",
-    "PushToken",
     "Tag",
     "TransactionTag",
     "LoanPayment",
