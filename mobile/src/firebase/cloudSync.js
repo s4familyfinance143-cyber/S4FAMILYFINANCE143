@@ -37,6 +37,7 @@ function chunkPayload(jsonText) {
 
 /**
  * Push local IndexedDB snapshots to Firestore (user + shared family).
+ * @param {{ uid: string, familyId: string, deviceLabel?: string, email?: string | null, displayName?: string | null }} args
  */
 export async function pushCloudSnapshot({ uid, familyId, deviceLabel = "web", email = null, displayName = null }) {
   if (!uid) throw new Error("Firebase user required");
@@ -204,6 +205,7 @@ export async function linkUserFamilyId(uid, familyId, extra = {}) {
 
 /**
  * Write family_id + members shell so the next PC/phone login finds this family.
+ * @param {{ uid: string, familyId: string, email?: string | null, displayName?: string | null, familyName?: string | null, role?: string }} args
  */
 export async function bindCloudFamilyIdentity({
   uid,
@@ -230,6 +232,8 @@ export async function bindCloudFamilyIdentity({
 /**
  * Resolve family for login on a fresh device, then bind profile + shell.
  * Order: local hint → user profile → snapshot meta → membership index → snapshot pull.
+ * @param {{ uid: string, email?: string | null, displayName?: string | null, localFamilyId?: string }} args
+ * @returns {Promise<string>}
  */
 export async function resolveAndBindUserFamily({
   uid,

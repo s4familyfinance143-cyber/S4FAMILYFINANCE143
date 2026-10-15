@@ -715,6 +715,7 @@ def test_dashboard_currency_summary_flags_unconverted_wallet(patch_dashboard):
     account = SimpleNamespace(
         name="Foreign Wallet", currency="XYZ", current_balance=Decimal("300"),
         is_active=True, deleted_at=None,
+        account_type="CASH", is_system=False, is_shared_family=True, is_owner_wallet=False, owner_member_id=None,
     )
     db = Db(query_map={Account: Query(rows=[account])}, got={"fam1": FAMILY})
     out = d.dashboard_currency_summary("fam1", db=db, current_user=USER)
@@ -745,6 +746,7 @@ def test_dashboard_currency_summary(patch_dashboard):
         current_balance=Decimal("10"),
         is_active=True,
         deleted_at=None,
+        account_type="CASH", is_system=False, is_shared_family=True, is_owner_wallet=False, owner_member_id=None,
     )
     db = Db(
         query_map={Account: Query(rows=[account])},
@@ -770,7 +772,7 @@ def test_networth_currency_summary(patch_dashboard):
     d = patch_dashboard
     db = Db(
         query_map={
-            Account: Query(rows=[SimpleNamespace(name="Cash", currency="BDT", current_balance=Decimal("1000"), is_active=True, deleted_at=None)]),
+            Account: Query(rows=[SimpleNamespace(name="Cash", currency="BDT", current_balance=Decimal("1000"), is_active=True, deleted_at=None, account_type="CASH", is_system=False, is_shared_family=True, is_owner_wallet=False, owner_member_id=None)]),
             SavingsGoal: Query(rows=[SimpleNamespace(name="Fund", currency="BDT", current_amount=Decimal("200"), deleted_at=None)]),
             Loan: Query(rows=[SimpleNamespace(person_name="Bob", loan_type="TAKEN", currency="BDT", remaining_amount=Decimal("100"), deleted_at=None)]),
         },

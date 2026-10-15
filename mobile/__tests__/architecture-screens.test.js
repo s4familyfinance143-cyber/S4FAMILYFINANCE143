@@ -62,10 +62,10 @@ describe("architecture hooks services assets", () => {
   });
 });
 
-describe("architecture detox under __tests__", () => {
-  test("e2e smoke + auth flow mirrored", () => {
-    expect(fs.existsSync(path.join(__dirname, "e2e", "smoke.e2e.js"))).toBe(true);
-    expect(fs.existsSync(path.join(__dirname, "e2e", "auth.e2e.js"))).toBe(true);
+describe("architecture detox e2e", () => {
+  // Detox runs from mobile/e2e (e2e/config.json); the old __tests__/e2e
+  // mirror is gone and nothing referenced it.
+  test("e2e smoke + auth flow present", () => {
     expect(fs.existsSync(path.join(__dirname, "..", "e2e", "smoke.e2e.js"))).toBe(true);
     expect(fs.existsSync(path.join(__dirname, "..", "e2e", "auth.e2e.js"))).toBe(true);
   });

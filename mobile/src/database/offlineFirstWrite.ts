@@ -52,7 +52,7 @@ export async function saveOfflineFirst(params: {
   const mapped = ENTITY_TO_LOCAL[entityType];
   const localKind: LocalEntity | null =
     mapped ?? (isLocalEntity(entityType) ? (entityType as LocalEntity) : null);
-  const payload = {
+  const payload: Record<string, unknown> = {
     ...params.payload,
     family_id: params.familyId,
     device_id: MOBILE_SYNC_DEVICE_ID,

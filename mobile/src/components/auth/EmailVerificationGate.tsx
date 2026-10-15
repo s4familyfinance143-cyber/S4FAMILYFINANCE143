@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import {
   getVerificationResendRemainingMs,
   VERIFY_RESEND_COOLDOWN_MS,
-} from "../firebase/auth";
+} from "../../firebase/auth";
 
 type Props = {
   email?: string;

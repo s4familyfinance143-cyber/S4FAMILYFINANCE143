@@ -15,15 +15,15 @@ export const queueManager = {
   resetConflicts: queries.resetConflictsToPending,
   cancelConflicts: queries.cancelConflicts,
 
-  async markSyncing(id: number) {
+  async markSyncing(id: number | string) {
     await queries.markQueueStatus(id, "syncing");
   },
 
-  async markSynced(id: number) {
+  async markSynced(id: number | string) {
     await queries.markQueueStatus(id, "done", { synced: true });
   },
 
-  async markFailed(id: number, retryCount: number, error: string, nextRetryAt: string) {
+  async markFailed(id: number | string, retryCount: number, error: string, nextRetryAt: string) {
     const status: SyncQueueStatus = retryCount >= 5 ? "failed" : "pending";
     await queries.markQueueStatus(id, status === "failed" ? "failed" : "pending", {
       retry_count: retryCount,
@@ -32,7 +32,7 @@ export const queueManager = {
     });
   },
 
-  async markConflict(id: number, error: string) {
+  async markConflict(id: number | string, error: string) {
     await queries.markQueueStatus(id, "conflict", {
       retry_count: 0,
       last_error: error,

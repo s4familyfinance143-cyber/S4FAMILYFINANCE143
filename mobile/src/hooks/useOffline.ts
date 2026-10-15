@@ -20,7 +20,8 @@ export type OfflineStatus = {
 };
 
 export function useOffline(familyId?: string | null) {
-  const sync = useSync(familyId);
+  // useSync reads the active family from the store; it takes no argument.
+  const sync = useSync();
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine !== false : true
   );

@@ -214,7 +214,7 @@ def test_phase10b_json_and_load_helpers():
     token = mod._phase10b_now_token()
     assert token.endswith("Z")
     assert mod._phase10b_q('a"b') == '"a""b"'
-    assert mod._phase10b_json(Decimal("3.14")) == 3.14
+    assert mod._phase10b_json(Decimal("3.14")) == "3.14"  # money serializes as exact string
     payload = {"x": [datetime(2024, 6, 1)]}
     text_val = mod._phase10b_json_text(payload)
     assert "2024-06-01" in text_val

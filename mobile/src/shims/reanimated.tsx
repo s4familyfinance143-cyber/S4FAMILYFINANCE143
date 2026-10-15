@@ -17,7 +17,9 @@ const AnimatedText = Animated.createAnimatedComponent(Text);
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 function makeAnim(Comp: React.ComponentType<any>) {
-  return React.forwardRef((props: AnyProps, ref) => React.createElement(Comp, { ...stripEntering(props), ref }));
+  const Wrapped = React.forwardRef((props: AnyProps, ref) => React.createElement(Comp, { ...stripEntering(props), ref }));
+  Wrapped.displayName = `ReanimatedShim(${Comp.displayName || Comp.name || "Component"})`;
+  return Wrapped;
 }
 
 const Reanimated = {

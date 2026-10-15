@@ -421,11 +421,12 @@ def test_email_disabled_validation_and_mocked_delivery(monkeypatch):
     assert email_service.EmailSendResult(True, "sent").as_dict()["sent"]
 
 
-def test_fcm_disabled_status_and_send(monkeypatch):
-    monkeypatch.setattr(fcm_service.settings, "NOTIFICATION_FCM_ENABLED", False)
-    monkeypatch.setattr(fcm_service.settings, "FCM_PROJECT_ID", "")
-    monkeypatch.setattr(fcm_service.settings, "FCM_CREDENTIALS_PATH", "")
+def test_fcm_disabled_status_and_send():
+    # Firebase Admin / FCM was permanently removed from the product (see
+    # app/services/fcm_service.py) -- it's a hardcoded-disabled stub now,
+    # not settings-driven, so there's nothing left to toggle here.
     status = fcm_service.fcm_status()
+    assert not status["enabled"]
     assert not status["configured"]
     assert not fcm_service.is_fcm_configured()
     assert fcm_service.send_fcm_push(token="", title="T", body="B").reason == "Push token missing"

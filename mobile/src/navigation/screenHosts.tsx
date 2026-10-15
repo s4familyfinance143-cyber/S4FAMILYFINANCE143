@@ -65,10 +65,10 @@ export function ForgotPasswordHost() {
 export function DashboardHost() {
   return (
     <View style={{ flex: 1, padding: 24, backgroundColor: colors.background, justifyContent: "center" }}>
-      <Text variant="titleMedium" style={{ color: colors.onBackground, marginBottom: 8 }}>
+      <Text variant="titleMedium" style={{ color: colors.text, marginBottom: 8 }}>
         Dashboard host unused
       </Text>
-      <Text style={{ color: colors.onSurfaceVariant }}>
+      <Text style={{ color: colors.textSecondary }}>
         Primary UI is Expo Router (`src/app/index.tsx`). This React Navigation host is intentionally
         disabled so stub/noop screens are not shown.
       </Text>

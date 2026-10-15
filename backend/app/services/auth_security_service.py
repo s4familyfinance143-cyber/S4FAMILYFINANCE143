@@ -317,6 +317,7 @@ class AuthSecurityService:
     ) -> RefreshSessionBundle | None:
         current = AuthSecurityService.get_active_session_by_refresh_token(db, raw_refresh_token)
         if current is None:
+            AuthSecurityService._revoke_family_on_refresh_reuse(db, raw_refresh_token)
             return None
 
         now = utc_now()
@@ -338,6 +339,38 @@ class AuthSecurityService:
         db.flush()
 
         return new_bundle
+
+    # Two tabs/app instances refreshing at the same moment both present the
+    # same token; only a replay after this window counts as theft.
+    REFRESH_REUSE_GRACE_SECONDS = 30
+
+    @staticmethod
+    def _revoke_family_on_refresh_reuse(db: Session, raw_refresh_token: str) -> int:
+        """A ROTATED refresh token presented again means it leaked: whoever
+        rotated it first (the thief or the owner) holds the live chain. Revoke
+        every ACTIVE session of that token family so the stolen chain dies;
+        the real user signs in again."""
+        token = AuthSecurityService.get_session_by_refresh_token(db, raw_refresh_token)
+        if token is None or token.status != AuthSecurityService.ROTATED or not token.token_family:
+            return 0
+        rotated_at = _naive(token.revoked_at)
+        if rotated_at and (utc_now() - rotated_at).total_seconds() < AuthSecurityService.REFRESH_REUSE_GRACE_SECONDS:
+            return 0
+        result = db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.token_family == token.token_family,
+                RefreshToken.status == AuthSecurityService.ACTIVE,
+            )
+            .values(
+                status=AuthSecurityService.REVOKED,
+                revoked=True,
+                revoked_at=utc_now(),
+                revoked_reason="REFRESH_REUSE_DETECTED",
+            )
+        )
+        db.flush()
+        return int(result.rowcount or 0)
 
     @staticmethod
     def revoke_refresh_session(

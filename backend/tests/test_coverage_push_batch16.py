@@ -803,7 +803,7 @@ def test_p10b_json_helpers():
     assert mod._phase10b_q('na"me') == '"na""me"'
     payload = {"n": Decimal("1.5"), "t": datetime(2026, 1, 1, 12, 0, 0), "xs": [Decimal("2")]}
     encoded = mod._phase10b_json(payload)
-    assert encoded["n"] == 1.5
+    assert encoded["n"] == "1.5"  # money serializes as exact string
     assert "2026-01-01" in encoded["t"]
     text = mod._phase10b_json_text({"a": 1})
     assert '"a"' in text
@@ -1183,9 +1183,12 @@ def test_auth_register_duplicate_email(monkeypatch):
     from app.schemas.auth import UserRegisterRequest
 
     monkeypatch.setattr(mod.AuthSecurityService, "validate_password_strength", lambda *a, **k: [])
+    monkeypatch.setattr(mod, "can_deliver_otp", lambda: (True, "ok"))
     with pytest.raises(HTTPException) as exc:
         _unwrap(mod.register_user)(
-            UserRegisterRequest(full_name="Ada Lovelace", email="ada@example.com", password="Secret123!"),
+            UserRegisterRequest(
+                full_name="Ada Lovelace", email="ada@example.com", phone="01812345678", password="Secret123!"
+            ),
             _request(),
             Response(),
             Db(query_map={User: Query(first_row=_user())}),

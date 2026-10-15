@@ -28,4 +28,6 @@ export const darkColors = {
   muted: "#6d857c",
 } as const;
 
-export type AppColors = typeof colors;
+// Same keys for both palettes; values are plain strings so light and dark
+// themes share one type (the `as const` literals made them incompatible).
+export type AppColors = { readonly [K in keyof typeof colors]: string };

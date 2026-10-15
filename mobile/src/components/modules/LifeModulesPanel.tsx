@@ -369,7 +369,8 @@ export function LifeModulesPanel({
         URL.revokeObjectURL(url);
         onMessage("Document download started", true);
       } else {
-        const FileSystem = await import("expo-file-system");
+        // SDK 54+: cacheDirectory / writeAsStringAsync / EncodingType live in the legacy entry.
+        const FileSystem = await import("expo-file-system/legacy");
         const Sharing = await import("expo-sharing");
         const buffer = await blob.arrayBuffer();
         const bytes = new Uint8Array(buffer);
@@ -606,7 +607,6 @@ export function LifeModulesPanel({
       <Text style={styles.muted}>Investment / Health / Vehicle / Education + Subscription / Document / Property — offline queue + sync</Text>
 
       {Platform.OS === "web" ? (
-        // @ts-expect-error web input element
         <input
           ref={webFileInputRef}
           type="file"

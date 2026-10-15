@@ -1,13 +1,10 @@
 /** Map mobile sync_queue grocery rows → Phase 10B /sync/push changes. */
 
-export type SyncQueueRow = {
-  id: number;
-  entity_id: string;
-  action: string;
-  payload: string;
-  retry_count: number;
-  last_error?: string;
-};
+// One queue-row type for the whole app (a narrower duplicate here dropped
+// queue_uuid / entity_type and disagreed with schema.ts on the id type).
+import type { SyncQueueRow } from "../database/schema";
+
+export type { SyncQueueRow };
 
 export type Phase10bChange = {
   client_change_id: string;

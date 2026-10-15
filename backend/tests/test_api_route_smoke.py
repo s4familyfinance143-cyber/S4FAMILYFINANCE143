@@ -35,6 +35,7 @@ def authenticated_family() -> tuple[dict[str, str], str]:
                 preferred_language="bn",
                 is_active=True,
                 is_email_verified=True,
+                is_phone_verified=True,
             )
         )
         db.commit()

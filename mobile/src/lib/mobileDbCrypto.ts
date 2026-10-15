@@ -34,7 +34,7 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const clean = hex.trim().toLowerCase();
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < out.length; i += 1) {
@@ -84,7 +84,8 @@ export async function getOrCreateOfflineDbKeyHex(): Promise<string> {
 export async function encryptOfflinePayload(plain: string): Promise<string> {
   const keyHex = await getOrCreateOfflineDbKeyHex();
   const keyBytes = hexToBytes(keyHex);
-  const iv = await Crypto.getRandomBytesAsync(12);
+  // Copy into a plain ArrayBuffer-backed view (WebCrypto BufferSource typing).
+  const iv = new Uint8Array(await Crypto.getRandomBytesAsync(12));
   const encoded = new TextEncoder().encode(plain);
 
   if (typeof crypto !== "undefined" && crypto.subtle) {

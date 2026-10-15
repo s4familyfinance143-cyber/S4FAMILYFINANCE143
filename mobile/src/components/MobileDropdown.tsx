@@ -37,7 +37,6 @@ export function MobileDropdown({ label, value, options, onChange, dark = false }
     return (
       <View style={styles.wrap}>
         <Text style={[styles.label, { color: palette.muted }]}>{label}</Text>
-        {/* @ts-expect-error web select */}
         <select
           value={value}
           onChange={(e: { target: { value: string } }) => onChange(e.target.value)}
@@ -78,7 +77,7 @@ export function MobileDropdown({ label, value, options, onChange, dark = false }
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.backdrop}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setOpen(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
           <View style={[styles.sheet, { backgroundColor: dark ? "#14201d" : "#ffffff", borderColor: palette.border }]}>
             <Text style={[styles.sheetTitle, { color: palette.text }]}>{label}</Text>
             {options.map((item) => {

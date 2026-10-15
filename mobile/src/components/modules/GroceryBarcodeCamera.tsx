@@ -19,20 +19,6 @@ export function GroceryBarcodeCamera({ visible, onClose, onScanned, lang = "bn" 
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!visible) {
-      setLocked(false);
-      setWebError("");
-      stopWebCamera();
-      return;
-    }
-    if (Platform.OS === "web") {
-      void startWebCamera();
-    }
-    return () => stopWebCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
   function handleCode(code: string) {
     const value = String(code || "").trim();
     if (!value || locked) return;
@@ -98,6 +84,21 @@ export function GroceryBarcodeCamera({ visible, onClose, onScanned, lang = "bn" 
       setWebError(error instanceof Error ? error.message : "Camera permission denied");
     }
   }
+
+  // Declared after the helpers it calls (react-hooks/immutability).
+  useEffect(() => {
+    if (!visible) {
+      setLocked(false);
+      setWebError("");
+      stopWebCamera();
+      return;
+    }
+    if (Platform.OS === "web") {
+      void startWebCamera();
+    }
+    return () => stopWebCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   if (!visible) return null;
 

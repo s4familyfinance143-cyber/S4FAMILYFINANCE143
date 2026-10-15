@@ -371,9 +371,15 @@ def test_architecture_contract_join_role_and_accounts(monkeypatch):
         is_system=False,
         deleted_at=None,
         is_active=True,
+        is_shared_family=True,
+        is_owner_wallet=False,
+        owner_member_id="m-1",
     )
     db_acct = Db({Account: [acct]})
-    monkeypatch.setattr(mod, "require_permission", lambda *a, **k: None)
+    # require_permission returns the caller's member row; visibility uses it.
+    monkeypatch.setattr(
+        mod, "require_permission", lambda *a, **k: SimpleNamespace(id="m-1", role="MEMBER")
+    )
     monkeypatch.setattr(
         "app.services.accounting_service.calculate_account_balance",
         lambda db, aid, family_id=None: Decimal("150.0000"),

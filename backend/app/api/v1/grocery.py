@@ -744,9 +744,19 @@ async def grocery_family_websocket(
             if payload.get("type") != "access":
                 await websocket.close(code=4401)
                 return
+            # Same checks as get_current_user: a logged-out (blacklisted)
+            # token or a soft-deleted account must not open a live socket.
+            import hashlib
+
+            from app.services.redis_session import is_token_blacklisted
+
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            if is_token_blacklisted(jti=payload.get("jti"), token_hash=token_hash):
+                await websocket.close(code=4401)
+                return
             user_id = str(payload.get("sub") or "")
             user = db.get(User, user_id) if user_id else None
-            if not user or not user.is_active:
+            if not user or not user.is_active or user.deleted_at is not None:
                 await websocket.close(code=4401)
                 return
             require_permission(db, family_id, user.id, "report.read")
@@ -754,7 +764,7 @@ async def grocery_family_websocket(
             await websocket.close(code=4403)
             return
 
-        await grocery_realtime_hub.connect(family_id, websocket)
+        await grocery_realtime_hub.connect(family_id, websocket, user_id=user.id)
         await websocket.send_json(
             {
                 "type": "grocery.subscribed",

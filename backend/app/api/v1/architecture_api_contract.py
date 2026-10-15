@@ -224,7 +224,8 @@ def architecture_accounts_balance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    require_permission(db, family_id, current_user.id, "wallet.read")
+    member = require_permission(db, family_id, current_user.id, "wallet.read")
+    from app.api.v1.accounts import can_view_wallet
     from app.services import accounting_service
 
     accounts = (
@@ -234,9 +235,10 @@ def architecture_accounts_balance(
     )
     rows = []
     for a in accounts:
-        if not is_spend_wallet(a) and not getattr(a, "is_system", False):
-            # include wallets + system CoA
-            pass
+        # Wallets + system CoA, same visibility rule as GET /accounts/coa/{family_id}:
+        # another member's private wallet stays hidden from non-owners.
+        if not (can_view_wallet(member, a) or getattr(a, "is_system", False)):
+            continue
         bal = accounting_service.calculate_account_balance(db, a.id, family_id=family_id)
         rows.append(
             {
@@ -274,15 +276,19 @@ def architecture_sync_pull(
     family_id: str = Query(...),
     since: str | None = Query(default=None),
     device_id: str = Query(default="default-device"),
+    limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.api.v1.offline_sync_hardened import phase10b_sync_pull
 
+    # Pass every parameter explicitly: calling an endpoint function directly
+    # leaves omitted ones as FastAPI Query() objects, not their defaults.
     return phase10b_sync_pull(
         family_id=family_id,
         device_id=device_id,
         since_token=since,
+        limit=limit,
         db=db,
         current_user=current_user,
     )
@@ -340,12 +346,20 @@ def architecture_reports_monthly(
 @router.get("/reports/cashflow")
 def architecture_reports_cashflow(
     family_id: str = Query(...),
+    start_date: str | None = Query(default=None, description="YYYY-MM-DD"),
+    end_date: str | None = Query(default=None, description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.api.v1.reports import cashflow_report
 
-    return cashflow_report(family_id=family_id, db=db, current_user=current_user)
+    return cashflow_report(
+        family_id=family_id,
+        start_date=start_date,
+        end_date=end_date,
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/reports/net-worth")

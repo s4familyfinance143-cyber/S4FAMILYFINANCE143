@@ -32,6 +32,7 @@ import { mlKit } from "../services/mlKit";
 import { useAuthStore } from "../store/authStore";
 import { useFamilyStore } from "../store/familyStore";
 import { runMigrations } from "../database/migrations";
+import { countUnsyncedChanges, wipeLocalUserData } from "../database/localWipe";
 import { formatAmount as formatTakaAmount } from "../utils/formatTaka";
 import { openMobileDatabase, ENCRYPTED_DB_NAME, getOfflineDbSecurityStatus } from "../lib/mobileDb";
 import { fastStorage } from "../lib/fastStorage";
@@ -191,7 +192,13 @@ function setRuntimeApiBaseUrl(next: string) {
   setApiBaseUrl(runtimeApiBaseUrl);
 }
 
-function tunnelHeaders() {
+/** Unique placeholder email for a no-email offline account (module scope:
+    reading the clock inside a component body trips react-hooks/purity). */
+function offlinePlaceholderEmail() {
+  return `offline-${Date.now()}@local.s4`;
+}
+
+function tunnelHeaders(): Record<string, string> {
   return getApiBaseUrl().includes("loca.lt") ? { "bypass-tunnel-reminder": "true" } : {};
 }
 
@@ -211,7 +218,8 @@ type StoredSession = {
   email: string;
   family_id?: string;
   offline_mode?: boolean;
-  user?: { id?: string; email?: string; full_name?: string; name?: string };
+  // Cloud (Firebase) sessions carry uid / displayName instead of id / full_name.
+  user?: { id?: string; uid?: string; email?: string; full_name?: string; name?: string; displayName?: string };
 };
 
 type Family = { id: string; name: string; default_currency?: string; timezone?: string };
@@ -372,6 +380,9 @@ export default function HomeScreen() {
   const [joinSerial, setJoinSerial] = useState("");
   const [joinNote, setJoinNote] = useState("");
   const [joinLinkedMemberId, setJoinLinkedMemberId] = useState("");
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [pendingAfterVerify, setPendingAfterVerify] = useState<"create" | "join" | "login" | null>(null);
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState(DEFAULT_API_BASE_URL);
   const [showAdvancedServer, setShowAdvancedServer] = useState(false);
   const [token, setToken] = useState("");
@@ -993,7 +1004,7 @@ export default function HomeScreen() {
   async function createOfflineAccountAuth() {
     const name = fullName.trim() || "Guardian";
     const fam = familyName.trim() || `${name} Family`;
-    const mail = email.trim() || `offline-${Date.now()}@local.s4`;
+    const mail = email.trim() || offlinePlaceholderEmail();
     const pass = password || "offline";
     setLoading(true);
     try {
@@ -1063,7 +1074,7 @@ export default function HomeScreen() {
     }
   }
 
-  async function ensureAuthSession() {
+  async function ensureAuthSession(): Promise<{ access: string; refresh: string; user: any; needsOtp?: boolean }> {
     try {
       const data = await apiPost("/api/v1/auth/login", { email: email.trim(), password }, "");
       return {
@@ -1071,15 +1082,25 @@ export default function HomeScreen() {
         refresh: data.refresh_token || "",
         user: data.user,
       };
-    } catch {
+    } catch (loginError) {
+      const loginText = loginError instanceof Error ? loginError.message : "";
+      // Account exists but hasn't verified its signup OTP yet -- route to the
+      // OTP screen instead of surfacing a dead-end "verification required" error.
+      if (/verification/i.test(loginText)) {
+        setPendingAfterVerify(authMode === "join" ? "join" : "create");
+        setOtpStep(true);
+        return { access: "", refresh: "", user: null, needsOtp: true };
+      }
       if (!fullName.trim()) throw new Error(tm("authFieldsRequired"));
+      if (!phone.trim()) throw new Error(tm("phoneRequired") || "Phone number is required");
+      let regData: any = null;
       try {
-        await apiPost(
+        regData = await apiPost(
           "/api/v1/auth/register",
           {
             full_name: fullName.trim(),
             email: email.trim(),
-            phone: phone.trim() || null,
+            phone: phone.trim(),
             password,
           },
           ""
@@ -1088,12 +1109,122 @@ export default function HomeScreen() {
         const text = regError instanceof Error ? regError.message : "";
         if (!/already|exist|409/i.test(text)) throw regError;
       }
-      const data = await apiPost("/api/v1/auth/login", { email: email.trim(), password }, "");
-      return {
-        access: data.access_token || "",
-        refresh: data.refresh_token || "",
-        user: data.user,
-      };
+      // Registration always requires OTP verification before login can succeed
+      // (backend never auto-verifies) -- send the user to the OTP screen instead
+      // of immediately retrying login, which would just fail with 403 again.
+      if (regData && (regData.verification_required || Array.isArray(regData.delivered_via))) {
+        setPendingAfterVerify(authMode === "join" ? "join" : "create");
+        setOtpStep(true);
+        return { access: "", refresh: "", user: null, needsOtp: true };
+      }
+      try {
+        const data = await apiPost("/api/v1/auth/login", { email: email.trim(), password }, "");
+        return {
+          access: data.access_token || "",
+          refresh: data.refresh_token || "",
+          user: data.user,
+        };
+      } catch (secondLoginError) {
+        const text = secondLoginError instanceof Error ? secondLoginError.message : "";
+        if (/verification/i.test(text)) {
+          setPendingAfterVerify(authMode === "join" ? "join" : "create");
+          setOtpStep(true);
+          return { access: "", refresh: "", user: null, needsOtp: true };
+        }
+        throw secondLoginError;
+      }
+    }
+  }
+
+  async function verifyOtpAuth() {
+    if (!email.trim() || !otpCode.trim()) {
+      setMessage(tm("authFieldsRequired"));
+      return;
+    }
+    setLoading(true);
+    try {
+      const useLoginOtp = pendingAfterVerify === "login";
+      const data = await apiPost(
+        useLoginOtp ? "/api/v1/auth/login/verify-otp" : "/api/v1/auth/verify-otp",
+        { email: email.trim(), otp: otpCode.trim() },
+        ""
+      );
+      const access = data.access_token || "";
+      const refresh = data.refresh_token || "";
+      if (!access) throw new Error("OTP verify failed — no token");
+
+      if (pendingAfterVerify === "create") {
+        const created = await apiPost(
+          "/api/v1/families",
+          {
+            name: familyName.trim(),
+            default_currency: familyCurrency.trim() || "BDT",
+            timezone: familyTimezone.trim() || "Asia/Dhaka",
+            relationship_type: ownerRelation,
+          },
+          access
+        );
+        const createdFamilyId = created?.family_id || created?.family?.id || created?.id || "";
+        setStatus("ok");
+        setMessage(tm("familyCreatedOk"));
+        await persistSession(access, refresh, data.user, email.trim(), createdFamilyId || undefined, false);
+        if (createdFamilyId) setActiveFamilyId(String(createdFamilyId));
+        await refreshAll(access);
+      } else if (pendingAfterVerify === "join") {
+        await apiPost(
+          "/api/v1/invites/join",
+          buildJoinInvitePayload({
+            invite_code: inviteCode.trim().toUpperCase(),
+            relationship_type: joinRelation,
+            relationship_serial: joinSerial,
+            serial_label: joinSerialLabel,
+            linked_member_id: joinLinkedMemberId,
+            relationship_note: joinNote,
+          }),
+          access
+        );
+        setStatus("ok");
+        setMessage(tm("joinRequestedOk"));
+        await persistSession(access, refresh, data.user, email.trim());
+        await refreshAll(access);
+        setAuthMode("login");
+      } else {
+        setStatus("ok");
+        setMessage(appLang === "bn" ? "ভেরিফাই সম্পন্ন — লগইন হয়েছে।" : "Verified — logged in.");
+        await persistSession(access, refresh, data.user, email.trim());
+        await refreshAll(access);
+      }
+      setOtpStep(false);
+      setOtpCode("");
+      setPendingAfterVerify(null);
+    } catch (error) {
+      setStatus("failed");
+      const text = error instanceof Error ? error.message : "OTP verify failed";
+      setMessage(text);
+      Alert.alert(tm("authCreate"), text);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resendOtpAuth() {
+    if (!email.trim()) return;
+    setLoading(true);
+    try {
+      const useLogin = pendingAfterVerify === "login";
+      const data = await apiPost(
+        useLogin ? "/api/v1/auth/login/request-otp" : "/api/v1/auth/resend-otp",
+        { email: email.trim() },
+        ""
+      );
+      const via = Array.isArray(data?.delivered_via) ? data.delivered_via.join(", ") : "";
+      setMessage(
+        appLang === "bn" ? `OTP আবার পাঠানো হয়েছে${via ? ` (${via})` : ""}` : `OTP resent${via ? ` via ${via}` : ""}`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Resend failed");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1335,15 +1466,28 @@ export default function HomeScreen() {
           : error instanceof Error
             ? error.message
             : "Login failed.";
-      setMessage(text);
-      Alert.alert(tm("loginFailed"), text);
+      // Account exists but signup OTP was never confirmed -- route to the OTP
+      // screen instead of leaving the user stuck on a plain error toast with
+      // no way to enter the code that was already emailed/texted to them.
+      if (!isFirebaseFirstMode() && /verification/i.test(text)) {
+        setPendingAfterVerify("login");
+        setOtpStep(true);
+        setMessage(
+          appLang === "bn"
+            ? "আগে OTP দিয়ে অ্যাকাউন্ট ভেরিফাই করুন"
+            : "Verify your account with the OTP first"
+        );
+      } else {
+        setMessage(text);
+        Alert.alert(tm("loginFailed"), text);
+      }
     } finally {
       setLoading(false);
     }
   }
 
   async function createFamilyAuth() {
-    if (!fullName.trim() || !email.trim() || !password || !familyName.trim()) {
+    if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !familyName.trim()) {
       setMessage(tm("authFieldsRequired"));
       setStatus("failed");
       Alert.alert(tm("authCreate"), tm("authFieldsRequired"));
@@ -1408,6 +1552,11 @@ export default function HomeScreen() {
         return;
       }
       const session = await ensureAuthSession();
+      if (session.needsOtp) {
+        setStatus("ok");
+        setMessage(appLang === "bn" ? "OTP পাঠানো হয়েছে — কোড দিন" : "OTP sent — enter the code");
+        return;
+      }
       if (!session.access) throw new Error("No access token");
       const created = await apiPost(
         "/api/v1/families",
@@ -1571,7 +1720,7 @@ export default function HomeScreen() {
   }
 
   async function joinFamilyAuth() {
-    if (!email.trim() || !password || !inviteCode.trim()) {
+    if (!fullName.trim() || !email.trim() || !password || !phone.trim() || !inviteCode.trim()) {
       setMessage(tm("authFieldsRequired"));
       setStatus("failed");
       return;
@@ -1623,6 +1772,11 @@ export default function HomeScreen() {
 
       await persistApiBaseUrl(apiBaseUrlInput);
       const session = await ensureAuthSession();
+      if (session.needsOtp) {
+        setStatus("ok");
+        setMessage(appLang === "bn" ? "OTP পাঠানো হয়েছে — কোড দিন" : "OTP sent — enter the code");
+        return;
+      }
       if (!session.access) throw new Error("No access token");
       await apiPost(
         "/api/v1/invites/join",
@@ -1690,6 +1844,35 @@ export default function HomeScreen() {
   }
 
   async function logout() {
+    // A pure-offline account's data exists only on this phone: never wipe it.
+    const offlineSession = isOfflineAccessToken(token);
+    let keepFamilyId: string | null = null;
+    if (!offlineSession) {
+      keepFamilyId = (await loadOfflineFamily().catch(() => null))?.id ?? null;
+      // Try to deliver queued changes before they are wiped below.
+      if (token && activeFamilyId && !isCloudAccessToken(token)) {
+        try {
+          await syncManager.replayPending(token, activeFamilyId, 50);
+        } catch {
+          /* offline: counted and confirmed below */
+        }
+      }
+      const unsynced = await countUnsyncedChanges(keepFamilyId).catch(() => 0);
+      if (unsynced > 0) {
+        const proceed = await new Promise<boolean>((resolve) =>
+          Alert.alert(
+            "Unsynced changes",
+            `${unsynced} change(s) have not reached the server yet. Logging out deletes them from this phone.`,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: "Log out anyway", style: "destructive", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) }
+          )
+        );
+        if (!proceed) return;
+      }
+    }
     if (isFirebaseFirstMode() || isCloudAccessToken(token)) {
       try {
         await firebaseSignOut();
@@ -1719,6 +1902,15 @@ export default function HomeScreen() {
     setGroceryLists([]);
     setGroceryItems([]);
     if (await SecureStore.isAvailableAsync()) await SecureStore.deleteItemAsync(SESSION_KEY);
+    if (!offlineSession) {
+      // Shared family phones: the next user must not inherit this user's
+      // cached family data or flush this user's queued changes.
+      try {
+        await wipeLocalUserData(keepFamilyId);
+      } catch {
+        /* logout itself must still succeed */
+      }
+    }
     setMessage("Logged out.");
   }
 
@@ -2270,6 +2462,58 @@ export default function HomeScreen() {
                 </View>
               </View>
               <View style={[styles.panel, dark ? styles.panelDark : null]}>
+                {otpStep ? (
+                  <>
+                    <Text style={[styles.sectionLabel, dark ? styles.textOnDark : null]}>
+                      {appLang === "bn" ? "OTP ভেরিফিকেশন" : "OTP Verification"}
+                    </Text>
+                    <Text style={[styles.muted, dark ? styles.mutedOnDark : null]}>
+                      {appLang === "bn"
+                        ? "ইমেইল ও মোবাইলে পাঠানো ৬-অঙ্কের কোড দিন। ভেরিফাই ছাড়া লগইন হবে না।"
+                        : "Enter the 6-digit code sent to your email and mobile. No login without verification."}
+                    </Text>
+                    <TextInput
+                      style={[styles.input, dark ? styles.inputDark : null]}
+                      placeholder={tm("email")}
+                      placeholderTextColor="#8aa39a"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      onChangeText={setEmail}
+                    />
+                    <TextInput
+                      style={[styles.input, dark ? styles.inputDark : null]}
+                      placeholder={appLang === "bn" ? "৬-অঙ্কের OTP" : "6-digit OTP"}
+                      placeholderTextColor="#8aa39a"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      value={otpCode}
+                      onChangeText={(v: string) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
+                    />
+                    <Pressable style={styles.primaryButton} onPress={verifyOtpAuth} disabled={loading}>
+                      <Text style={styles.primaryButtonText}>
+                        {loading ? "…" : appLang === "bn" ? "OTP নিশ্চিত করুন" : "Confirm OTP"}
+                      </Text>
+                    </Pressable>
+                    <Pressable style={styles.secondaryButton} onPress={resendOtpAuth} disabled={loading}>
+                      <Text style={styles.secondaryButtonText}>
+                        {appLang === "bn" ? "OTP আবার পাঠান" : "Resend OTP"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={() => {
+                        setOtpStep(false);
+                        setOtpCode("");
+                        setPendingAfterVerify(null);
+                      }}
+                      disabled={loading}
+                    >
+                      <Text style={styles.secondaryButtonText}>{appLang === "bn" ? "← পিছনে" : "← Back"}</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                <>
                 <View style={styles.statusRow}>
                   {(
                     [
@@ -2320,9 +2564,9 @@ export default function HomeScreen() {
                                 : "Logged in (Firebase cloud)."
                             );
                             useAuthStore.getState().setSession(nextToken, {
-                              uid: user.uid,
-                              email: user.email,
-                              full_name: user.displayName,
+                              id: user.uid,
+                              email: user.email || "",
+                              full_name: user.displayName || "",
                             });
                             if (rememberDevice) {
                               try {
@@ -2455,7 +2699,7 @@ export default function HomeScreen() {
                 {authMode === "create" || authMode === "join" ? (
                   <TextInput
                     style={[styles.input, dark ? styles.inputDark : null]}
-                    placeholder={tm("phoneOptional")}
+                    placeholder={appLang === "bn" ? "ফোন নম্বর (*)" : "Phone number (*)"}
                     placeholderTextColor="#8aa39a"
                     keyboardType="phone-pad"
                     value={phone}
@@ -2626,6 +2870,8 @@ export default function HomeScreen() {
                     <Text style={styles.primaryButtonText}>{loading ? tm("signingIn") : tm("sendResetLink")}</Text>
                   </Pressable>
                 ) : null}
+                </>
+                )}
               </View>
             </>
           ) : (
@@ -3216,7 +3462,9 @@ export default function HomeScreen() {
                 setStatus(ok ? "ok" : "failed");
               }}
               onFamilyUpdated={() => refreshAll()}
-              onApiBaseChange={persistApiBaseUrl}
+              onApiBaseChange={async (nextUrl) => {
+                await persistApiBaseUrl(nextUrl);
+              }}
               onSessionRefreshed={async (accessToken, nextRefreshToken, user) => {
                 setToken(accessToken);
                 if (nextRefreshToken) setRefreshToken(nextRefreshToken);
@@ -3401,7 +3649,7 @@ export default function HomeScreen() {
 
         <Modal visible={moreOpen} transparent animationType="fade" onRequestClose={() => setMoreOpen(false)}>
           <View style={styles.moreBackdrop}>
-            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setMoreOpen(false)} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setMoreOpen(false)} />
             <View style={styles.moreSheet}>
               <View style={styles.moreHandle} />
               <Text style={styles.moreTitle}>{tm("moreModules")}</Text>
@@ -3517,8 +3765,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  mobileBrandMarkText: { color: "#ffffff", fontWeight: "950", fontSize: 12 },
-  mobileBrandTitle: { color: "#17211e", fontSize: 13, fontWeight: "950" },
+  mobileBrandMarkText: { color: "#ffffff", fontWeight: "900", fontSize: 12 },
+  mobileBrandTitle: { color: "#17211e", fontSize: 13, fontWeight: "900" },
   mobileBrandSub: { color: "#0b6f58", fontSize: 9, fontWeight: "800", marginTop: 2 },
   topActions: { flexDirection: "row", gap: 7 },
   iconBtn: {

@@ -25,6 +25,7 @@ def _verified_user(email: str, full_name: str = "API Owner") -> User:
             preferred_language="bn",
             is_active=True,
             is_email_verified=True,
+            is_phone_verified=True,
         )
         db.add(user)
         db.commit()
@@ -44,14 +45,36 @@ def test_register_rejects_weak_password(monkeypatch):
     assert res.status_code == 422
 
 
-def test_register_auto_verifies_in_development():
-    """Non-production register marks email verified so local login works without SMTP."""
+def test_register_requires_otp_verify_before_login(monkeypatch):
+    """Registration never auto-verifies (in any environment): it always requires
+    phone + a delivered OTP, login is blocked until verify-otp succeeds."""
+    captured: dict[str, str] = {}
+
+    def fake_send_otp_to_channels(*, email, phone, otp):
+        captured["otp"] = otp
+        from app.services.otp_delivery import OtpDeliveryReport
+
+        return OtpDeliveryReport(
+            email_sent=True, mobile_sent=True, delivered_via=["email", "sms"], ok=True
+        )
+
+    monkeypatch.setattr("app.api.v1.auth.can_deliver_otp", lambda: (True, "ok"))
+    monkeypatch.setattr("app.api.v1.auth.send_otp_to_channels", fake_send_otp_to_channels)
+
     email = f"devreg-{uuid4().hex[:8]}@s4family.com"
     reg = client.post(
         "/api/v1/auth/register",
-        json={"full_name": "Dev User", "email": email, "password": PASSWORD},
+        json={"full_name": "Dev User", "email": email, "phone": "01812345678", "password": PASSWORD},
     )
-    assert reg.status_code == 201
+    assert reg.status_code == 201, reg.text
+    assert reg.json()["verification_required"] is True
+
+    blocked = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert blocked.status_code == 403, blocked.text
+
+    verify = client.post("/api/v1/auth/verify-otp", json={"email": email, "otp": captured["otp"]})
+    assert verify.status_code == 200, verify.text
+
     login = client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
 

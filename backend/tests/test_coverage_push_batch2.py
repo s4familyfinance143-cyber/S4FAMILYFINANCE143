@@ -235,7 +235,11 @@ def test_ensure_sqlite_columns_adds_missing(monkeypatch):
             return False
 
     monkeypatch.setattr(schema_guard, "inspect", lambda engine: Insp())
-    monkeypatch.setattr(schema_guard, "engine", SimpleNamespace(begin=lambda: Begin()))
+    monkeypatch.setattr(
+        schema_guard,
+        "engine",
+        SimpleNamespace(begin=lambda: Begin(), dialect=SimpleNamespace(name="sqlite")),
+    )
 
     added = schema_guard.ensure_sqlite_columns()
     assert "family_members.linked_member_id" in added
@@ -603,7 +607,7 @@ def test_document_vault_backend_status_and_s3_helpers(monkeypatch, tmp_path):
     assert vault.is_s3_configured() is False
     status = vault.object_storage_status()
     assert status["backend"] == "local"
-    assert "not configured" in status["note"].lower() or "S3" in status["note"]
+    assert "local" in status["note"].lower()
 
     monkeypatch.setattr(cfg.settings, "DOCUMENT_VAULT_BACKEND", "local", raising=False)
     assert vault.active_storage_backend() == "local"
