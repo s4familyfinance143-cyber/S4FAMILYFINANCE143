@@ -133,7 +133,7 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm ci
-      - name: Build Tauri Windows installer (VPS API — Firebase Auth off)
+      - name: Build Tauri Windows installer (VPS API)
         shell: pwsh
         env:
           VITE_API_BASE: "https://app.s4businessthinking.com/api/v1"

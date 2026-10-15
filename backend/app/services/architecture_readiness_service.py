@@ -1,6 +1,6 @@
 """Architecture feature completeness — code pipelines at 100%.
 
-Ops live channels (SMTP/FCM/S3/Vision) are reported separately when env is set.
+Ops live channels (SMTP/S3/Vision) are reported separately when env is set.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 from app.core.config import settings
 from app.services.document_vault_service import object_storage_status
 from app.services.email_service import smtp_status
-from app.services.fcm_service import fcm_status
 from app.services.notification_delivery_service import pipeline_status as notification_pipeline_status
 
 
@@ -46,7 +45,6 @@ def architecture_readiness() -> dict:
     vault = object_storage_status()
     notify = notification_pipeline_status()
     ocr = ocr_status()
-    fcm = fcm_status()
     smtp = smtp_status()
 
     modules = [
@@ -83,11 +81,10 @@ def architecture_readiness() -> dict:
             "ops_live": bool(smtp.get("configured") and settings.NOTIFICATION_EMAIL_ENABLED),
         },
         {
-            "key": "notifications_fcm",
-            "name": "FCM Push Pipeline (Tokens + Outbox)",
+            "key": "notifications_realtime",
+            "name": "Live Updates (VPS WebSocket)",
             "status": "DONE",
             "pct": 100,
-            "ops_live": bool(fcm.get("configured")),
         },
         {
             "key": "ocr",
@@ -118,7 +115,6 @@ def architecture_readiness() -> dict:
         "done_count": len(modules),
         "ops": {
             "smtp": smtp,
-            "fcm": fcm,
             "ocr": ocr,
             "document_vault": vault,
             "notifications": notify,
@@ -126,7 +122,7 @@ def architecture_readiness() -> dict:
             "ops_gated_modules": len(ops_gated),
             "note": (
                 "All architecture features are code-complete (100%). "
-                "Ops live = SMTP/FCM/Vision/S3 when .env credentials are set — optional for feature parity."
+                "Ops live = SMTP/Vision/S3 when .env credentials are set — optional for feature parity."
             ),
         },
     }

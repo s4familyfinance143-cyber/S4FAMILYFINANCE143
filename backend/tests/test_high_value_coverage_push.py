@@ -1058,7 +1058,7 @@ def test_finance_posting_name_and_client_request_edges(monkeypatch):
 
 
 def test_architecture_bridge_preference_and_push():
-    from app.models.architecture_auth import PushToken, UserPreference
+    from app.models.architecture_auth import UserPreference
 
     user = SimpleNamespace(id="u", preferred_language="en")
     db = Db({UserPreference: None})
@@ -1066,24 +1066,8 @@ def test_architecture_bridge_preference_and_push():
     assert pref.language == "en" and pref in db.added
     existing_pref = SimpleNamespace(id="p")
     assert bridge.ensure_user_preference(Db({UserPreference: existing_pref}), user) is existing_pref
-
-    device = SimpleNamespace(
-        id="pd",
-        user_id="u",
-        device_label="phone",
-        token="tok",
-        platform="android",
-        is_active=True,
-        family_id="f",
-    )
-    db_push = Db({PushToken: None})
-    bridge.mirror_push_device(db_push, device)
-    assert db_push.added
-    existing_token = SimpleNamespace(
-        fcm_token=None, platform=None, is_active=False, family_id=None, updated_at=None
-    )
-    bridge.mirror_push_device(Db({PushToken: existing_token}), device)
-    assert existing_token.fcm_token == "tok"
+    # FCM push-token mirroring was removed with Firebase.
+    assert not hasattr(bridge, "mirror_push_device")
 
 
 # ---------------------------------------------------------------------------

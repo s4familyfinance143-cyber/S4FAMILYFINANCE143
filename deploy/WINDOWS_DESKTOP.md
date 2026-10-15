@@ -1,15 +1,15 @@
 # Windows desktop — S4 Family Finance 143
 
-## Normal install (recommended — Firebase, no backend)
+## Normal install (recommended — connects to the VPS server)
 
 The GitHub Release **S4-Family-Finance-143-Setup.exe** is a **Tauri** desktop app:
 
 1. Double-click **Setup.exe**
 2. Install → Finish
 3. Open **S4 Family Finance 143** from Desktop or Start Menu
-4. Login with Firebase email (same as APK)
+4. Log in with your server account (same as the APK)
 
-No Python, no pip, no bat files, no PC backend.
+No Python, no pip, no bat files, no PC backend — the app uses the VPS API.
 
 ### Build installer (maintainers)
 

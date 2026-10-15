@@ -22,20 +22,6 @@ class EmailOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class PushOutbox(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "push_outbox"
-
-    family_id: Mapped[str | None] = mapped_column(ForeignKey("families.id"), index=True, nullable=True)
-    notification_id: Mapped[str | None] = mapped_column(ForeignKey("notifications.id"), index=True, nullable=True)
-    fcm_token_preview: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="PENDING", index=True, nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
 class ExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "export_jobs"
 

@@ -23,22 +23,21 @@ For Play Store distribution later:
 2. Share → **Add to Home Screen**
 3. Launch from home screen icon
 
-**Note:** iOS limits background sync; use **Settings → Cloud** for Firebase/Drive backup.
+**Note:** iOS limits background sync; the app syncs to the VPS whenever it is open and online.
 
-## Firebase + Drive on mobile
+## Server connection on mobile
 
-1. Complete `deploy/FIREBASE_SETUP.md` and `deploy/GOOGLE_DRIVE_SETUP.md`
-2. Add your production domain to:
-   - Firebase Auth → Authorized domains
-   - Google OAuth → Authorized JavaScript origins
-3. Set `VITE_API_BASE` to your backend URL (or run backend on LAN)
+1. The app uses the VPS API by default (`https://app.s4businessthinking.com`).
+2. Optional Google Drive backup: complete `deploy/GOOGLE_DRIVE_SETUP.md` and add your
+   production domain to Google OAuth → Authorized JavaScript origins.
+3. For local testing, set the API base to your PC on the same Wi-Fi.
 
 ## Local backend on phone (advanced)
 
 Phones cannot run the Python backend locally. Options:
 
 - **Home PC** runs backend; phone uses `http://YOUR_PC_IP:8000` in Settings → API base
-- **Cloud-only backup** via Firebase/Drive without live API (restore on PC)
+- **Production VPS** — the default; nothing to run at home
 
 ## GitHub release checklist
 
@@ -55,5 +54,5 @@ Phones cannot run the Python backend locally. Options:
 |---------|-----|
 | Install prompt missing | Use HTTPS; check manifest in DevTools → Application |
 | Offline broken | Open app once online; wait for service worker |
-| Google login fails on phone | Add domain to Firebase + OAuth origins |
+| Google Drive connect fails on phone | Add the domain to Google OAuth origins |
 | API unreachable | Set LAN IP in Settings; allow firewall on PC |

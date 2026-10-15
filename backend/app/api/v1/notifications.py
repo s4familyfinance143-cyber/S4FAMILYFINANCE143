@@ -7,15 +7,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.architecture_auth import PushToken
 from app.models.notification import Notification
 from app.models.savings import SavingsGoal
 from app.models.user import User
 from app.services.audit_service import write_audit_log
 from app.services.email_service import is_smtp_configured, send_notification_email, smtp_status
-from app.services.fcm_service import fcm_status, is_fcm_configured, send_fcm_push
-from app.services.permission_service import get_active_member_or_403, require_permission
-from pydantic import BaseModel, Field
+from app.services.permission_service import require_permission
 
 router = APIRouter(
     prefix="/notifications",
@@ -101,13 +98,6 @@ NOTIFICATION_TEMPLATES = {
         "message_bn": "{name} সঞ্চয় লক্ষ্য পূরণ করেছে।",
     },
 }
-
-
-class PushDeviceRegisterRequest(BaseModel):
-    token: str = Field(min_length=8, max_length=512)
-    platform: str = Field(default="UNKNOWN", max_length=40)
-    provider: str = Field(default="FCM", max_length=40)
-    device_label: str | None = Field(default=None, max_length=120)
 
 
 def render_template(notification_type: str, **values) -> dict:
@@ -461,17 +451,12 @@ def notification_delivery_status(
         .count()
     )
 
-    fcm = fcm_status()
-    fcm_configured = bool(fcm["configured"])
     smtp = smtp_status()
     email_configured = bool(smtp["configured"] and settings.NOTIFICATION_EMAIL_ENABLED)
 
-    if settings.NOTIFICATION_IN_APP_ENABLED and email_configured and fcm_configured:
-        delivery_mode = "IN_APP_EMAIL_FCM"
-    elif settings.NOTIFICATION_IN_APP_ENABLED and email_configured:
+    # Channels: in-app (live over the VPS WebSocket) + optional SMTP email.
+    if settings.NOTIFICATION_IN_APP_ENABLED and email_configured:
         delivery_mode = "IN_APP_EMAIL"
-    elif settings.NOTIFICATION_IN_APP_ENABLED and fcm_configured:
-        delivery_mode = "IN_APP_FCM"
     elif settings.NOTIFICATION_IN_APP_ENABLED:
         delivery_mode = "IN_APP_ONLY"
     else:
@@ -480,8 +465,6 @@ def notification_delivery_status(
     return {
         "family_id": family_id,
         "in_app_enabled": settings.NOTIFICATION_IN_APP_ENABLED,
-        "fcm_configured": fcm_configured,
-        "fcm": fcm,
         "email_configured": email_configured,
         "smtp": smtp,
         "delivery_mode": delivery_mode,
@@ -490,8 +473,8 @@ def notification_delivery_status(
         "pipeline": {
             "architecture_status": "DONE",
             "email_outbox": True,
-            "push_outbox": True,
             "in_app": True,
+            "realtime": "websocket",
         },
     }
 
@@ -529,8 +512,6 @@ def notification_delivery_report(
         "family_id": family_id,
         "delivery_status": {
             "in_app_enabled": settings.NOTIFICATION_IN_APP_ENABLED,
-            "fcm_enabled": settings.NOTIFICATION_FCM_ENABLED,
-            "fcm": fcm_status(),
             "email_enabled": settings.NOTIFICATION_EMAIL_ENABLED,
             "smtp": smtp_status(),
             "secrets_exposed": False,
@@ -573,226 +554,6 @@ def send_test_notification_email(
         message="This is a real SMTP test from S4 Family Finance. No demo payload.",
     )
     return {**result.as_dict(), "smtp": smtp_status()}
-
-
-@router.get("/fcm-status")
-def notification_fcm_status(current_user: User = Depends(get_current_user)):
-    _ = current_user
-    return fcm_status()
-
-
-def _token_preview(token: str) -> str:
-    return f"{token[:8]}…{token[-4:]}" if token and len(token) > 12 else "***"
-
-
-@router.get("/devices/{family_id}")
-def list_push_devices(
-    family_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_permission(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-        permission="notification.read",
-    )
-    rows = (
-        db.query(PushToken)
-        .filter(
-            PushToken.family_id == family_id,
-            PushToken.user_id == current_user.id,
-            PushToken.deleted_at.is_(None),
-            PushToken.is_active.is_(True),
-        )
-        .order_by(PushToken.created_at.desc())
-        .all()
-    )
-    return [
-        {
-            "id": row.id,
-            "platform": row.platform,
-            "provider": "FCM",
-            "device_label": row.device_id,
-            "token_preview": _token_preview(row.fcm_token),
-            "created_at": row.created_at,
-        }
-        for row in rows
-    ]
-
-
-@router.post("/devices/{family_id}")
-def register_push_device(
-    family_id: str,
-    payload: PushDeviceRegisterRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    member = get_active_member_or_403(db, family_id, current_user.id)
-    require_permission(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-        permission="notification.read",
-    )
-    token = payload.token.strip()
-    platform = (payload.platform or "UNKNOWN").upper().strip()
-    existing = (
-        db.query(PushToken)
-        .filter(
-            PushToken.user_id == current_user.id,
-            PushToken.fcm_token == token,
-        )
-        .first()
-    )
-    if existing:
-        existing.family_id = family_id
-        existing.platform = platform
-        existing.device_id = payload.device_label
-        existing.is_active = True
-        existing.deleted_at = None
-        db.commit()
-        db.refresh(existing)
-        device = existing
-    else:
-        device = PushToken(
-            family_id=family_id,
-            user_id=current_user.id,
-            device_id=payload.device_label,
-            fcm_token=token,
-            platform=platform,
-            is_active=True,
-        )
-        db.add(device)
-        db.commit()
-        db.refresh(device)
-
-    try:
-        from app.services.architecture_system_hooks import upsert_device_registry
-
-        upsert_device_registry(
-            db,
-            user_id=current_user.id,
-            device_fingerprint=device.device_id or device.id,
-            platform=device.platform,
-            family_id=family_id,
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-
-    try:
-        write_audit_log(
-            db=db,
-            family_id=family_id,
-            member_id=member.id,
-            action_type="CREATE",
-            entity_type="PUSH_DEVICE",
-            entity_id=device.id,
-            title="Push device registered",
-            description=f"{device.platform}/FCM",
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-
-    return {
-        "id": device.id,
-        "platform": device.platform,
-        "provider": "FCM",
-        "device_label": device.device_id,
-        "registered": True,
-        "fcm": fcm_status(),
-    }
-
-
-@router.delete("/devices/{device_id}")
-def unregister_push_device(
-    device_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    device = db.get(PushToken, device_id)
-    if not device or device.deleted_at is not None:
-        raise HTTPException(404, "Device not found")
-    if device.user_id != current_user.id:
-        raise HTTPException(403, "Not your device token")
-    from datetime import datetime, timezone
-
-    device.is_active = False
-    device.deleted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"deleted": True, "id": device_id}
-
-
-@router.post("/test-push/{family_id}")
-def send_test_push(
-    family_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    require_permission(
-        db=db,
-        family_id=family_id,
-        user_id=current_user.id,
-        permission="notification.read",
-    )
-    status = fcm_status()
-    if not is_fcm_configured():
-        return {
-            "sent": False,
-            "reason": status["note"],
-            "fcm": status,
-            "devices_targeted": 0,
-        }
-
-    devices = (
-        db.query(PushToken)
-        .filter(
-            PushToken.family_id == family_id,
-            PushToken.user_id == current_user.id,
-            PushToken.deleted_at.is_(None),
-            PushToken.is_active.is_(True),
-        )
-        .all()
-    )
-    if not devices:
-        return {
-            "sent": False,
-            "reason": "No registered push devices for this user. Register a token first.",
-            "fcm": status,
-            "devices_targeted": 0,
-        }
-
-    results = []
-    sent_count = 0
-    for device in devices:
-        from app.services.job_queue import enqueue_push
-
-        queued = enqueue_push(
-            device.fcm_token,
-            "S4 Family Finance test push",
-            "Real FCM test — no demo payload.",
-            {"family_id": family_id, "type": "TEST_PUSH"},
-        )
-        # When CELERY_ENABLED=false, enqueue runs inline and returns send result
-        if queued.get("queued"):
-            results.append({"device_id": device.id, "queued": True, "task_id": queued.get("task_id")})
-            sent_count += 1
-        else:
-            ok = bool(queued.get("ok"))
-            results.append({"device_id": device.id, **queued})
-            if ok:
-                sent_count += 1
-
-    return {
-        "sent": sent_count > 0,
-        "reason": "sent" if sent_count else (results[0].get("detail") or results[0].get("reason") if results else "No send"),
-        "devices_targeted": len(devices),
-        "sent_count": sent_count,
-        "results": results,
-        "fcm": status,
-    }
 
 
 @router.get("/{family_id}")

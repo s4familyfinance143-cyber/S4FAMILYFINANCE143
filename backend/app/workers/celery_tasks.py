@@ -30,18 +30,6 @@ def process_auto_backup_task() -> dict:
     return {"ok": True, "task": "auto_backup", "result": result}
 
 
-@celery_app.task(name="app.workers.celery_tasks.send_push_task")
-def send_push_task(token: str, title: str, body: str, data: dict | None = None) -> dict:
-    from app.services.fcm_service import send_fcm_push
-
-    result = send_fcm_push(token=token, title=title, body=body, data=data or {})
-    return {
-        "ok": bool(getattr(result, "sent", False) or getattr(result, "ok", False) or getattr(result, "success", False)),
-        "task": "push",
-        "detail": getattr(result, "reason", None) or getattr(result, "detail", None) or str(result),
-    }
-
-
 @celery_app.task(name="app.workers.celery_tasks.send_email_task")
 def send_email_task(to_email: str, subject: str, text_body: str, html_body: str | None = None) -> dict:
     from app.core.database import SessionLocal

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as BackgroundTask from "expo-background-task";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
@@ -99,41 +99,6 @@ import {
 } from "../lib/phase10bSync";
 import { flushMobileDocumentUploads } from "../lib/offlineFileQueue";
 import { loadModuleSnapshot, saveModuleSnapshot } from "../lib/offlineSnapshots";
-import { setCloudApiContext } from "../lib/cloudApiBridge";
-import {
-  persistCloudFamilyId,
-  persistCloudOnlyMode,
-  clearCloudSession,
-  loadCloudFamilyId,
-  requireEmailVerification,
-} from "../lib/cloudSession";
-import {
-  isFirebaseFirstMode,
-  getFirebaseAuth,
-  subscribeFirebaseAuth,
-  firebaseSignInEmail,
-  firebaseRegisterEmail,
-  firebaseSendPasswordReset,
-  firebaseSignOut,
-  firebaseSignInGoogle,
-  firebaseReloadUser,
-  firebaseResendVerification,
-  isFirebaseEmailVerified,
-  formatFirebaseAuthError,
-} from "../firebase";
-import { enableMobilePushNotifications } from "../firebase/messaging";
-import { EmailVerificationGate } from "../components/auth/EmailVerificationGate";
-import { createCloudFamilyAccount } from "../firebase/cloudOnboarding";
-import { joinFamilyByInviteCode } from "../firebase/familyCloud";
-import {
-  pullCloudSnapshot,
-  pushCloudSnapshot,
-  getUserFamilyProfile,
-  ensureUserProfile,
-  resolveAndBindUserFamily,
-  bindCloudFamilyIdentity,
-} from "../firebase/cloudSync";
-import { loadOfflineSnapshot } from "../lib/offlineCache";
 import {
   createOfflineAccount,
   isOfflineAccessToken,
@@ -147,18 +112,17 @@ function normalizeApiBaseUrl(value: string) {
   return cleaned.replace(/\/api\/v[12]$/i, "");
 }
 
-function isCloudAccessToken(value: string | null | undefined) {
+/** Sessions saved by the old, removed cloud mode used a "firebase.<uid>" token. */
+function isLegacyCloudToken(value: string | null | undefined) {
   return String(value || "").startsWith("firebase.");
 }
 
-function cloudTokenFor(uid: string) {
-  return `firebase.${uid}`;
-}
-
+// All data lives on the VPS API.
+const PRODUCTION_API_BASE_URL = "https://app.s4businessthinking.com";
 const DEFAULT_API_BASE_URL = normalizeApiBaseUrl(
   process.env.EXPO_PUBLIC_API_BASE_URL ||
     (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
-    (isFirebaseFirstMode() ? "" : "http://192.168.13.248:8000"),
+    PRODUCTION_API_BASE_URL,
 );
 const API_BASE_URL_KEY = "s4_mobile_api_base_url_v1";
 const SESSION_KEY = "s4_family_finance_mobile_session_v2";
@@ -218,8 +182,7 @@ type StoredSession = {
   email: string;
   family_id?: string;
   offline_mode?: boolean;
-  // Cloud (Firebase) sessions carry uid / displayName instead of id / full_name.
-  user?: { id?: string; uid?: string; email?: string; full_name?: string; name?: string; displayName?: string };
+  user?: { id?: string; email?: string; full_name?: string; name?: string };
 };
 
 type Family = { id: string; name: string; default_currency?: string; timezone?: string };
@@ -387,7 +350,6 @@ export default function HomeScreen() {
   const [showAdvancedServer, setShowAdvancedServer] = useState(false);
   const [token, setToken] = useState("");
   const [refreshToken, setRefreshToken] = useState("");
-  const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [status, setStatus] = useState<ApiStatus>("idle");
   const [message, setMessage] = useState("Ready.");
   const [loading, setLoading] = useState(false);
@@ -816,11 +778,6 @@ export default function HomeScreen() {
   }
 
   async function restoreApiBaseUrl() {
-    if (isFirebaseFirstMode()) {
-      setRuntimeApiBaseUrl("");
-      setApiBaseUrlInput("");
-      return;
-    }
     try {
       if (!(await SecureStore.isAvailableAsync())) {
         setApiBaseUrlInput(getApiBaseUrl());
@@ -868,6 +825,13 @@ export default function HomeScreen() {
       if (!raw) return;
       const session = JSON.parse(raw) as StoredSession;
       if (!session.access_token) return;
+      if (isLegacyCloudToken(session.access_token)) {
+        // The old cloud mode was removed; its tokens mean nothing to the VPS API.
+        await SecureStore.deleteItemAsync(SESSION_KEY);
+        setEmail(session.email || session.user?.email || "");
+        setMessage("Cloud mode ended — please log in to the server again.");
+        return;
+      }
       setToken(session.access_token);
       setRefreshToken(session.refresh_token || "");
       setEmail(session.email || session.user?.email || "");
@@ -895,41 +859,6 @@ export default function HomeScreen() {
       setStatus("ok");
       if (isOfflineAccessToken(session.access_token) || session.offline_mode) {
         setMessage("Offline session restored.");
-        await refreshAll(session.access_token);
-        return;
-      }
-      if (isCloudAccessToken(session.access_token) || isFirebaseFirstMode()) {
-        const uid =
-          String(session.access_token || "").replace(/^firebase\./, "") ||
-          String(session.user?.uid || session.user?.id || "");
-        const familyId = session.family_id || (await loadCloudFamilyId()) || "";
-        if (familyId) {
-          await persistCloudOnlyMode(true);
-          await persistCloudFamilyId(familyId);
-          setCloudApiContext({
-            familyId,
-            user: {
-              uid: uid || undefined,
-              email: session.email || session.user?.email,
-              displayName: session.user?.full_name || session.user?.displayName,
-            },
-            onAfterWrite: async () => {
-              if (!uid || !familyId) return;
-              try {
-                await pushCloudSnapshot({
-                  uid,
-                  familyId,
-                  deviceLabel: "mobile",
-                  email: session.email || session.user?.email,
-                  displayName: session.user?.full_name,
-                });
-              } catch {
-                /* ignore */
-              }
-            },
-          });
-        }
-        setMessage("Cloud session restored.");
         await refreshAll(session.access_token);
         return;
       }
@@ -1228,151 +1157,6 @@ export default function HomeScreen() {
     }
   }
 
-  async function activateCloudSession(user: any, familyId: string, familyName = "") {
-    const fid = String(familyId || "");
-    const cloudTok = cloudTokenFor(user.uid);
-    await persistCloudOnlyMode(true);
-    await persistCloudFamilyId(fid);
-    setCloudApiContext({
-      familyId: fid,
-      user: {
-        uid: user.uid,
-        email: user.email || undefined,
-        displayName: user.displayName || undefined,
-      },
-      onAfterWrite: async () => {
-        if (requireEmailVerification() && !isFirebaseEmailVerified(user)) return;
-        if (!fid || !user?.uid) return;
-        try {
-          await pushCloudSnapshot({
-            uid: user.uid,
-            familyId: fid,
-            deviceLabel: "mobile",
-            email: user.email,
-            displayName: user.displayName,
-          });
-        } catch {
-          /* ignore offline push */
-        }
-      },
-    });
-
-    if (fid && isFirebaseEmailVerified(user) !== false) {
-      try {
-        const restored = await pullCloudSnapshot(user.uid);
-        if (restored?.familyId) {
-          await persistCloudFamilyId(restored.familyId);
-          setActiveFamilyId(String(restored.familyId));
-        }
-      } catch {
-        /* offline / unverified */
-      }
-    }
-
-    let resolvedName = familyName;
-    let currency = "BDT";
-    let timezone = "Asia/Dhaka";
-    if (fid) {
-      try {
-        const profileRow = await loadOfflineSnapshot(fid, "system", "familyProfile");
-        const profile = profileRow?.data || {};
-        resolvedName = String(profile.name || familyName || "Family");
-        currency = String(profile.default_currency || profile.currency || "BDT");
-        timezone = String(profile.timezone || "Asia/Dhaka");
-      } catch {
-        /* keep defaults */
-      }
-      setFamilies([
-        {
-          id: fid,
-          name: resolvedName || "Family",
-          default_currency: currency,
-          timezone,
-        },
-      ]);
-      setActiveFamilyId(fid);
-    }
-
-    await persistSession(
-      cloudTok,
-      "",
-      {
-        id: user.uid,
-        uid: user.uid,
-        email: user.email,
-        full_name: user.displayName || fullName || user.email,
-        is_email_verified: isFirebaseEmailVerified(user),
-      },
-      user.email || email,
-      fid || undefined,
-      false
-    );
-    setFirebaseUser(user);
-    if (fid && isFirebaseEmailVerified(user)) {
-      void enableMobilePushNotifications({ familyId: fid, deviceLabel: "mobile" });
-    }
-    return cloudTok;
-  }
-
-  async function loginWithGoogle() {
-    if (!isFirebaseFirstMode()) {
-      Alert.alert("Google", "Firebase-first mode required");
-      return;
-    }
-    setLoading(true);
-    try {
-      const user = await firebaseSignInGoogle();
-      await ensureUserProfile(user.uid, user);
-      let familyId = "";
-      try {
-        familyId = await resolveAndBindUserFamily({
-          uid: user.uid,
-          email: user.email || null,
-          displayName: user.displayName || null,
-        });
-      } catch {
-        const profile = await getUserFamilyProfile(user.uid);
-        familyId = String(profile?.family_id || "");
-        try {
-          const pulled = await pullCloudSnapshot(user.uid);
-          if (pulled?.familyId) familyId = String(pulled.familyId);
-        } catch {
-          /* ignore */
-        }
-      }
-      if (!familyId) {
-        await activateCloudSession(user, "");
-        setAuthMode("create");
-        setFamilySetupMode("create");
-        setStatus("ok");
-        setMessage("Google signed in — create or join a family.");
-        return;
-      }
-      try {
-        await bindCloudFamilyIdentity({
-          uid: user.uid,
-          familyId,
-          email: user.email || null,
-          displayName: user.displayName || null,
-          role: "MEMBER",
-        });
-      } catch {
-        /* ignore */
-      }
-      const nextToken = await activateCloudSession(user, familyId);
-      setStatus("ok");
-      setMessage("Logged in with Google (Firebase).");
-      await refreshAll(nextToken);
-    } catch (error) {
-      setStatus("failed");
-      const text = formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en");
-      setMessage(text);
-      Alert.alert("Google", text);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function login() {
     if (!email.trim() || !password) {
       setMessage("Email and password required.");
@@ -1382,65 +1166,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode()) {
-        const user = await firebaseSignInEmail(email.trim(), password);
-        await ensureUserProfile(user.uid, user);
-        let familyId = "";
-        try {
-          familyId = await resolveAndBindUserFamily({
-            uid: user.uid,
-            email: user.email || email.trim(),
-            displayName: user.displayName || null,
-          });
-        } catch {
-          const profile = await getUserFamilyProfile(user.uid);
-          familyId = String(profile?.family_id || "");
-          try {
-            const pulled = await pullCloudSnapshot(user.uid);
-            if (pulled?.familyId) familyId = String(pulled.familyId);
-          } catch {
-            /* local only until verified / online */
-          }
-        }
-        if (!familyId) {
-          setStatus("failed");
-          setMessage("No family linked. Create or join a family.");
-          await activateCloudSession(user, "");
-          setAuthMode("create");
-          setFamilySetupMode("create");
-          return;
-        }
-        try {
-          await bindCloudFamilyIdentity({
-            uid: user.uid,
-            familyId,
-            email: user.email || email.trim(),
-            displayName: user.displayName || null,
-            role: "MEMBER",
-          });
-        } catch {
-          /* ignore */
-        }
-        const nextToken = await activateCloudSession(user, familyId);
-        setStatus("ok");
-        setMessage(
-          requireEmailVerification() && !isFirebaseEmailVerified(user)
-            ? "Logged in — verify email for cloud sync."
-            : "Logged in (Firebase cloud)."
-        );
-        if (rememberDevice) {
-          try {
-            if (await SecureStore.isAvailableAsync()) {
-              await SecureStore.setItemAsync(REMEMBER_EMAIL_KEY, email.trim());
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        await refreshAll(nextToken);
-        return;
-      }
-
       await persistApiBaseUrl(apiBaseUrlInput);
       const data = await apiPost("/api/v1/auth/login", { email: email.trim(), password }, "");
       const nextToken = data.access_token || "";
@@ -1460,16 +1185,11 @@ export default function HomeScreen() {
       await refreshAll(nextToken);
     } catch (error) {
       setStatus("failed");
-      const text =
-        isFirebaseFirstMode()
-          ? formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en")
-          : error instanceof Error
-            ? error.message
-            : "Login failed.";
+      const text = error instanceof Error ? error.message : "Login failed.";
       // Account exists but signup OTP was never confirmed -- route to the OTP
       // screen instead of leaving the user stuck on a plain error toast with
       // no way to enter the code that was already emailed/texted to them.
-      if (!isFirebaseFirstMode() && /verification/i.test(text)) {
+      if (/verification/i.test(text)) {
         setPendingAfterVerify("login");
         setOtpStep(true);
         setMessage(
@@ -1502,40 +1222,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode()) {
-        const created = await createCloudFamilyAccount({
-          email: email.trim(),
-          password,
-          fullName: fullName.trim(),
-          familyName: familyName.trim(),
-          currency: familyCurrency.trim() || "BDT",
-          timezone: familyTimezone.trim() || "Asia/Dhaka",
-          ownerRelation,
-          deviceLabel: "mobile",
-        });
-        const nextToken = await activateCloudSession(
-          created.user,
-          created.familyId,
-          familyName.trim()
-        );
-        setStatus("ok");
-        if (created.existing) {
-          setMessage("Existing cloud family restored.");
-        } else if (created.verificationSent) {
-          setMessage("Family created — check email to verify for cloud sync.");
-        } else {
-          setMessage(tm("familyCreatedOk"));
-        }
-        try {
-          await refreshAll(nextToken);
-        } catch (refreshError) {
-          const refreshText =
-            refreshError instanceof Error ? refreshError.message : "Family created; dashboard refresh failed";
-          setMessage(`${tm("familyCreatedOk")} (${refreshText})`);
-        }
-        return;
-      }
-
       const url = await persistApiBaseUrl(apiBaseUrlInput);
       const probe = await probeApiHealth(url, 5000);
       if (!probe.ok) {
@@ -1584,12 +1270,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       setStatus("failed");
-      const text =
-        isFirebaseFirstMode()
-          ? formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en")
-          : error instanceof Error
-            ? error.message
-            : "Create family failed";
+      const text = error instanceof Error ? error.message : "Create family failed";
       setMessage(text);
       Alert.alert(tm("authCreate"), text);
     } finally {
@@ -1610,27 +1291,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode() && isCloudAccessToken(token)) {
-        const created = await createCloudFamilyAccount({
-          email: email.trim(),
-          password,
-          fullName: fullName.trim() || email.trim(),
-          familyName: familyName.trim(),
-          currency: familyCurrency.trim() || "BDT",
-          timezone: familyTimezone.trim() || "Asia/Dhaka",
-          ownerRelation,
-          deviceLabel: "mobile",
-        });
-        const nextToken = await activateCloudSession(
-          created.user,
-          created.familyId,
-          familyName.trim()
-        );
-        setStatus("ok");
-        setMessage(tm("familyCreatedOk"));
-        await refreshAll(nextToken);
-        return;
-      }
       const created = await apiPost(
         "/api/v1/families",
         {
@@ -1679,23 +1339,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode() && isCloudAccessToken(token)) {
-        const auth = getFirebaseAuth();
-        const user = auth?.currentUser;
-        if (!user) throw new Error("Firebase session missing — login again");
-        const result = await joinFamilyByInviteCode({
-          code: inviteCode.trim().toUpperCase(),
-          uid: user.uid,
-          email: user.email || email.trim(),
-          displayName: user.displayName || fullName.trim() || email.trim(),
-          relationshipType: joinRelation,
-        });
-        const nextToken = await activateCloudSession(user, result.familyId);
-        setStatus("ok");
-        setMessage(tm("joinRequestedOk"));
-        await refreshAll(nextToken);
-        return;
-      }
       await apiPost(
         "/api/v1/invites/join",
         buildJoinInvitePayload({
@@ -1737,39 +1380,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode()) {
-        let user;
-        try {
-          user = await firebaseSignInEmail(email.trim(), password);
-        } catch (signInErr: any) {
-          const code = String(signInErr?.code || "");
-          if (code.includes("user-not-found") || code.includes("invalid-credential")) {
-            const registered = await firebaseRegisterEmail(
-              email.trim(),
-              password,
-              fullName.trim() || email.trim()
-            );
-            user = registered.user;
-          } else {
-            throw signInErr;
-          }
-        }
-        await ensureUserProfile(user.uid, user);
-        const result = await joinFamilyByInviteCode({
-          code: inviteCode.trim().toUpperCase(),
-          uid: user.uid,
-          email: user.email || email.trim(),
-          displayName: user.displayName || fullName.trim() || email.trim(),
-          relationshipType: joinRelation,
-        });
-        const nextToken = await activateCloudSession(user, result.familyId);
-        setStatus("ok");
-        setMessage(tm("joinRequestedOk"));
-        await refreshAll(nextToken);
-        setAuthMode("login");
-        return;
-      }
-
       await persistApiBaseUrl(apiBaseUrlInput);
       const session = await ensureAuthSession();
       if (session.needsOtp) {
@@ -1797,13 +1407,7 @@ export default function HomeScreen() {
       setAuthMode("login");
     } catch (error) {
       setStatus("failed");
-      setMessage(
-        isFirebaseFirstMode()
-          ? formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en")
-          : error instanceof Error
-            ? error.message
-            : "Join failed"
-      );
+      setMessage(error instanceof Error ? error.message : "Join failed");
     } finally {
       setLoading(false);
     }
@@ -1817,13 +1421,6 @@ export default function HomeScreen() {
     }
     setLoading(true);
     try {
-      if (isFirebaseFirstMode()) {
-        await firebaseSendPasswordReset(email.trim());
-        setStatus("ok");
-        setMessage(tm("resetLinkSent"));
-        setAuthMode("login");
-        return;
-      }
       await persistApiBaseUrl(apiBaseUrlInput);
       await apiPost("/api/v1/auth/forgot-password", { email: email.trim() }, "");
       setStatus("ok");
@@ -1831,13 +1428,7 @@ export default function HomeScreen() {
       setAuthMode("login");
     } catch (error) {
       setStatus("failed");
-      setMessage(
-        isFirebaseFirstMode()
-          ? formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en")
-          : error instanceof Error
-            ? error.message
-            : "Reset failed"
-      );
+      setMessage(error instanceof Error ? error.message : "Reset failed");
     } finally {
       setLoading(false);
     }
@@ -1850,7 +1441,7 @@ export default function HomeScreen() {
     if (!offlineSession) {
       keepFamilyId = (await loadOfflineFamily().catch(() => null))?.id ?? null;
       // Try to deliver queued changes before they are wiped below.
-      if (token && activeFamilyId && !isCloudAccessToken(token)) {
+      if (token && activeFamilyId) {
         try {
           await syncManager.replayPending(token, activeFamilyId, 50);
         } catch {
@@ -1873,15 +1464,7 @@ export default function HomeScreen() {
         if (!proceed) return;
       }
     }
-    if (isFirebaseFirstMode() || isCloudAccessToken(token)) {
-      try {
-        await firebaseSignOut();
-      } catch {
-        /* ignore */
-      }
-      await clearCloudSession();
-      setCloudApiContext({ familyId: "", user: null, onAfterWrite: null });
-    } else if (refreshToken && !isOfflineAccessToken(token)) {
+    if (refreshToken && !isOfflineAccessToken(token)) {
       // Revoke the refresh session server-side so a leaked/cached refresh
       // token can't still mint new access tokens after the user logs out.
       try {
@@ -1987,19 +1570,6 @@ export default function HomeScreen() {
         setStatus("ok");
         setMessage("Offline mode — data from phone SQLite.");
         return;
-      }
-      if (isCloudAccessToken(authToken)) {
-        const uid = String(authToken).replace(/^firebase\./, "");
-        try {
-          const restored = await pullCloudSnapshot(uid);
-          if (restored?.familyId) {
-            setActiveFamilyId(String(restored.familyId));
-            await persistCloudFamilyId(String(restored.familyId));
-            setCloudApiContext({ familyId: String(restored.familyId) });
-          }
-        } catch {
-          /* use local SQLite cache */
-        }
       }
       const familyResponse = await apiGet("/api/v1/families", authToken);
       const list: Family[] = Array.isArray(familyResponse) ? familyResponse : familyResponse.families || [];
@@ -2302,53 +1872,88 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live updates for the whole family over the VPS WebSocket. The server
+  // sends only "what changed"; the app refetches through the REST API.
+  const refreshAllRef = useRef(refreshAll);
   useEffect(() => {
-    if (!isFirebaseFirstMode()) return;
-    return subscribeFirebaseAuth((user) => {
-      setFirebaseUser(user);
-      if (!user) return;
-      const familyId = activeFamilyId || "";
-      setCloudApiContext({
-        user: {
-          uid: user.uid,
-          email: user.email || undefined,
-          displayName: user.displayName || undefined,
-        },
-        ...(familyId ? { familyId } : {}),
-      });
-    });
-  }, [activeFamilyId]);
+    refreshAllRef.current = refreshAll;
+  });
+
+  useEffect(() => {
+    if (!token || !activeFamilyId || isOfflineAccessToken(token)) return;
+    let alive = true;
+    let ws: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    // Keep the socket alive through the Nginx proxy read timeout.
+    const pingTimer = setInterval(() => {
+      try {
+        if (ws?.readyState === 1) ws.send("ping");
+      } catch {
+        /* ignore */
+      }
+    }, 25000);
+
+    const scheduleRetry = () => {
+      if (!alive) return;
+      attempt += 1;
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 1000);
+      retryTimer = setTimeout(connect, delay);
+    };
+
+    function connect() {
+      if (!alive) return;
+      const wsBase = getApiBaseUrl().replace(/\/$/, "").replace(/^http/i, "ws");
+      try {
+        ws = new WebSocket(`${wsBase}/api/v1/realtime/ws/${activeFamilyId}?token=${encodeURIComponent(token)}`);
+      } catch {
+        scheduleRetry();
+        return;
+      }
+      ws.onopen = () => {
+        attempt = 0;
+      };
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(String(event.data));
+          if (data?.type !== "family.changed") return;
+        } catch {
+          return;
+        }
+        // Several changes in a burst → one refresh.
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          void refreshAllRef.current(token);
+        }, 1500);
+      };
+      ws.onclose = (event) => {
+        // 4401/4403: token revoked or no longer a member — stop retrying.
+        if (event?.code === 4401 || event?.code === 4403) return;
+        scheduleRetry();
+      };
+    }
+
+    connect();
+    return () => {
+      alive = false;
+      clearInterval(pingTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      try {
+        ws?.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [token, activeFamilyId]);
 
   useEffect(() => {
     if (!token || !autoSyncEnabled) return;
 
     const runAutoSync = () => {
       if (loading) return;
-      if (isCloudAccessToken(token)) {
-        const uid = String(token).replace(/^firebase\./, "");
-        const familyId = activeFamilyId;
-        Promise.resolve().then(async () => {
-          try {
-            await pullCloudSnapshot(uid);
-            if (familyId) {
-              const authUser = getFirebaseAuth()?.currentUser;
-              if (authUser && (!requireEmailVerification() || isFirebaseEmailVerified(authUser))) {
-                await pushCloudSnapshot({
-                  uid,
-                  familyId,
-                  deviceLabel: "mobile",
-                  email: authUser.email,
-                  displayName: authUser.displayName,
-                });
-              }
-            }
-            await refreshAll(token);
-          } catch {
-            /* keep last UI */
-          }
-        });
-        return;
-      }
       if (pendingSyncCount > 0) {
         Promise.resolve().then(() => replayPendingSync(true));
       }
@@ -2416,33 +2021,6 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, dark ? styles.safeAreaDark : null]}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
-      {token &&
-      isCloudAccessToken(token) &&
-      requireEmailVerification() &&
-      firebaseUser &&
-      !isFirebaseEmailVerified(firebaseUser) ? (
-        <EmailVerificationGate
-          email={firebaseUser.email || email}
-          uid={firebaseUser.uid}
-          busy={loading}
-          lang={appLang}
-          onResend={async () => {
-            await firebaseResendVerification(firebaseUser);
-          }}
-          onRefresh={async () => {
-            const refreshed = await firebaseReloadUser(firebaseUser);
-            setFirebaseUser(refreshed);
-            if (refreshed && isFirebaseEmailVerified(refreshed)) {
-              setMessage(appLang === "bn" ? "ইমেইল ভেরিফাই হয়েছে" : "Email verified");
-              void enableMobilePushNotifications({ familyId: activeFamilyId, deviceLabel: "mobile" });
-              await refreshAll(token);
-            } else {
-              setMessage(appLang === "bn" ? "এখনো ভেরিফাই হয়নি — লিংক চেক করুন" : "Still not verified — check the link");
-            }
-          }}
-          onSignOut={() => void logout()}
-        />
-      ) : (
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
         <ScrollView contentContainerStyle={[styles.container, token ? styles.containerWithNav : null]}>
           {!token ? (
@@ -2535,62 +2113,6 @@ export default function HomeScreen() {
                       onLegacySubmit={async (nextEmail, nextPassword) => {
                         setEmail(nextEmail);
                         setPassword(nextPassword);
-                        if (isFirebaseFirstMode()) {
-                          setLoading(true);
-                          try {
-                            const user = await firebaseSignInEmail(nextEmail, nextPassword);
-                            await ensureUserProfile(user.uid, user);
-                            const profile = await getUserFamilyProfile(user.uid);
-                            let familyId = String(profile?.family_id || "");
-                            try {
-                              const pulled = await pullCloudSnapshot(user.uid);
-                              if (pulled?.familyId) familyId = String(pulled.familyId);
-                            } catch {
-                              /* local until online/verified */
-                            }
-                            if (!familyId) {
-                              setStatus("failed");
-                              setMessage("No family linked. Create or join a family.");
-                              await activateCloudSession(user, "");
-                              setAuthMode("create");
-                              setFamilySetupMode("create");
-                              return;
-                            }
-                            const nextToken = await activateCloudSession(user, familyId);
-                            setStatus("ok");
-                            setMessage(
-                              requireEmailVerification() && !isFirebaseEmailVerified(user)
-                                ? "Logged in — verify email for cloud sync."
-                                : "Logged in (Firebase cloud)."
-                            );
-                            useAuthStore.getState().setSession(nextToken, {
-                              id: user.uid,
-                              email: user.email || "",
-                              full_name: user.displayName || "",
-                            });
-                            if (rememberDevice) {
-                              try {
-                                if (await SecureStore.isAvailableAsync()) {
-                                  await SecureStore.setItemAsync(REMEMBER_EMAIL_KEY, nextEmail);
-                                }
-                              } catch {
-                                /* ignore */
-                              }
-                            }
-                            await refreshAll(nextToken);
-                            void authHook.refreshMe();
-                            void familyHook.refetch();
-                          } catch (error) {
-                            setStatus("failed");
-                            const text = formatFirebaseAuthError(error, appLang === "bn" ? "bn" : "en");
-                            setMessage(text);
-                            Alert.alert(tm("loginFailed"), text);
-                            throw error;
-                          } finally {
-                            setLoading(false);
-                          }
-                          return;
-                        }
                         await persistApiBaseUrl(apiBaseUrlInput);
                         setLoading(true);
                         try {
@@ -2810,12 +2332,12 @@ export default function HomeScreen() {
                   </>
                 ) : null}
 
-                {!isFirebaseFirstMode() ? (
-                  <>
+                {/* Server address: the VPS API (defaults to the production URL). */}
+                <>
                     <Text style={[styles.sectionLabel, dark ? styles.textOnDark : null]}>{tm("apiBaseUrl")}</Text>
                     <TextInput
                       style={[styles.input, dark ? styles.inputDark : null]}
-                      placeholder="http://192.168.13.248:8000"
+                      placeholder="https://app.s4businessthinking.com"
                       placeholderTextColor="#8aa39a"
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -2825,14 +2347,9 @@ export default function HomeScreen() {
                     />
                     <Text style={[styles.muted, dark ? styles.mutedOnDark : null]}>{tm("apiBaseHelpUsb")}</Text>
                     <Pressable style={styles.secondaryButton} onPress={testApiConnection} disabled={loading}>
-                      <Text style={styles.secondaryButtonText}>{loading ? "…" : "Test Wi-Fi API"}</Text>
+                      <Text style={styles.secondaryButtonText}>{loading ? "…" : "Test server connection"}</Text>
                     </Pressable>
                   </>
-                ) : (
-                  <Text style={[styles.muted, dark ? styles.mutedOnDark : null]}>
-                    Firebase cloud mode — PC/LAN server লাগে না।
-                  </Text>
-                )}
 
                 {authMode === "create" ? (
                   <>
@@ -2848,11 +2365,6 @@ export default function HomeScreen() {
                 ) : null}
                 {authMode === "login" ? (
                   <>
-                    <Pressable style={styles.secondaryButton} onPress={() => void loginWithGoogle()} disabled={loading}>
-                      <Text style={styles.secondaryButtonText}>
-                        {loading ? "…" : appLang === "bn" ? "Google দিয়ে সাইন ইন" : "Sign in with Google"}
-                      </Text>
-                    </Pressable>
                     <Pressable style={styles.secondaryButton} onPress={createOfflineAccountAuth} disabled={loading}>
                       <Text style={styles.secondaryButtonText}>
                         {loading ? "…" : "Offline ব্যবহার করুন (server ছাড়া)"}
@@ -3710,7 +3222,6 @@ export default function HomeScreen() {
           </View>
         </Modal>
       </KeyboardAvoidingView>
-      )}
     </SafeAreaView>
   );
 }

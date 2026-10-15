@@ -34,7 +34,6 @@ checks=(
   "deploy/SECURITY_AUDIT_REPORT.md"
   "deploy/BETA_TESTING_PLAN.md"
   "deploy/BUILD_ORDER_GAPS_CLOSED.md"
-  "deploy/scripts/verify_fcm_ready.sh"
   "deploy/scripts/vps_ssl_certbot.sh"
   "deploy/scripts/vps_backup_cron.sh"
 )

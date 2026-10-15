@@ -1,5 +1,5 @@
 /**
- * Client-side report exports for cloud-local mode (no backend / no Firebase Storage).
+ * Client-side report exports for offline mode (no server round-trip).
  * Excel → .xls (SpreadsheetML HTML that Excel/Sheets open)
  * PDF → minimal text PDF
  */

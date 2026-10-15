@@ -35,7 +35,6 @@ if ($live) {
   Write-Host "== live smokes =="
   $smokes = @(
     "scripts\smtp_email_smoke.py",
-    "scripts\fcm_push_smoke.py",
     "scripts\object_storage_smoke.py"
   )
   foreach ($rel in $smokes) {

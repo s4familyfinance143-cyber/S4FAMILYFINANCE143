@@ -1,5 +1,5 @@
 /**
- * On-device receipt OCR for Firebase cloud mode (no PC backend).
+ * On-device receipt OCR (works offline, no server round-trip).
  * tesseract.js is loaded lazily so it does not inflate the main bundle.
  */
 
@@ -21,7 +21,7 @@ export async function extractTextFromImageFile(file, { lang = "eng", onProgress 
   }
 }
 
-/** Turn OCR text into grocery-style line suggestions (same shape as cloudApiShim). */
+/** Turn OCR text into grocery-style line suggestions. */
 export function grocerySuggestionsFromOcrText(rawText) {
   const text = String(rawText || "");
   const lines = text

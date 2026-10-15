@@ -1,16 +1,7 @@
 /**
- * HTTP client — Axios primary, fetch fallback.
- * Firebase-first: routes through cloudApiBridge (SQLite + Firestore sync).
+ * HTTP client — Axios primary, fetch fallback. Every request goes to the VPS API.
  */
 import Constants from "expo-constants";
-import { isFirebaseFirstMode } from "../firebase/config";
-import {
-  cloudBridgeDelete,
-  cloudBridgeGet,
-  cloudBridgePatch,
-  cloudBridgePost,
-  shouldUseCloudBridge,
-} from "../lib/cloudApiBridge";
 
 function normalizeApiBaseUrl(value: string) {
   const cleaned = value.trim().replace(/\/+$/, "");
@@ -18,12 +9,12 @@ function normalizeApiBaseUrl(value: string) {
   return cleaned.replace(/\/api\/v1$/i, "");
 }
 
-const firebaseFirst = isFirebaseFirstMode();
+const PRODUCTION_API_BASE_URL = "https://app.s4businessthinking.com";
 
 const DEFAULT_BASE = normalizeApiBaseUrl(
   process.env.EXPO_PUBLIC_API_BASE_URL ||
     (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
-    (firebaseFirst ? "" : "http://127.0.0.1:8000")
+    PRODUCTION_API_BASE_URL
 );
 
 let runtimeBase = DEFAULT_BASE;
@@ -137,7 +128,7 @@ async function requestWithFetch<T>(path: string, opts: RequestOpts, headers: Rec
   const method = (opts.method || "GET").toUpperCase();
   const url = path.startsWith("http") ? path : `${runtimeBase}${path}`;
   if (!runtimeBase && !path.startsWith("http")) {
-    throw new Error("API base URL not set (Firebase-first mode uses local cloud bridge)");
+    throw new Error("API base URL not set — enter the server address in settings");
   }
   const timeoutMs = opts.timeoutMs ?? 30000;
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -157,20 +148,7 @@ async function requestWithFetch<T>(path: string, opts: RequestOpts, headers: Rec
   }
 }
 
-async function requestViaCloudBridge<T>(path: string, opts: RequestOpts): Promise<T> {
-  const method = (opts.method || "GET").toUpperCase();
-  if (method === "GET") return (await cloudBridgeGet(path)) as T;
-  if (method === "POST") return (await cloudBridgePost(path, opts.body)) as T;
-  if (method === "PATCH" || method === "PUT") return (await cloudBridgePatch(path, opts.body)) as T;
-  if (method === "DELETE") return (await cloudBridgeDelete(path)) as T;
-  throw new Error(`Unsupported method in cloud mode: ${method}`);
-}
-
 async function request<T = any>(path: string, opts: RequestOpts = {}): Promise<T> {
-  if (shouldUseCloudBridge()) {
-    return requestViaCloudBridge<T>(path, opts);
-  }
-
   const token = opts.token !== undefined ? opts.token : authToken;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

@@ -70,7 +70,7 @@ Prefer the release kit scripts above. Manual equivalent:
    copy deploy\docker\.env.production.example deploy\docker\.env.production
    ```
 4. Edit `.env.production`: strong `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `REDIS_PASSWORD`, `MINIO_*`, `CORS_ORIGINS`, `APP_PUBLIC_URL`
-5. Optional: SMTP + FCM credential paths
+5. Optional: SMTP credentials
 6. Build/start: `bash deploy/scripts/vps_go_live_deploy.sh`  
    (or `docker compose --env-file .env.production -f docker-compose.production.yml up -d --build` from `deploy/docker`)
 7. Verify: `bash deploy/scripts/verify_live.sh https://your-domain.example`

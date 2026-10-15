@@ -852,6 +852,7 @@ def phase10b_sync_push(
     _phase10b_register_device(db, family_id, device_id, device_name, platform, app_version)
 
     accepted_ids: list[str] = []
+    accepted_changes: list[tuple[str, str, Any]] = []
     conflict_ids: list[str] = []
     rejected: list[dict[str, Any]] = []
 
@@ -990,6 +991,7 @@ def phase10b_sync_push(
                     raise
                 outbox_id = str(winner)
         accepted_ids.append(outbox_id)
+        accepted_changes.append((entity_type, operation, entity_id))
 
         # Client-flagged conflict still recorded; auto conflicts also created during apply.
         if bool(change.get("conflict")):
@@ -1043,6 +1045,19 @@ def phase10b_sync_push(
             "conflicted_outbox_ids": [],
         }
     conflict_ids.extend(apply_result.get("conflict_ids") or [])
+    if apply_result.get("synced_count") or apply_result.get("conflict_count"):
+        # Live update for the rest of the family (sent after the commit below).
+        from app.services.family_realtime import queue_family_event
+
+        for changed_type, changed_op, changed_id in accepted_changes:
+            queue_family_event(
+                db,
+                family_id,
+                entity_type=changed_type,
+                action=f"SYNC_{changed_op}",
+                entity_id=str(changed_id) if changed_id else None,
+                actor_member_id=member_id,
+            )
     if rejected:
         apply_result["failed"] = list(apply_result.get("failed") or []) + rejected
         apply_result["failed_count"] = int(apply_result.get("failed_count") or 0) + len(rejected)

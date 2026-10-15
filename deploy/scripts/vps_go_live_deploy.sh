@@ -105,5 +105,4 @@ else
   echo "  2) sudo bash deploy/scripts/vps_ssl_certbot.sh app.s4businessthinking.com you@email.com"
 fi
 echo "  4) sudo bash deploy/scripts/vps_backup_cron.sh"
-echo "  5) bash deploy/scripts/verify_fcm_ready.sh deploy/docker/.env.production"
 echo "Full checklist: deploy/OPERATOR_GO_LIVE.md"

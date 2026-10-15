@@ -21,4 +21,4 @@ S4 Family Finance 143 — where to install (no money needed for local)
         (sets up local project helpers — not a Play-Store-style desktop app)
 
 3) MONEY later (only for public online)
-   VPS + domain + DNS + SSL + Firebase
+   VPS + domain + DNS + SSL

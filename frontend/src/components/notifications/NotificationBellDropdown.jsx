@@ -27,12 +27,9 @@ function isInviteNotification(item) {
   return type === "INVITE" || Boolean(extractInviteCode(item));
 }
 
-/** Hide legacy/local-only invite codes that never reached Firebase. */
+/** Every notification comes from the VPS server, so invite codes in it are real. */
 function isShareableInviteNotification(item) {
-  if (!isInviteNotification(item)) return true;
-  if (item?.cloud_ok === true || item?.cloud_published === true) return true;
-  // Old rows without flag — do not show code (avoids expired/fake codes)
-  return false;
+  return Boolean(item);
 }
 
 /**

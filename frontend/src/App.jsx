@@ -8,12 +8,9 @@ import "./styles/shoyb-mobile.css";
 import "./styles/layout-compact.css";
 import { SplashScreen } from "./components/auth/SplashScreen";
 import { FamilyAuthGate } from "./components/auth/FamilyAuthGate";
-import { CloudBackupOnboarding } from "./components/auth/CloudBackupOnboarding";
-import { EmailVerificationGate } from "./components/auth/EmailVerificationGate";
 import {
   enqueueGroceryChange,
   enqueueOutboxChange,
-  flushCloudSnapshotOutbox,
   flushLocalOutbox,
   isBrowserOnline,
   listPendingOutbox,
@@ -66,39 +63,8 @@ import {
   summarizeLifeItems,
   updatePath as lifeUpdatePath,
 } from "./lifeArchitectureApi";
-import {
-  isFirebaseConfigured,
-  subscribeFirebaseAuth,
-  firebaseSignInEmail,
-  firebaseRegisterEmail,
-  firebaseSignInGoogle,
-  firebaseSignOut,
-  isFirebaseEmailVerified,
-  firebaseReloadUser,
-  firebaseResendEmailVerification,
-  firebaseSendPasswordReset,
-  formatFirebaseAuthError,
-  pushCloudSnapshot,
-  pullCloudSnapshot,
-  getCloudSnapshotMeta,
-  ensureUserProfile,
-  getUserProfileDoc,
-  bindCloudFamilyIdentity,
-  resolveAndBindUserFamily,
-  createCloudFamilyAccount,
-  enableWebPushNotifications,
-  getNotificationPermission,
-  isWebFcmVapidConfigured,
-  subscribeForegroundMessages,
-} from "./firebase";
-import {
-  uploadFamilyDocument,
-  uploadTransactionAttachment,
-  uploadProfilePhotoToFirebase,
-  removeProfilePhotoFromFirebase,
-  validateProfilePhotoFile,
-} from "./firebase/cloudStorage";
-import { joinFamilyByInviteCode } from "./firebase/familyCloud";
+import { getNotificationPermission, requestBrowserNotifications, showBrowserNotification } from "./lib/browserNotify";
+import { validateProfilePhotoFile } from "./lib/profilePhoto";
 import { buildBackupBlob, restoreBackupBlob } from "./lib/backupPayload";
 import {
   loadCloudAutoSyncSettings,
@@ -109,9 +75,6 @@ import {
 } from "./lib/cloudAutoSync";
 import { isPhase15Menu, isPhase16Menu, parsePhaseTab, isSettingsMenu, parseSettingsTab } from "./lib/navMenu";
 import {
-  isFirebaseFirstMode,
-  requireEmailVerification,
-  loadCloudOnlyMode,
   persistCloudOnlyMode,
   loadCloudFamilyId,
   persistCloudFamilyId,
@@ -127,7 +90,6 @@ import {
   restoreAuthSession,
   touchAuthSessionActivity,
 } from "./lib/authSession";
-import { loadBackupOnboardingDone, saveBackupOnboardingDone } from "./lib/cloudOnboardingStorage";
 import {
   DEFAULT_CLOUD_CATEGORIES,
   recomputeWalletBalancesFromLedger,
@@ -162,13 +124,6 @@ import {
   recurringHistoryFromLedger,
 } from "./lib/cloudLocalFinance";
 import {
-  cloudApiGet,
-  cloudApiPost,
-  cloudApiPatch,
-  cloudApiDelete,
-  seedCloudModuleCaches,
-} from "./lib/cloudApiShim";
-import {
   isGoogleDriveConfigured,
   connectGoogleDrive,
   getStoredDriveToken,
@@ -194,9 +149,6 @@ import arMessages from "./i18n/messages/ar.json";
 import hiMessages from "./i18n/messages/hi.json";
 import urMessages from "./i18n/messages/ur.json";
 
-const FIREBASE_CONFIGURED = isFirebaseConfigured();
-const FIREBASE_FIRST_MODE = isFirebaseFirstMode();
-const REQUIRE_EMAIL_VERIFICATION = requireEmailVerification();
 const DRIVE_CONFIGURED = isGoogleDriveConfigured();
 const LOCAL_FOLDER_SUPPORTED = isLocalFolderBackupSupported();
 
@@ -412,13 +364,8 @@ function App() {
   /** False until the first /families fetch finishes for the current token. */
   const [familiesReady, setFamiliesReady] = useState(false);
   /** True while restoring/selecting the user's active family after login or refresh. */
-  const [isFamilyLoading, setIsFamilyLoading] = useState(() =>
-    Boolean(FIREBASE_FIRST_MODE && (loadCloudOnlyMode() || loadCloudFamilyId())),
-  );
-  /** True until first Firebase auth callback finishes when a cloud session is expected. */
-  const [sessionBootstrapping, setSessionBootstrapping] = useState(() =>
-    Boolean(FIREBASE_FIRST_MODE && FIREBASE_CONFIGURED && (loadCloudOnlyMode() || loadCloudFamilyId())),
-  );
+  const [isFamilyLoading, setIsFamilyLoading] = useState(false);
+  const [sessionBootstrapping, setSessionBootstrapping] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [displayAvatarUrl, setDisplayAvatarUrl] = useState("");
   const [myPermissions, setMyPermissions] = useState(null);
@@ -438,17 +385,11 @@ function App() {
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [status, setStatus] = useState("");
   const [toast, setToast] = useState(null);
-  const [firebaseUser, setFirebaseUser] = useState(null);
-  const [firebaseMeta, setFirebaseMeta] = useState(null);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [driveConnected, setDriveConnected] = useState(() => Boolean(getStoredDriveToken()));
   const [driveFiles, setDriveFiles] = useState([]);
   const [localFolderLabel, setLocalFolderLabel] = useState(() => getStoredFolderLabel());
   const [cloudAutoSync, setCloudAutoSync] = useState(() => loadCloudAutoSyncSettings());
-  const [cloudOnlyMode, setCloudOnlyMode] = useState(() =>
-    FIREBASE_FIRST_MODE ? loadCloudOnlyMode() : false,
-  );
-  const [showBackupOnboarding, setShowBackupOnboarding] = useState(false);
   const cloudAutoSyncRef = useRef(cloudAutoSync);
   const cloudAutoBackupRunningRef = useRef(false);
   const driveConnectSyncOnceRef = useRef(false);
@@ -538,13 +479,9 @@ function App() {
   const [notificationSummary, setNotificationSummary] = useState(null);
   const [notificationDelivery, setNotificationDelivery] = useState(null);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [pushDevices, setPushDevices] = useState([]);
-  const [pushTokenDraft, setPushTokenDraft] = useState("");
-  const [pushPlatform, setPushPlatform] = useState("WEB");
   const [notifyDropdownOpen, setNotifyDropdownOpen] = useState(false);
   const [notifyPermission, setNotifyPermission] = useState("default");
   const [notifyPermissionHint, setNotifyPermissionHint] = useState("");
-  const [fcmClientReady, setFcmClientReady] = useState(false);
   const [zakatRecords, setZakatRecords] = useState([]);
   const [zakatSummary, setZakatSummary] = useState(null);
   const [phase15Items, setPhase15Items] = useState([]);
@@ -893,7 +830,7 @@ function App() {
   function isCloudLocalMode() {
     // Offline-first local data plane (IndexedDB). Used when the device has no
     // internet so UI + local/Google-Drive backup blobs still get real data.
-    // Firebase shim is gone — api* helpers must not fall through to the network.
+    // Offline: api* helpers throw an offline error instead of calling the server.
     return Boolean(activeFamilyId) && !isBrowserOnline();
   }
 
@@ -924,793 +861,10 @@ function App() {
     }
   }
 
-  function isCloudEmailReady(user = firebaseUser) {
-    if (!user?.uid) return false;
-    if (!REQUIRE_EMAIL_VERIFICATION) return true;
-    return isFirebaseEmailVerified(user);
-  }
-
-  /** Finance snapshot sync: allow even before email verify (rules allow own snapshots). */
-  function canSyncCloudFinance(user = firebaseUser) {
-    return Boolean(user?.uid);
-  }
-
-  async function pushCloudSnapshotIfReady(userOverride = null, familyIdOverride = null) {
-    const user = userOverride || firebaseUser;
-    const familyId = familyIdOverride || activeFamilyId;
-    if (!user?.uid || !familyId) return { ok: false, skipped: true };
-    if (!canSyncCloudFinance(user)) return { ok: false, skipped: true };
-    if (!isBrowserOnline()) return { ok: false, offline: true };
-    try {
-      await pushCloudSnapshot({
-        uid: user.uid,
-        familyId,
-        deviceLabel: SYNC_DEVICE_ID || "mobile",
-        email: user.email || null,
-        displayName: user.displayName || null,
-      });
-      return { ok: true };
-    } catch (err) {
-      softFail("Sync push", err);
-      return { ok: false, error: err };
-    }
-  }
-
-  /** Pull shared cloud snapshot into IDB, then refresh React state (multi-device wallets/tx). */
-  async function pullAndHydrateCloudLocal(userOverride = null, familyIdOverride = null) {
-    const user = userOverride || firebaseUser;
-    const familyId = familyIdOverride || activeFamilyId || loadCloudFamilyId();
-    if (!user?.uid || !familyId) return { restored: 0 };
-    if (!canSyncCloudFinance(user) || !isBrowserOnline()) return { restored: 0 };
-    try {
-      const result = await pullCloudSnapshot(user.uid);
-      const fid = result?.familyId || familyId;
-      if (fid) {
-        persistCloudFamilyId(fid);
-        if (String(fid) !== String(activeFamilyId || "")) {
-          setActiveFamilyId(fid);
-        }
-        try {
-          const { reconcileWalletBalancesForFamily, reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
-          await reconcileWalletBalancesForFamily(fid);
-          await reconcileSavingsFromLedgerForFamily(fid);
-        } catch {
-          /* ignore */
-        }
-        await hydrateFromCloudCache(fid);
-        await refreshCloudLocalAll();
-      }
-      return result || { restored: 0 };
-    } catch (err) {
-      softFail("Sync pull", err);
-      return { restored: 0, error: err };
-    }
-  }
-
-  /** Push local first, then pull-merge — prevents empty remote bags from racing over new writes. */
-  async function syncCloudLocalBidirectional(userOverride = null, familyIdOverride = null) {
-    await pushCloudSnapshotIfReady(userOverride, familyIdOverride);
-    await pullAndHydrateCloudLocal(userOverride, familyIdOverride);
-  }
-
   async function loadOfflineFinanceCache(module, name) {
     if (!activeFamilyId) return undefined;
     const cached = await loadOfflineSnapshot(activeFamilyId, module, name).catch(() => null);
     return cached?.data;
-  }
-
-  function enableCloudAutoSyncDefaults() {
-    if (!FIREBASE_CONFIGURED) return;
-    const next = saveCloudAutoSyncSettings({
-      ...cloudAutoSyncRef.current,
-      enabled: true,
-      firebase: true,
-      intervalMinutes: 15,
-    });
-    setCloudAutoSync(next);
-    cloudAutoSyncRef.current = next;
-  }
-
-  async function refreshCloudLocalAll() {
-    await loadWallets();
-    await loadCategories();
-    await loadTransactions();
-    await loadSavings();
-    await loadLoans();
-    await loadBudgets();
-    await loadRecurring();
-    await loadGoals();
-    await loadDashboard();
-    await loadGrocery({ silent: true });
-    await loadPhase15();
-    await loadPhase16();
-    await loadZakat();
-    await loadCurrencyData();
-    await loadAuditTrail();
-    await loadNotifications();
-    await loadReports();
-    await loadBackups();
-    await loadSyncStatus();
-  }
-
-  async function activateCloudSession(user, familyId, familyName = "", options = {}) {
-    const bindRole = String(options.role || "MEMBER").toUpperCase() === "OWNER" ? "OWNER" : "MEMBER";
-    persistCloudOnlyMode(true);
-    setCloudOnlyMode(true);
-    persistCloudFamilyId(familyId);
-    setActiveFamilyId(familyId);
-    setFirebaseUser(user);
-    if (familyId && user?.uid) {
-      try {
-        await Promise.race([
-          bindCloudFamilyIdentity({
-            uid: user.uid,
-            familyId,
-            email: user.email || null,
-            displayName: user.displayName || null,
-            familyName: familyName || familyId,
-            role: bindRole,
-          }),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 5000);
-          }),
-        ]);
-      } catch (err) {
-        const raw = String(err?.message || err?.code || "");
-        if (/permission-denied|insufficient permissions/i.test(raw)) {
-          softFail(
-            "Family bind",
-            new Error(
-              appLanguage === "bn"
-                ? "Firebase permission — deploy/firebase/firestore.rules Console-এ Publish করুন, তারপর Sign out → Sign in। Invite Generate আবার চেষ্টা করুন।"
-                : "Firebase permission — Publish deploy/firebase/firestore.rules in Console, then Sign out → Sign in. Try Generate invite again.",
-            ),
-          );
-        } else {
-          softFail("Family bind", err);
-        }
-      }
-    }
-    setFamilies([{ id: familyId, name: familyName || t("cloudOnlyFamilyLabel") }]);
-    setCurrentUser({
-      full_name: user.displayName || user.email || "Cloud User",
-      email: user.email || "",
-      is_email_verified: isFirebaseEmailVerified(user),
-      is_active: true,
-      uid: user.uid,
-      firebase_uid: user.uid,
-    });
-    // Release loading gates immediately so splash is not followed by a stuck "Please wait" screen
-    setIsFamilyLoading(false);
-    setSessionBootstrapping(false);
-
-    await applyCloudUserAvatar(user);
-    // Pull shared family snapshot BEFORE hydrating UI so wallets from other devices appear
-    if (isBrowserOnline() && canSyncCloudFinance(user)) {
-      try {
-        const restored = await Promise.race([
-          pullCloudSnapshot(user.uid),
-          new Promise((resolve) => {
-            window.setTimeout(() => resolve(null), 10000);
-          }),
-        ]);
-        if (restored?.familyId) {
-          persistCloudFamilyId(restored.familyId);
-          familyId = restored.familyId;
-          setActiveFamilyId(restored.familyId);
-        }
-        try {
-          const { reconcileWalletBalancesForFamily, reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
-          await reconcileWalletBalancesForFamily(familyId);
-          await reconcileSavingsFromLedgerForFamily(familyId);
-        } catch {
-          /* ignore */
-        }
-      } catch (err) {
-        softFail("Sync activate", err);
-      }
-    }
-    await hydrateFromCloudCache(familyId);
-    try {
-      await refreshCloudLocalAll();
-    } catch {
-      /* loaders may depend on family id already set */
-    }
-    try {
-      const { loadOfflineSnapshot } = await import("./lib/offlineCache");
-      const profileRow = await loadOfflineSnapshot(familyId, "system", "familyProfile");
-      const profile = profileRow?.data || {};
-      setFamilies([
-        {
-          id: familyId,
-          name: profile.name || familyName || t("cloudOnlyFamilyLabel"),
-          default_currency: profile.default_currency || profile.currency || "BDT",
-          timezone: profile.timezone || "Asia/Dhaka",
-          owner_uid: profile.owner_uid || profile.owner_id || undefined,
-        },
-      ]);
-    } catch {
-      /* keep basic family row */
-    }
-    try {
-      await seedCloudModuleCaches(familyId, {
-    ownerName: user.displayName || user.email || "Owner",
-    ownerEmail: user.email || "",
-    ownerUid: user.uid || "",
-  });
-    } catch {
-      /* already seeded or storage unavailable */
-    }
-    await refreshFirebaseMeta(user.uid, user);
-    enableCloudAutoSyncDefaults();
-    // Non-blocking cloud push — do not hold the UI
-    if (isBrowserOnline() && canSyncCloudFinance(user)) {
-      void pushCloudSnapshotIfReady(user, familyId);
-    }
-    if (isCloudEmailReady(user) && !loadBackupOnboardingDone(user.uid)) {
-      setShowBackupOnboarding(true);
-    }
-  }
-
-  function finishBackupOnboarding(skipped = false) {
-    if (firebaseUser?.uid) saveBackupOnboardingDone(firebaseUser.uid, skipped);
-    setShowBackupOnboarding(false);
-  }
-
-  async function handleOnboardingDriveConnect() {
-    await handleDriveConnect();
-  }
-
-  async function handleOnboardingPickFolder() {
-    await handlePickLocalFolder();
-    if (getStoredFolderLabel()) {
-      const next = saveCloudAutoSyncSettings({
-        ...cloudAutoSyncRef.current,
-        enabled: true,
-        local: true,
-        firebase: true,
-      });
-      setCloudAutoSync(next);
-      cloudAutoSyncRef.current = next;
-    }
-  }
-
-  async function resolveCloudFamilyId(uid, user = null) {
-    try {
-      const familyId = await Promise.race([
-        resolveAndBindUserFamily({
-          uid,
-          email: user?.email || null,
-          displayName: user?.displayName || null,
-          localFamilyId: loadCloudFamilyId() || "",
-        }),
-        new Promise((resolve) => {
-          window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 12000);
-        }),
-      ]);
-      return String(familyId || loadCloudFamilyId() || "");
-    } catch (err) {
-      softFail("Family resolve", err);
-      return loadCloudFamilyId() || "";
-    }
-  }
-
-  /** Direct cloud profile/membership restore — used by Refresh when local family_id is empty. */
-  async function restoreFamilyFromCloud(userOverride = null) {
-    const user = userOverride || firebaseUser;
-    if (!user?.uid) {
-      throw new Error(
-        appLanguage === "bn"
-          ? "লগইন নেই — Logout করে Wife ইমেইল/পাসওয়ার্ড দিয়ে Login করুন"
-          : "Not signed in — Logout and Login with Wife email/password",
-      );
-    }
-    let fid = "";
-    try {
-      const { getUserFamilyProfile } = await import("./firebase/cloudSync");
-      const profile = await getUserFamilyProfile(user.uid);
-      fid = String(profile?.family_id || "").trim();
-    } catch (err) {
-      console.warn("[S4] getUserFamilyProfile failed", err);
-    }
-    if (!fid) {
-      try {
-        const { findFamilyIdsForUid } = await import("./firebase/familyCloud");
-        const ids = await findFamilyIdsForUid(user.uid);
-        fid = String(ids?.[0] || "").trim();
-      } catch (err) {
-        console.warn("[S4] findFamilyIdsForUid failed", err);
-      }
-    }
-    if (!fid) {
-      fid = await resolveCloudFamilyId(user.uid, user);
-    }
-    if (!fid) {
-      throw new Error(
-        appLanguage === "bn"
-          ? "ক্লাউডে এই অ্যাকাউন্টের পরিবার পাওয়া যায়নি। ইন্টারনেট চেক করে আবার Refresh চাপুন।"
-          : "No cloud family found for this account. Check internet and tap Refresh again.",
-      );
-    }
-    persistCloudFamilyId(fid);
-    await activateCloudSession(user, fid);
-    return fid;
-  }
-
-  function applyOfflineCacheToState(cache) {
-    const phase15 = cache["life/phase15"];
-    const phase16 = cache["life/phase16"];
-    if (Array.isArray(cache["finance/wallets"])) setWallets(cache["finance/wallets"]);
-    if (Array.isArray(cache["finance/categories"])) setCategories(cache["finance/categories"]);
-    if (Array.isArray(cache["finance/transactions"])) setTransactions(cache["finance/transactions"]);
-    {
-      const rawSav = cache["finance/savings"];
-      const list = normalizeSavingsList(rawSav);
-      if (list.length || Array.isArray(rawSav)) {
-        const txs = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : transactions;
-        setSavings(recomputeSavingsFromLedger(list, txs));
-      }
-    }
-    if (Array.isArray(cache["finance/loans"])) setLoans(cache["finance/loans"]);
-    {
-      const rawBudgets = cache["finance/budgets"];
-      const list = normalizeBudgetsList(rawBudgets);
-      if (list.length || Array.isArray(rawBudgets) || (rawBudgets && typeof rawBudgets === "object")) {
-        const cats = Array.isArray(cache["finance/categories"]) ? cache["finance/categories"] : categories;
-        const txs = Array.isArray(cache["finance/transactions"]) ? cache["finance/transactions"] : transactions;
-        setBudgets(enrichBudgetsFromLedger(list, txs, cats));
-      }
-    }
-    if (Array.isArray(cache["finance/recurring"])) setRecurringItems(cache["finance/recurring"]);
-    if (Array.isArray(cache["finance/goals"])) setGoals(cache["finance/goals"]);
-    if (cache["finance/goalSummary"]) setGoalSummary(cache["finance/goalSummary"]);
-    if (Array.isArray(phase15?.items)) {
-      // Don't clobber non-empty React state with an empty hydrate bag (race after create).
-      setPhase15Items((prev) => (phase15.items.length || !prev?.length ? phase15.items : prev));
-      if (phase15.summary?.modules) {
-        setPhase15Summary(phase15.summary);
-      } else if (phase15.items.length) {
-        setPhase15Summary(summarizeLifeItems(phase15.items, LIFE15));
-      }
-    }
-    if (Array.isArray(phase16?.items)) {
-      setPhase16Items((prev) => (phase16.items.length || !prev?.length ? phase16.items : prev));
-      if (phase16.summary?.modules) {
-        setPhase16Summary(phase16.summary);
-      } else if (phase16.items.length) {
-        setPhase16Summary(summarizeLifeItems(phase16.items, LIFE16));
-      }
-    }
-    if (cache["zakat/main"]) {
-      const raw = cache["zakat/main"];
-      const records = Array.isArray(raw) ? raw : raw?.records || raw?.items || [];
-      setZakatRecords((prev) => (records.length || !prev?.length ? records : prev));
-      if (cache["zakat/summary"]) {
-        setZakatSummary(cache["zakat/summary"]);
-      } else if (records.length) {
-        setZakatSummary({
-          record_count: records.length,
-          count: records.length,
-          total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
-          latest: records[0] || null,
-        });
-      }
-    } else if (cache["zakat/summary"]) {
-      setZakatSummary(cache["zakat/summary"]);
-    }
-    if (cache["reports/overview"]) {
-      const raw = cache["reports/overview"];
-      if (raw?.financial || raw?.wallet) {
-        setFinancialReport(raw.financial || null);
-        setWalletReport(raw.wallet || null);
-      } else if (raw?.summary) {
-        setFinancialReport(raw);
-      }
-    }
-    if (cache["system/currency"]) {
-      const bag = cache["system/currency"];
-      if (bag && typeof bag === "object" && (bag.currencies || bag.exchangeRates || bag.currencySummary)) {
-        if (Array.isArray(bag.currencies)) setCurrencies(bag.currencies);
-        if (Array.isArray(bag.exchangeRates)) setExchangeRates(bag.exchangeRates);
-        if (bag.currencySummary) setCurrencySummary(bag.currencySummary);
-        else if (bag.base_currency || bag.code) {
-          setCurrencySummary({
-            base_currency: bag.base_currency || bag.code,
-            wallet_count: bag.wallet_count || 0,
-            total_converted_balance: bag.total_converted_balance || 0,
-            wallets: bag.wallets || [],
-          });
-        }
-      } else {
-        setCurrencySummary(bag);
-      }
-    }
-    if (cache["system/backup"]) {
-      const bag = cache["system/backup"];
-      if (bag?.integrity) setBackupIntegrity(bag.integrity);
-      if (bag?.list) setBackupList(bag.list);
-    }
-    setDashboard(buildDashboardFromCache(cache));
-  }
-
-  async function hydrateFromCloudCache(familyId) {
-    // Always reconcile savings from ledger before UI hydrate (anti stale progress)
-    try {
-      const { reconcileSavingsFromLedgerForFamily } = await import("./lib/offlineCache");
-      await reconcileSavingsFromLedgerForFamily(familyId);
-    } catch {
-      /* ignore */
-    }
-    const cache = await hydrateFamilyFromOfflineCache(familyId);
-    applyOfflineCacheToState(cache);
-    return cache;
-  }
-
-  async function _handleCloudEmailSignIn({ email, password }) {
-    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    setCloudBusy(true);
-    setAuthLoading(true);
-    setStatus(t("signingIn"));
-    try {
-      const user = await Promise.race([
-        firebaseSignInEmail(email, password),
-        new Promise((_, reject) => {
-          window.setTimeout(
-            () => reject(new Error(appLanguage === "bn" ? "লগইন সময় শেষ — ইন্টারনেট/Firebase চেক করুন।" : "Sign-in timed out — check internet/Firebase.")),
-            15000,
-          );
-        }),
-      ]);
-
-      try {
-        await Promise.race([
-          ensureUserProfile(user.uid, user),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 4000);
-          }),
-        ]);
-      } catch (err) {
-        softFail("Profile sync", err);
-      }
-
-      // Must verify email before entering the family dashboard
-      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
-        let pendingFamilyId = loadCloudFamilyId();
-        try {
-          pendingFamilyId =
-            (await Promise.race([
-              resolveCloudFamilyId(user.uid, user),
-              new Promise((resolve) => {
-                window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 8000);
-              }),
-            ])) || pendingFamilyId;
-        } catch {
-          /* ignore */
-        }
-        if (pendingFamilyId) {
-          persistCloudFamilyId(pendingFamilyId);
-          setActiveFamilyId(pendingFamilyId);
-        }
-        persistCloudOnlyMode(true);
-        setCloudOnlyMode(true);
-        setFirebaseUser(user);
-        setCurrentUser({
-          full_name: user.displayName || user.email || "Cloud User",
-          email: user.email || "",
-          is_email_verified: false,
-          is_active: true,
-          uid: user.uid,
-          firebase_uid: user.uid,
-        });
-        setIsFamilyLoading(false);
-        setSessionBootstrapping(false);
-        setMessage(t("verifyEmailBeforeApp") || t("verifyEmailTitle"), "warning");
-        return;
-      }
-
-      const familyId = await Promise.race([
-        resolveCloudFamilyId(user.uid, user),
-        new Promise((resolve) => {
-          window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 6000);
-        }),
-      ]);
-      if (!familyId) {
-        setFirebaseUser(user);
-        setCurrentUser({
-          full_name: user.displayName || user.email || "Cloud User",
-          email: user.email || "",
-          is_email_verified: isFirebaseEmailVerified(user),
-          is_active: true,
-          uid: user.uid,
-          firebase_uid: user.uid,
-        });
-        setMessage(t("cloudOnlyNoDataCreate"), "warning");
-        return { needsFamilySetup: true };
-      }
-
-      const activatePromise = activateCloudSession(user, familyId);
-      setAuthLoading(false);
-      setStatus("");
-      setCloudBusy(false);
-
-      try {
-        await Promise.race([
-          activatePromise,
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 8000);
-          }),
-        ]);
-      } catch (err) {
-        softFail("Session activate", err);
-      }
-      setMessage(t("cloudOnlySignInSuccess"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-      setAuthLoading(false);
-      setStatus((current) => (current === t("signingIn") ? "" : current));
-    }
-  }
-
-  async function _handleCreateCloudFamily({
-    email,
-    password,
-    fullName,
-    familyName,
-    currency,
-    timezone,
-    ownerRelation,
-  }) {
-    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    setCloudBusy(true);
-    setAuthLoading(true);
-    setStatus(t("creatingFamilyGate"));
-    try {
-      const created = await Promise.race([
-        createCloudFamilyAccount({
-          email,
-          password,
-          fullName,
-          familyName,
-          currency,
-          timezone,
-          ownerRelation,
-          deviceLabel: SYNC_DEVICE_ID || "mobile",
-        }),
-        new Promise((_, reject) => {
-          window.setTimeout(
-            () =>
-              reject(
-                new Error(
-                  appLanguage === "bn"
-                    ? "ফ্যামিলি তৈরি সময় শেষ — ইন্টারনেট/Firebase চেক করে আবার চেষ্টা করুন।"
-                    : "Create family timed out — check internet/Firebase and try again.",
-                ),
-              ),
-            35000,
-          );
-        }),
-      ]);
-      const { user, familyId, existing, verificationSent, verificationError } = created;
-
-      // Keep session + show EmailVerificationGate (do NOT sign out — that forced a second Login
-      // and made users think verify only happens after login).
-      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
-        if (familyId) {
-          persistCloudFamilyId(familyId);
-          setActiveFamilyId(familyId);
-        }
-        persistCloudOnlyMode(true);
-        setCloudOnlyMode(true);
-        setFirebaseUser(user);
-        setCurrentUser({
-          full_name: user.displayName || fullName || user.email || "Cloud User",
-          email: user.email || email || "",
-          is_email_verified: false,
-          is_active: true,
-          uid: user.uid,
-          firebase_uid: user.uid,
-        });
-        setIsFamilyLoading(false);
-        setSessionBootstrapping(false);
-        setAuthLoading(false);
-        setCloudBusy(false);
-        setStatus("");
-        if (verificationError) {
-          const lang = appLanguage === "bn" ? "bn" : "en";
-          setMessage(
-            `${t("cloudFamilyCreatedVerify") || "Family created — verify email."} ${formatFirebaseAuthError(verificationError, lang)}`,
-            "warning",
-          );
-        } else {
-          setMessage(
-            t("cloudFamilyCreatedVerify") ||
-              "Family created. Check inbox/spam for the verification link, then tap Refresh.",
-            "success",
-          );
-        }
-        return;
-      }
-
-      const activatePromise = activateCloudSession(user, familyId, familyName, { role: "OWNER" });
-      setAuthLoading(false);
-      setStatus("");
-      setCloudBusy(false);
-
-      try {
-        await Promise.race([
-          activatePromise,
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 15000);
-          }),
-        ]);
-      } catch (err) {
-        softFail("Session activate", err);
-      }
-
-      if (existing) {
-        setMessage(t("cloudFamilyRestored"), "success");
-      } else if (verificationSent) {
-        setMessage(t("cloudFamilyCreatedVerify"), "success");
-      } else if (verificationError) {
-        const lang = appLanguage === "bn" ? "bn" : "en";
-        setMessage(
-          `${t("cloudFamilyCreated")} — ${formatFirebaseAuthError(verificationError, lang)}`,
-          "warning",
-        );
-      } else {
-        setMessage(t("cloudFamilyCreated"), "success");
-      }
-    } catch (err) {
-      const lang = appLanguage === "bn" ? "bn" : "en";
-      const raw = String(err?.message || "");
-      const timedOut =
-        /timed out|সময় শেষ|time out/i.test(raw) ||
-        /Create family timed out|ফ্যামিলি তৈরি সময় শেষ/i.test(raw);
-      const localFid = loadCloudFamilyId();
-      // Auth often succeeds before Firestore finishes — local family_id is already saved.
-      if (timedOut && localFid) {
-        persistCloudFamilyId(localFid);
-        try {
-          await firebaseSignOut();
-        } catch {
-          /* ignore */
-        }
-        setFirebaseUser(null);
-        setCurrentUser(null);
-        setCloudOnlyMode(false);
-        persistCloudOnlyMode(false);
-        setActiveFamilyId("");
-        setIsFamilyLoading(false);
-        setSessionBootstrapping(false);
-        setMessage(
-          t("cloudFamilyCreatedVerifyThenLogin") ||
-            "Account created. Verify your email, then Login. If Login says no family, tap Create family again with the same password.",
-          "warning",
-        );
-        return;
-      }
-      setMessage(formatFirebaseAuthError(err, lang) || err.message || t("familyCreateFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-      setAuthLoading(false);
-      setStatus((current) => (current === t("creatingFamilyGate") ? "" : current));
-    }
-  }
-
-  async function _handleCloudJoinFamily({ email, password, fullName, inviteCode, relationshipType }) {
-    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    setCloudBusy(true);
-    setAuthLoading(true);
-    setStatus(t("joiningFamilyGate"));
-    try {
-      let user;
-      try {
-        const registered = await firebaseRegisterEmail(email, password, fullName);
-        user = registered.user;
-      } catch (err) {
-        const code = String(err?.code || "");
-        if (code.includes("email-already-in-use")) {
-          user = await firebaseSignInEmail(email, password);
-        } else {
-          throw err;
-        }
-      }
-
-      try {
-        await Promise.race([
-          ensureUserProfile(user.uid, user),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 4000);
-          }),
-        ]);
-      } catch {
-        /* optional */
-      }
-
-      const result = await Promise.race([
-        joinFamilyByInviteCode({
-          code: inviteCode,
-          uid: user.uid,
-          email: user.email || email,
-          displayName: fullName || user.displayName || "Member",
-          relationshipType: relationshipType || "Relative",
-        }),
-        new Promise((_, reject) => {
-          window.setTimeout(
-            () =>
-              reject(
-                new Error(
-                  appLanguage === "bn"
-                    ? "ইনভাইট জয়েন সময় শেষ — কোড ও ইন্টারনেট চেক করুন।"
-                    : "Join timed out — check invite code and internet.",
-                ),
-              ),
-            25000,
-          );
-        }),
-      ]);
-
-      const familyId = result?.familyId;
-      if (!familyId) {
-        throw new Error(t("joinFailedGate") || "Join failed");
-      }
-
-      if (REQUIRE_EMAIL_VERIFICATION && !isFirebaseEmailVerified(user)) {
-        persistCloudFamilyId(familyId);
-        persistCloudOnlyMode(true);
-        setCloudOnlyMode(true);
-        setActiveFamilyId(familyId);
-        setFirebaseUser(user);
-        setCurrentUser({
-          full_name: user.displayName || fullName || user.email || "Cloud User",
-          email: user.email || email || "",
-          is_email_verified: false,
-          is_active: true,
-          uid: user.uid,
-          firebase_uid: user.uid,
-        });
-        setIsFamilyLoading(false);
-        setSessionBootstrapping(false);
-        setMessage(t("verifyEmailBeforeApp") || t("verifyEmailTitle"), "warning");
-        return;
-      }
-
-      await activateCloudSession(user, familyId, "", { role: "MEMBER" });
-      setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
-    } catch (err) {
-      const lang = appLanguage === "bn" ? "bn" : "en";
-      setMessage(formatFirebaseAuthError(err, lang) || err.message || t("joinFailedGate"), "error");
-    } finally {
-      setCloudBusy(false);
-      setAuthLoading(false);
-      setStatus((current) => (current === t("joiningFamilyGate") ? "" : current));
-    }
-  }
-
-  async function refreshFirebaseMeta(uid, userOverride = null) {
-    if (!uid || !FIREBASE_CONFIGURED) return;
-    const user = userOverride || firebaseUser;
-    if (!isCloudEmailReady(user) && REQUIRE_EMAIL_VERIFICATION) {
-      setFirebaseMeta(null);
-      return;
-    }
-    try {
-      const meta = await getCloudSnapshotMeta(uid);
-      setFirebaseMeta(meta);
-    } catch {
-      setFirebaseMeta(null);
-    }
   }
 
   async function refreshDriveFileList() {
@@ -1761,11 +915,11 @@ function App() {
   }
 
   async function handleLocalRestore() {
-    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
+    if (!window.confirm(t("backupRestoreConfirm"))) return;
     setCloudBusy(true);
     try {
       const { blob } = await readLatestBackupFromFolder();
-      const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
+      const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId });
       if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
       setMessage(`${t("localBackupRestored")} (${result.restored})`, "success");
       if (token && (activeFamilyId || result.familyId)) await loadDashboard();
@@ -1795,7 +949,6 @@ function App() {
       enabled: true,
       local: true,
       drive: true,
-      firebase: false,
       intervalMinutes: cloudAutoSyncRef.current?.intervalMinutes || 15,
     });
     setCloudAutoSync(next);
@@ -1804,14 +957,14 @@ function App() {
 
   async function applyDriveBackupRestore(driveToken, fileId) {
     const blob = await downloadDriveBackup(driveToken, fileId);
-    const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId || null });
+    const result = await restoreBackupBlob(blob, { expectedFamilyId: activeFamilyId });
     if (result.familyId && !activeFamilyId) selectActiveFamily(result.familyId);
     if (token && (activeFamilyId || result.familyId)) await loadDashboard();
     return result;
   }
 
   async function uploadDriveBackupNow(driveToken) {
-    const familyId = activeFamilyId || loadCloudFamilyId() || null;
+    const familyId = activeFamilyId || loadCloudFamilyId();
     const { blob, fileName } = await buildBackupBlob(familyId, SYNC_DEVICE_ID);
     await uploadBackupToDrive(driveToken, fileName, blob);
     return fileName;
@@ -1833,8 +986,8 @@ function App() {
     setDriveFiles(files);
     setDriveConnected(true);
 
-    const localHasData = await hasLocalOfflineData(activeFamilyId || loadCloudFamilyId() || null);
-    const latest = files[0] || null;
+    const localHasData = await hasLocalOfflineData(activeFamilyId || loadCloudFamilyId());
+    const latest = files[0];
 
     if (latest && !localHasData) {
       const result = await applyDriveBackupRestore(driveToken, latest.id);
@@ -1907,7 +1060,7 @@ function App() {
   }
 
   async function handleDriveRestore() {
-    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
+    if (!window.confirm(t("backupRestoreConfirm"))) return;
     setCloudBusy(true);
     try {
       const driveToken = await getDriveAccessToken();
@@ -1934,7 +1087,6 @@ function App() {
     if (cloudAutoBackupRunningRef.current || cloudBusy) return;
     if (!activeFamilyId) return;
     // Hybrid gate: no cloud/local/drive auto backup until email verified.
-    if (cloudOnlyMode && !isCloudEmailReady(firebaseUser)) return;
 
     cloudAutoBackupRunningRef.current = true;
     let nextSettings = { ...settings };
@@ -1968,26 +1120,6 @@ function App() {
         }
       }
 
-      if (
-        (force || shouldRunTarget(settings, "firebase", now)) &&
-        settings.firebase &&
-        FIREBASE_CONFIGURED &&
-        firebaseUser?.uid &&
-        isCloudEmailReady(firebaseUser)
-      ) {
-        try {
-          await pushCloudSnapshot({
-            uid: firebaseUser.uid,
-            familyId: activeFamilyId || null,
-            deviceLabel: SYNC_DEVICE_ID,
-          });
-          await refreshFirebaseMeta(firebaseUser.uid);
-          nextSettings = markTargetRun(nextSettings, "firebase");
-          changed = true;
-        } catch {
-          /* silent auto backup */
-        }
-      }
 
       if (changed) {
         setCloudAutoSync(nextSettings);
@@ -1995,148 +1127,6 @@ function App() {
       }
     } finally {
       cloudAutoBackupRunningRef.current = false;
-    }
-  }
-
-  async function _handleFirebaseGoogleSignIn() {
-    if (!FIREBASE_CONFIGURED) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    setCloudBusy(true);
-    try {
-      const user = await firebaseSignInGoogle();
-      await ensureUserProfile(user.uid, user);
-      setFirebaseUser(user);
-      await refreshFirebaseMeta(user.uid);
-      setMessage(t("firebaseConnected"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function _handleFirebaseEmailSignIn() {
-    if (!FIREBASE_CONFIGURED) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    const mail = window.prompt(t("lblEmail") || "Email", email || "");
-    if (!mail) return;
-    const pass = window.prompt(t("lblPassword") || "Password");
-    if (!pass) return;
-    setCloudBusy(true);
-    try {
-      const user = await firebaseSignInEmail(mail, pass);
-      await ensureUserProfile(user.uid, user);
-      setFirebaseUser(user);
-      await refreshFirebaseMeta(user.uid);
-      setMessage(t("firebaseConnected"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function _handleFirebaseEmailRegister() {
-    if (!FIREBASE_CONFIGURED) {
-      setMessage(t("firebaseNotConfigured"), "error");
-      return;
-    }
-    const mail = window.prompt(t("lblEmail") || "Email", email || "");
-    if (!mail) return;
-    const pass = window.prompt(t("lblPassword") || "Password (min 8)");
-    if (!pass) return;
-    const name = window.prompt(t("lblName") || "Full name", "");
-    setCloudBusy(true);
-    try {
-      const { user } = await firebaseRegisterEmail(mail, pass, name || "");
-      await ensureUserProfile(user.uid, user);
-      setFirebaseUser(user);
-      setMessage(t("firebaseConnected"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function _handleFirebaseSignOut() {
-    setCloudBusy(true);
-    try {
-      // Cloud-only session: full logout so we don't leave a half-authed shell.
-      if (cloudOnlyMode && !token) {
-        await firebaseSignOut();
-        setFirebaseUser(null);
-        setFirebaseMeta(null);
-        await logout();
-        return;
-      }
-      await firebaseSignOut();
-      setFirebaseUser(null);
-      setFirebaseMeta(null);
-      setMessage(t("firebaseSignOut"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function _handleFirebaseSyncNow() {
-    if (!firebaseUser?.uid) {
-      setMessage(t("firebaseSignInPrompt"), "error");
-      return;
-    }
-    if (!isCloudEmailReady(firebaseUser)) {
-      setMessage(t("verifyEmailStillPending"), "warning");
-      return;
-    }
-    setCloudBusy(true);
-    try {
-      // Pull first so other devices' wallets aren't wiped by a stale push
-      await syncCloudLocalBidirectional(firebaseUser, activeFamilyId || loadCloudFamilyId());
-      await refreshFirebaseMeta(firebaseUser.uid);
-      setMessage(t("firebaseSyncSuccess"), "success");
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
-    }
-  }
-
-  async function _handleFirebaseRestore() {
-    if (!firebaseUser?.uid) {
-      setMessage(t("firebaseSignInPrompt"), "error");
-      return;
-    }
-    if (!isCloudEmailReady(firebaseUser)) {
-      setMessage(t("verifyEmailStillPending"), "warning");
-      return;
-    }
-    if (!window.confirm(t("firebaseRestoreConfirm"))) return;
-    setCloudBusy(true);
-    try {
-      const result = await pullCloudSnapshot(firebaseUser.uid);
-      await refreshFirebaseMeta(firebaseUser.uid);
-      const fid = result.familyId || activeFamilyId || loadCloudFamilyId();
-      if (fid) {
-        persistCloudFamilyId(fid);
-        if (!activeFamilyId) selectActiveFamily(fid);
-        else setActiveFamilyId(fid);
-        await hydrateFromCloudCache(fid);
-        await refreshCloudLocalAll();
-      }
-      setMessage(`${t("firebaseRestoreSuccess")} (${result.restored})`, "success");
-      if (token && activeFamilyId) {
-        await loadDashboard();
-      }
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setCloudBusy(false);
     }
   }
 
@@ -2402,7 +1392,7 @@ function App() {
       persistAuthSession({
         accessToken: data.access_token,
         refreshToken: data.refresh_token || "",
-        user: data.user || null,
+        user: data.user,
         apiBase,
       });
       if (data.user) setCurrentUser(data.user);
@@ -2435,7 +1425,7 @@ function App() {
         body: JSON.stringify({
           full_name: fullName.trim(),
           email: email.trim(),
-          phone: phone.trim() || null,
+          phone: phone.trim(),
           password,
         }),
       });
@@ -2506,22 +1496,12 @@ function App() {
       }
     }
 
-    try {
-      if (firebaseUser || loadCloudOnlyMode()) {
-        await firebaseSignOut();
-      }
-    } catch {
-      /* ignore */
-    }
-    setFirebaseUser(null);
-    setFirebaseMeta(null);
     noFamilyAutoRestoreRef.current = "";
 
     setToken("");
     setRefreshToken("");
     clearAuthSession();
     clearCloudSession();
-    setCloudOnlyMode(false);
     setFamilies([]);
     setFamiliesReady(false);
     setActiveFamilyId("");
@@ -2655,17 +1635,6 @@ function App() {
     selectActiveFamily(familyId);
   }
 
-  function cloudApiUser() {
-    return {
-      ...(currentUser || {}),
-      email: currentUser?.email || firebaseUser?.email || "",
-      full_name: currentUser?.full_name || firebaseUser?.displayName || "",
-      uid: firebaseUser?.uid || currentUser?.uid,
-      firebase_uid: firebaseUser?.uid || currentUser?.firebase_uid,
-      is_email_verified: isCloudEmailReady(firebaseUser),
-    };
-  }
-
   async function tryRefreshAccessToken() {
     if (!refreshToken) return false;
     try {
@@ -2697,12 +1666,7 @@ function App() {
 
   async function apiGet(path, retried = false) {
     if (isCloudLocalMode()) {
-      const hit = await cloudApiGet({
-        familyId: activeFamilyId,
-        path,
-        currentUser: cloudApiUser(),
-      });
-      if (hit.handled) return hit.data;
+      // Offline: no server to answer; writes queue in the sync outbox instead.
       const err = new Error("Failed to fetch (offline)");
       err.offline = true;
       throw err;
@@ -2757,22 +1721,7 @@ function App() {
 
   async function apiPost(path, body) {
     if (isCloudLocalMode()) {
-      const hit = await cloudApiPost({
-        familyId: activeFamilyId,
-        path,
-        body,
-        currentUser: cloudApiUser(),
-        onAfterWrite: syncCloudAfterWrite,
-      });
-      if (hit.handled) {
-        if (hit.error || hit.data?.ok === false) {
-          throw new Error(hit.error || hit.data?.detail || "Request failed");
-        }
-        if (hit.data?.cloud_sync_warning) {
-          setMessage(hit.data.cloud_sync_warning, "warning");
-        }
-        return hit.data;
-      }
+      // Offline: no server to answer; writes queue in the sync outbox instead.
       const err = new Error("Failed to fetch (offline)");
       err.offline = true;
       throw err;
@@ -2803,29 +1752,7 @@ function App() {
 
   async function apiPatch(path, body) {
     if (isCloudLocalMode()) {
-      try {
-        const hit = await cloudApiPatch({
-          familyId: activeFamilyId,
-          path,
-          body,
-          currentUser: cloudApiUser(),
-          onAfterWrite: syncCloudAfterWrite,
-        });
-        if (hit.handled) {
-          if (hit.error || hit.data?.ok === false) {
-            throw new Error(hit.error || hit.data?.detail || "Request failed");
-          }
-          if (hit.data?.cloud_sync_warning) {
-            setMessage(hit.data.cloud_sync_warning, "warning");
-          }
-          return hit.data;
-        }
-      } catch (err) {
-        if (err?.offline || /offline/i.test(String(err?.message || ""))) throw err;
-        if (err?.status || err?.isPermission || /permission|denied|connection|database|Cloud mode/i.test(String(err?.message || ""))) {
-          throw err;
-        }
-      }
+      // Offline: no server to answer; writes queue in the sync outbox instead.
       const err = new Error("Failed to fetch (offline)");
       err.offline = true;
       throw err;
@@ -2862,19 +1789,7 @@ function App() {
 
   async function apiPut(path, body) {
     if (isCloudLocalMode()) {
-      const hit = await cloudApiPatch({
-        familyId: activeFamilyId,
-        path,
-        body,
-        currentUser: cloudApiUser(),
-        onAfterWrite: syncCloudAfterWrite,
-      });
-      if (hit.handled) {
-        if (hit.error || hit.data?.ok === false) {
-          throw new Error(hit.error || hit.data?.detail || "Request failed");
-        }
-        return hit.data;
-      }
+      // Offline: no server to answer; writes queue in the sync outbox instead.
       const err = new Error("Failed to fetch (offline)");
       err.offline = true;
       throw err;
@@ -2897,23 +1812,7 @@ function App() {
 
   async function apiDelete(path) {
     if (isCloudLocalMode()) {
-      const hit = await cloudApiDelete({
-        familyId: activeFamilyId,
-        path,
-        currentUser: firebaseUser
-          ? { uid: firebaseUser.uid, email: firebaseUser.email, firebase_uid: firebaseUser.uid }
-          : currentUser,
-        onAfterWrite: syncCloudAfterWrite,
-      });
-      if (hit.handled) {
-        if (hit.error || hit.data?.ok === false) {
-          throw new Error(hit.error || hit.data?.detail || "Request failed");
-        }
-        if (hit.data?.cloud_sync_warning) {
-          setMessage(hit.data.cloud_sync_warning, "warning");
-        }
-        return hit.data;
-      }
+      // Offline: no server to answer; writes queue in the sync outbox instead.
       const err = new Error("Failed to fetch (offline)");
       err.offline = true;
       throw err;
@@ -2932,37 +1831,10 @@ function App() {
 
   async function apiUpload(path, formData) {
     if (isCloudLocalMode()) {
-      const clean = String(path || "").split("?")[0];
-      const parts = clean.replace(/^\//, "").split("/").filter(Boolean);
-      const file = formData.get("file");
-      if (!file) throw new Error("File required");
-
-      // /transactions/{id}/attachment
-      if (parts[0] === "transactions" && parts[2] === "attachment") {
-        const result = await uploadTransactionAttachment({
-          familyId: activeFamilyId,
-          transactionId: parts[1],
-          file,
-          uid: firebaseUser?.uid,
-        });
-        await syncCloudAfterWrite();
-        return result;
-      }
-
-      // /documents/{id}/upload
-      if (parts[0] === "documents" && parts[2] === "upload") {
-        const result = await uploadFamilyDocument({
-          familyId: activeFamilyId,
-          itemId: parts[1],
-          file,
-          uid: firebaseUser?.uid,
-        });
-        await persistDocumentFileMeta(parts[1], result);
-        await syncCloudAfterWrite();
-        return result;
-      }
-
-      throw new Error(`Upload not supported in cloud mode: ${path}`);
+      // Offline: uploads need the VPS server.
+      const err = new Error("Failed to fetch (offline)");
+      err.offline = true;
+      throw err;
     }
 
     const res = await fetch(`${apiBase}${path}`, {
@@ -3078,28 +1950,6 @@ function App() {
     };
   }, [currentUser?.avatar_url, currentUser?.photo_url, token, apiBase]);
 
-  async function applyCloudUserAvatar(user, profileOverride = null) {
-    if (!user?.uid) return;
-    try {
-      const profile = profileOverride || (await getUserProfileDoc(user.uid));
-      const avatar =
-        profile?.avatar_url || profile?.photo_url || user.photoURL || "";
-      setCurrentUser((prev) => ({
-        ...(prev || {}),
-        full_name: prev?.full_name || user.displayName || user.email || "Cloud User",
-        email: prev?.email || user.email || "",
-        is_email_verified:
-          prev?.is_email_verified ?? isFirebaseEmailVerified(user),
-        avatar_url: avatar || null,
-        photo_url: avatar || null,
-        photo_storage_path: profile?.photo_storage_path || null,
-        is_active: true,
-      }));
-    } catch (err) {
-      console.warn("[S4 ProfilePhoto] could not load profile avatar", err);
-    }
-  }
-
   async function uploadProfilePhoto(file) {
     if (!file) return;
 
@@ -3110,43 +1960,9 @@ function App() {
       return;
     }
 
-    // Cloud / Firebase-first path (no backend JWT)
-    if (isCloudLocalMode() || (cloudOnlyMode && firebaseUser?.uid && !token)) {
-      try {
-        const result = await uploadProfilePhotoToFirebase({
-          uid: firebaseUser.uid,
-          file,
-        });
-        setCurrentUser((prev) => ({
-          ...(prev || {}),
-          avatar_url: result.avatar_url,
-          photo_url: result.avatar_url,
-          photo_storage_path: result.storage_path,
-        }));
-        console.info("[S4 ProfilePhoto] cloud upload success", result);
-        setMessage(t("photoUpdated"), "success");
-      } catch (err) {
-        console.error("[S4 ProfilePhoto] cloud upload error", err);
-        const code = String(err?.code || "");
-        let msg = err?.message || t("photoUploadFailed");
-        if (
-          err?.message?.includes("Max size") ||
-          err?.message?.includes("JPG")
-        ) {
-          msg = err.message;
-        } else if (
-          code.includes("unauthorized") ||
-          code.includes("permission-denied") ||
-          /storage\/unauthorized/i.test(msg)
-        ) {
-          msg =
-            "Photo upload blocked by Firebase Storage rules. Publish deploy/firebase/storage.rules (Storage → Rules → Publish).";
-          console.error(
-            "[S4 ProfilePhoto] Storage rules may block users/{uid}/profile — publish deploy/firebase/storage.rules"
-          );
-        }
-        setMessage(msg, "error");
-      }
+    if (isCloudLocalMode()) {
+      // Offline: the photo is stored on the VPS server.
+      setMessage(t("photoUploadFailed"), "error");
       return;
     }
 
@@ -3195,23 +2011,9 @@ function App() {
   }
 
   async function removeProfilePhoto() {
-    if (isCloudLocalMode() || (cloudOnlyMode && firebaseUser?.uid && !token)) {
-      try {
-        await removeProfilePhotoFromFirebase({
-          uid: firebaseUser.uid,
-          storagePath: currentUser?.photo_storage_path,
-        });
-        setCurrentUser((prev) => ({
-          ...(prev || {}),
-          avatar_url: null,
-          photo_url: null,
-          photo_storage_path: null,
-        }));
-        setMessage(t("photoRemoved"), "success");
-      } catch (err) {
-        console.error("[S4 ProfilePhoto] cloud remove error", err);
-        setMessage(t("photoUploadFailed"), "error");
-      }
+    if (isCloudLocalMode()) {
+      // Offline: the photo is stored on the VPS server.
+      setMessage(t("photoUploadFailed"), "error");
       return;
     }
 
@@ -3264,9 +2066,7 @@ function App() {
     try {
       const status = await apiGet("/auth/email-status");
       setEmailStatus(status);
-      if (status?.source === "cloud_local") {
-        // Firebase Auth emails — ignore backend SMTP warnings
-      } else if (!status?.can_send) {
+      if (!status?.can_send) {
         console.info(
           "[S4 Security] Email delivery unavailable — set SMTP_HOST + SMTP_FROM_EMAIL in backend .env (see deploy docs). Server note:",
           status?.note || "(none)"
@@ -3513,7 +2313,7 @@ function App() {
         relationship: member.relationship || member.relationship_type || "",
       });
       updatePermissionForm(memberId, { permission_key: permissionKey, allow: Boolean(allow) });
-      // Prefer PATCH payload — immediate loadSettingsData can race Firestore and snap toggles back ON.
+      // Prefer PATCH payload — an immediate loadSettingsData can race the save and snap toggles back ON.
       if (mapped && typeof mapped === "object" && (mapped.effective_permissions || mapped.overrides)) {
         setMemberPermissions((current) => {
           const rows = Array.isArray(current) ? current : [];
@@ -3552,30 +2352,6 @@ function App() {
   }
 
   async function refreshSession() {
-    if (cloudOnlyMode && firebaseUser) {
-      setSecurityAction("refresh");
-      try {
-        const refreshed = await firebaseReloadUser();
-        if (refreshed) {
-          setFirebaseUser(refreshed);
-          setCurrentUser((prev) => ({
-            ...(prev || {}),
-            email: refreshed.email || prev?.email,
-            full_name: refreshed.displayName || prev?.full_name,
-            is_email_verified: isFirebaseEmailVerified(refreshed),
-            uid: refreshed.uid,
-            firebase_uid: refreshed.uid,
-          }));
-        }
-        setMessage(t("sessionRefreshed") || "Session refreshed", "success");
-        await loadSettingsData();
-      } catch (err) {
-        setMessage(err.message || "Session refresh failed", "error");
-      } finally {
-        setSecurityAction("");
-      }
-      return;
-    }
 
     if (!refreshToken) {
       setMessage(t("refreshTokenUnavailable"), "error");
@@ -3589,7 +2365,7 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Device-Id": getOrCreateDeviceId() || "" },
         credentials: "include",
-        body: JSON.stringify({ refresh_token: refreshToken || undefined }),
+        body: JSON.stringify({ refresh_token: refreshToken }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -3610,7 +2386,7 @@ function App() {
   }
 
   async function requestPasswordReset() {
-    const targetEmail = currentUser?.email || email || firebaseUser?.email;
+    const targetEmail = currentUser?.email || email;
 
     if (!targetEmail) {
       setMessage(t("emailRequiredPasswordReset"), "error");
@@ -3620,11 +2396,6 @@ function App() {
     setSecurityAction("password-reset");
 
     try {
-      if (cloudOnlyMode || (!token && FIREBASE_CONFIGURED)) {
-        await firebaseSendPasswordReset(targetEmail);
-        setMessage(t("emailSent") || "Password reset email sent", "success");
-        return;
-      }
 
       const res = await fetch(`${apiBase}/auth/forgot-password`, {
         method: "POST",
@@ -3643,10 +2414,6 @@ function App() {
   }
 
   async function requestDeleteAccountOtp() {
-    if (cloudOnlyMode && !token) {
-      setMessage(t("loginRequired") || "Sign in with the app account to delete.", "error");
-      return;
-    }
     if (deleteAccountStep !== "otp") {
       if (!window.confirm(t("deleteAccountConfirmPrompt"))) return;
     }
@@ -3686,9 +2453,9 @@ function App() {
   }
 
   async function resendVerification() {
-    const targetEmail = currentUser?.email || email || firebaseUser?.email;
+    const targetEmail = currentUser?.email || email;
 
-    if (!targetEmail && !(cloudOnlyMode && firebaseUser)) {
+    if (!targetEmail) {
       const err = new Error(t("emailRequiredVerification"));
       setMessage(err.message, "error");
       throw err;
@@ -3697,35 +2464,6 @@ function App() {
     setSecurityAction("verification");
 
     try {
-      if (cloudOnlyMode && (firebaseUser || FIREBASE_CONFIGURED)) {
-        const result = await firebaseResendEmailVerification(firebaseUser);
-        if (result.alreadyVerified) {
-          const refreshed = await firebaseReloadUser();
-          if (refreshed) {
-            setFirebaseUser(refreshed);
-            setCurrentUser((prev) =>
-              prev
-                ? { ...prev, is_email_verified: isFirebaseEmailVerified(refreshed) }
-                : prev,
-            );
-          }
-          setMessage(t("emailVerified") || "Email verified", "success");
-        } else {
-          const sentTo = result.email || targetEmail || "";
-          const base =
-            t("verifyEmailSent") ||
-            t("emailSent") ||
-            "Verification email sent — check inbox/spam.";
-          const extra = result.domainHint
-            ? ` ${t("verifyEmailDomainHint") || ""}`.trim()
-            : "";
-          setMessage(
-            sentTo ? `${base} (${sentTo})${extra ? ` ${extra}` : ""}` : `${base}${extra ? ` ${extra}` : ""}`,
-            "success",
-          );
-        }
-        return;
-      }
 
       const res = await fetch(`${apiBase}/auth/resend-verification`, {
         method: "POST",
@@ -3750,81 +2488,12 @@ function App() {
       }
     } catch (err) {
       console.error("[resendVerification]", err);
-      const lang = appLanguage === "bn" ? "bn" : "en";
-      const friendly =
-        err?.code === "auth/resend-cooldown"
-          ? err.message
-          : formatFirebaseAuthError(err, lang);
+      const friendly = err?.message;
       setMessage(friendly || err.message || "Verification resend failed", "error");
       throw err;
     } finally {
       setSecurityAction("");
     }
-  }
-
-  async function handleVerifyEmailRefresh() {
-    setSecurityAction("verification");
-    try {
-      const refreshed = await firebaseReloadUser();
-      if (!refreshed) {
-        setMessage(t("firebaseSignInPrompt"), "error");
-        return;
-      }
-      setFirebaseUser(refreshed);
-      setCurrentUser((prev) =>
-        prev ? { ...prev, is_email_verified: isFirebaseEmailVerified(refreshed) } : prev,
-      );
-      if (isFirebaseEmailVerified(refreshed)) {
-        setMessage(t("emailVerified") || "Email verified", "success");
-        let familyId = activeFamilyId || loadCloudFamilyId();
-        if (!familyId) {
-          try {
-            familyId = await Promise.race([
-              resolveCloudFamilyId(refreshed.uid, refreshed),
-              new Promise((resolve) => {
-                window.setTimeout(() => resolve(""), 8000);
-              }),
-            ]);
-          } catch {
-            familyId = "";
-          }
-        }
-        if (familyId) {
-          await activateCloudSession(refreshed, familyId);
-        } else {
-          setMessage(t("cloudOnlyNoDataCreate"), "warning");
-        }
-        if (!loadBackupOnboardingDone(refreshed.uid)) {
-          setShowBackupOnboarding(true);
-        }
-        await pushCloudSnapshotIfReady(refreshed, familyId || activeFamilyId || loadCloudFamilyId());
-        runCloudAutoBackup({ force: true });
-      } else {
-        setMessage(t("verifyEmailStillPending"), "warning");
-      }
-    } catch (err) {
-      setMessage(err.message || t("firebaseSyncFailed"), "error");
-    } finally {
-      setSecurityAction("");
-    }
-  }
-
-  async function handleVerifyEmailSignOut() {
-    try {
-      await firebaseSignOut();
-    } catch {
-      /* ignore */
-    }
-    setFirebaseUser(null);
-    setFirebaseMeta(null);
-    clearCloudSession();
-    setCloudOnlyMode(false);
-    setActiveFamilyId("");
-    setIsFamilyLoading(false);
-    setSessionBootstrapping(false);
-    setCurrentUser(null);
-    setFamilies([]);
-    setMessage(t("loggedOut"), "warning");
   }
 
   async function sendTestNotificationEmail() {
@@ -3844,11 +2513,6 @@ function App() {
   }
 
   async function loadDashboard() {
-    if (cloudOnlyMode && !token && activeFamilyId) {
-      const cache = await hydrateFamilyFromOfflineCache(activeFamilyId);
-      setDashboard(buildDashboardFromCache(cache));
-      return;
-    }
     if (!token) return;
 
     try {
@@ -4209,7 +2873,7 @@ function App() {
       const data = await loadOfflineFinanceCache("finance", "recurring");
       if (Array.isArray(data)) {
         const normalized = data.map((item) => {
-          const start = item.start_date || String(item.created_at || "").slice(0, 10) || null;
+          const start = item.start_date || String(item.created_at || "").slice(0, 10);
           return {
             ...item,
             start_date: start,
@@ -4330,7 +2994,7 @@ function App() {
       } catch {
         /* ignore */
       }
-      setAuditSummary((prev) => prev || null);
+      setAuditSummary((prev) => prev);
       setAuditRows((prev) => (prev?.length ? prev : []));
       // Dashboard refresh may hit audit without permission — don't spam scary JSON toasts
       if (!err?.isPermission) {
@@ -4341,75 +3005,33 @@ function App() {
     }
   }
 
-  function enrichNotificationDelivery(delivery, devices = [], readyOverride = null) {
-    const vapidOk = isWebFcmVapidConfigured();
-    const permission = getNotificationPermission();
-    const deviceCount = Array.isArray(devices) ? devices.length : 0;
-    const tokenReady = readyOverride === null ? fcmClientReady : Boolean(readyOverride);
-    const clientOn = tokenReady || (vapidOk && permission === "granted" && deviceCount > 0);
-    const fcmOn = Boolean(delivery?.fcm_configured) || vapidOk || clientOn;
-    return {
-      ...(delivery && typeof delivery === "object" ? delivery : {}),
-      fcm_configured: fcmOn,
-      browser_permission: permission,
-      web_fcm: {
-        ...(delivery?.web_fcm || {}),
-        vapid_configured: vapidOk,
-        permission,
-        token_ready: tokenReady,
-        device_count: deviceCount,
-        sw: "firebase-messaging-sw.js",
-      },
-      delivery_mode: fcmOn
-        ? delivery?.delivery_mode && delivery.delivery_mode !== "IN_APP_ONLY"
-          ? delivery.delivery_mode
-          : "IN_APP_BROWSER_FCM"
-        : delivery?.delivery_mode || "IN_APP_BROWSER",
-      note:
-        delivery?.note ||
-        (!vapidOk
-          ? "Set VITE_FIREBASE_VAPID_KEY in frontend/.env and restart Vite"
-          : permission === "granted"
-            ? "Browser push ready"
-            : "Click the bell to enable browser notifications"),
-    };
-  }
-
-  async function loadNotifications(options = {}) {
+  async function loadNotifications() {
     if (!activeFamilyId) return;
     if (!token && !isCloudLocalMode()) return;
 
     setNotificationsLoading(true);
 
     try {
-      const [items, summary, delivery, devices] = await Promise.all([
+      const [items, summary, delivery] = await Promise.all([
         apiGet(`/notifications/${activeFamilyId}`),
         apiGet(`/notifications/summary/${activeFamilyId}`),
         apiGet(`/notifications/delivery-status/${activeFamilyId}`),
-        apiGet(`/notifications/devices/${activeFamilyId}`).catch(() => []),
       ]);
 
-      const deviceList = Array.isArray(devices) ? devices : [];
       setNotifications(Array.isArray(items) ? items : []);
       setNotificationSummary(summary);
-      setPushDevices(deviceList);
-      setNotificationDelivery(
-        enrichNotificationDelivery(delivery, deviceList, options.fcmReadyOverride ?? null)
-      );
-      if (delivery?.browser_permission) {
-        setNotifyPermission(delivery.browser_permission);
-      } else {
-        setNotifyPermission(getNotificationPermission());
-      }
-      if (deviceList.length > 0 && getNotificationPermission() === "granted" && isWebFcmVapidConfigured()) {
-        setFcmClientReady(true);
-      }
+      // In-app + browser-native notifications over the VPS (no push service).
+      setNotificationDelivery({
+        ...(delivery && typeof delivery === "object" ? delivery : {}),
+        browser_permission: getNotificationPermission(),
+        delivery_mode: "IN_APP_BROWSER",
+      });
+      setNotifyPermission(getNotificationPermission());
     } catch (err) {
       console.error("[S4 Notify] loadNotifications failed", err);
       setNotifications((prev) => (prev?.length ? prev : []));
-      setNotificationSummary((prev) => prev || null);
-      setNotificationDelivery((prev) => prev || null);
-      setPushDevices((prev) => (prev?.length ? prev : []));
+      setNotificationSummary((prev) => prev);
+      setNotificationDelivery((prev) => prev);
       setMessage(err.message || "Notification load failed", "error");
     } finally {
       setNotificationsLoading(false);
@@ -4417,120 +3039,14 @@ function App() {
   }
 
   async function enableBrowserPushNotifications({ silent = false } = {}) {
-    try {
-      const result = await enableWebPushNotifications({
-        familyId: activeFamilyId,
-        deviceLabel: "web-browser",
-        registerWithBackend: async (fcmToken) => {
-          if (!activeFamilyId) return;
-          if (!token && !isCloudLocalMode()) return;
-          await apiPost(`/notifications/devices/${activeFamilyId}`, {
-            token: fcmToken,
-            platform: "WEB",
-            provider: "FCM",
-            device_label: "web-browser",
-          });
-        },
-      });
-      setNotifyPermission(result.permission || getNotificationPermission());
-      setNotifyPermissionHint(result.hint || "");
-      if (result.ok) {
-        setFcmClientReady(true);
-        if (!silent) setMessage(t("browserNotifyEnabled") || "Browser notifications enabled", "success");
-        await loadNotifications({ fcmReadyOverride: true });
-        return result;
-      }
-      if (result.vapidConfigured) {
-        setNotificationDelivery((prev) =>
-          enrichNotificationDelivery(prev, pushDevices, result.permission === "granted" ? false : null)
-        );
-      }
-      if (!silent) {
-        const type = result.reason === "denied" || result.reason === "missing_vapid" ? "warning" : "error";
-        setMessage(result.hint || t("browserNotifyFailed") || "Could not enable browser notifications", type);
-      } else if (result.hint) {
-        console.warn("[S4 Notify]", result.hint);
-      }
-      return result;
-    } catch (err) {
-      console.error("[S4 Notify] enableBrowserPushNotifications failed", err);
-      if (!silent) setMessage(err.message || "Notification setup failed", "error");
-      return { ok: false, reason: "error", hint: err?.message };
+    const result = await requestBrowserNotifications();
+    setNotifyPermission(result.permission);
+    setNotifyPermissionHint(result.hint || "");
+    if (!silent) {
+      if (result.ok) setMessage(t("browserNotifyEnabled") || "Browser notifications enabled", "success");
+      else setMessage(result.hint || t("browserNotifyFailed") || "Could not enable browser notifications", "warning");
     }
-  }
-
-  async function registerPushDevice() {
-    if (!activeFamilyId) return;
-    if (!token && !isCloudLocalMode()) return;
-    const pushToken = String(pushTokenDraft || "").trim();
-    if (pushToken.length < 8) {
-      setMessage(t("pastePushTokenHint") || "Paste a real FCM/Expo push token (min 8 chars)", "error");
-      return;
-    }
-    setNotificationsLoading(true);
-    try {
-      await apiPost(`/notifications/devices/${activeFamilyId}`, {
-        token: pushToken,
-        platform: pushPlatform || "WEB",
-        provider: "FCM",
-        device_label: "web-dashboard",
-      });
-      setPushTokenDraft("");
-      setMessage(t("pushDeviceRegistered") || "Push device registered", "success");
-      await loadNotifications();
-    } catch (err) {
-      console.error("[S4 Notify] registerPushDevice failed", err);
-      setMessage(err.message || "Device register failed", "error");
-      setNotificationsLoading(false);
-    }
-  }
-
-  async function unregisterPushDevice(deviceId) {
-    if (!deviceId) return;
-    if (!token && !isCloudLocalMode()) return;
-    setNotificationsLoading(true);
-    try {
-      await apiDelete(`/notifications/devices/${deviceId}`);
-      setMessage(t("pushDeviceUnregistered") || "Device unregistered", "success");
-      await loadNotifications();
-    } catch (err) {
-      console.error("[S4 Notify] unregisterPushDevice failed", err);
-      setMessage(err.message || "Unregister failed", "error");
-      setNotificationsLoading(false);
-    }
-  }
-
-  async function sendTestPushNotification() {
-    if (!activeFamilyId) return;
-    if (!token && !isCloudLocalMode()) return;
-    setNotificationsLoading(true);
-    try {
-      const result = await apiPost(`/notifications/test-push/${activeFamilyId}`, {});
-      if (result?.sent && (result?.sent_count > 0 || result?.channel === "browser_notification")) {
-        setMessage(
-          (t("testPushSent") || "Test push sent to {n} device(s)").replace(
-            "{n}",
-            digits(result?.sent_count || 1)
-          ),
-          "success"
-        );
-      } else if (result?.reason === "permission_denied") {
-        setNotifyPermission("denied");
-        setNotifyPermissionHint(
-          t("notifyPermissionDenied") ||
-            "Browser notifications are blocked. Enable them in site settings."
-        );
-        setMessage(t("notifyPermissionDenied") || "Browser notifications blocked", "warning");
-      } else {
-        setMessage(result?.reason || t("testPushNotSent") || "Test push not sent — check inbox for in-app copy", "warning");
-      }
-      await loadNotifications();
-    } catch (err) {
-      console.error("[S4 Notify] sendTestPushNotification failed", err);
-      setMessage(err.message || "Test push failed", "error");
-    } finally {
-      setNotificationsLoading(false);
-    }
+    return result;
   }
 
   async function scanNotifications() {
@@ -4616,7 +3132,7 @@ function App() {
               record_count: records.length,
               count: records.length,
               total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
-              latest: records[0] || null,
+              latest: records[0],
             };
       setZakatRecords(records);
       setZakatSummary(summary);
@@ -4644,7 +3160,7 @@ function App() {
                     record_count: records.length,
                     count: records.length,
                     total_zakat_due: records.reduce((sum, r) => sum + (Number(r.zakat_due) || 0), 0),
-                    latest: records[0] || null,
+                    latest: records[0],
                   }
                 : null),
           );
@@ -4655,7 +3171,7 @@ function App() {
         /* ignore cache miss */
       }
       setZakatRecords((prev) => (prev?.length ? prev : []));
-      setZakatSummary((prev) => prev || null);
+      setZakatSummary((prev) => prev);
       setMessage(err.message || "Zakat load failed", "error");
     }
   }
@@ -4782,7 +3298,7 @@ function App() {
       const cachedItems = Array.isArray(cached?.data?.items) ? cached.data.items : [];
       const memItems = Array.isArray(phase15Items) ? phase15Items : [];
       const prevItems = cachedItems.length >= memItems.length ? cachedItems : memItems;
-      const prevSummary = cached?.data?.summary || null;
+      const prevSummary = cached?.data?.summary;
       const loaded = await loadLifeGroup(apiGet, activeFamilyId, LIFE15, { previousItems: prevItems });
       // Never replace a known non-empty list with an empty load (create/sync race).
       const items = loaded.length || !prevItems.length ? loaded : prevItems;
@@ -4803,7 +3319,7 @@ function App() {
         const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase15");
         if (cached?.data) {
           setPhase15Items(cached.data.items || []);
-          setPhase15Summary(cached.data.summary || null);
+          setPhase15Summary(cached.data.summary);
           setMessage(t("syncQueuedOffline"), "success");
           return;
         }
@@ -4811,7 +3327,7 @@ function App() {
         /* ignore */
       }
       setPhase15Items((prev) => (prev?.length ? prev : []));
-      setPhase15Summary((prev) => prev || null);
+      setPhase15Summary((prev) => prev);
       setMessage(err.message || "Assets & Funds load failed", "error");
     }
   }
@@ -4859,7 +3375,7 @@ function App() {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
         entity_type: lifeOfflineEntityType(moduleType),
-        entity_id: editingPhase15Id || null,
+        entity_id: editingPhase15Id,
         operation: op,
         payload: { ...payload, client_request_id: `web-p15-${Date.now()}` },
       });
@@ -4884,15 +3400,15 @@ function App() {
             name: created.name || created.vehicle_name || formForSave.name.trim(),
             category: formForSave.category || "GENERAL",
             sub_type: created.sub_type || created.type || formForSave.sub_type || "",
-            provider: created.provider || created.doctor || formForSave.provider || null,
-            member_id: created.member_id || formForSave.member_id || null,
+            provider: created.provider || created.doctor || formForSave.provider,
+            member_id: created.member_id || formForSave.member_id,
             amount: created.amount ?? created.principal ?? formForSave.amount ?? "0",
             secondary_amount: created.secondary_amount ?? formForSave.secondary_amount ?? null,
             currency: created.currency || currencyCode(),
-            target_date: created.target_date || formForSave.target_date || null,
-            secondary_date: created.secondary_date || formForSave.secondary_date || null,
+            target_date: created.target_date || formForSave.target_date,
+            secondary_date: created.secondary_date || formForSave.secondary_date,
             status: "ACTIVE",
-            note: created.note || formForSave.note || null,
+            note: created.note || formForSave.note,
           };
           setPhase15Items((prev) => {
             const next = [normalized, ...(prev || []).filter((r) => String(r.id) !== String(normalized.id))];
@@ -4910,7 +3426,7 @@ function App() {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
           entity_type: lifeOfflineEntityType(moduleType),
-          entity_id: editingPhase15Id || null,
+          entity_id: editingPhase15Id,
           operation: op,
           payload: { ...payload, client_request_id: `web-p15-${Date.now()}` },
         });
@@ -4964,7 +3480,7 @@ function App() {
       const cachedItems = Array.isArray(cached?.data?.items) ? cached.data.items : [];
       const memItems = Array.isArray(phase16Items) ? phase16Items : [];
       const prevItems = cachedItems.length >= memItems.length ? cachedItems : memItems;
-      const prevSummary = cached?.data?.summary || null;
+      const prevSummary = cached?.data?.summary;
       const loaded = await loadLifeGroup(apiGet, activeFamilyId, LIFE16, { previousItems: prevItems });
       const items = loaded.length || !prevItems.length ? loaded : prevItems;
       let summary = await apiGet(lifeSummaryPath(activeFamilyId)).catch(() => null);
@@ -4984,7 +3500,7 @@ function App() {
         const cached = await loadOfflineSnapshot(activeFamilyId, "life", "phase16");
         if (cached?.data) {
           setPhase16Items(cached.data.items || []);
-          setPhase16Summary(cached.data.summary || null);
+          setPhase16Summary(cached.data.summary);
           setMessage(t("syncQueuedOffline"), "success");
           return;
         }
@@ -4992,7 +3508,7 @@ function App() {
         /* ignore */
       }
       setPhase16Items((prev) => (prev?.length ? prev : []));
-      setPhase16Summary((prev) => prev || null);
+      setPhase16Summary((prev) => prev);
       setMessage(err.message || "Subscriptions, Documents & Property load failed", "error");
     }
   }
@@ -5026,12 +3542,12 @@ function App() {
 
   async function persistDocumentFileMeta(itemId, result) {
     const patch = {
-      file_name: result.file_name || result.name || null,
-      file_url: result.download_url || result.file_url || null,
-      file_path: result.download_url || result.file_path || result.storage_path || null,
-      storage_path: result.storage_path || null,
-      mime: result.mime || result.content_type || null,
-      file_size: result.size || result.file_size || null,
+      file_name: result.file_name || result.name,
+      file_url: result.download_url || result.file_url,
+      file_path: result.download_url || result.file_path || result.storage_path,
+      storage_path: result.storage_path,
+      mime: result.mime || result.content_type,
+      file_size: result.size || result.file_size,
       uploaded_at: result.uploaded_at || new Date().toISOString(),
       has_file: true,
       file_encrypted: Boolean(result.encrypted || result.file_encrypted),
@@ -5064,20 +3580,10 @@ function App() {
     }
 
     if (isCloudLocalMode()) {
-      if (!isBrowserOnline()) {
-        await queueDocumentUpload({ familyId: activeFamilyId, itemId, file });
-        setMessage(t("documentQueuedOffline"), "success");
-        return { queued: true };
-      }
-      const result = await uploadFamilyDocument({
-        familyId: activeFamilyId,
-        itemId,
-        file,
-        uid: firebaseUser?.uid,
-      });
-      await persistDocumentFileMeta(itemId, result);
-      await syncCloudAfterWrite();
-      return result;
+      // Offline: queue the file; it uploads to the VPS when back online.
+      await queueDocumentUpload({ familyId: activeFamilyId, itemId, file });
+      setMessage(t("documentQueuedOffline"), "success");
+      return { queued: true };
     }
 
     const formData = new FormData();
@@ -5117,14 +3623,14 @@ function App() {
       await enqueueOutboxChange({
         familyId: activeFamilyId,
         entity_type: lifeOfflineEntityType(moduleType),
-        entity_id: editingPhase16Id || null,
+        entity_id: editingPhase16Id,
         operation: op,
         payload: {
           ...payload,
           client_request_id: clientRequestId,
-          file_name: documentFile?.name || null,
-          file_mime: documentFile?.type || null,
-          file_size: documentFile?.size || null,
+          file_name: documentFile?.name,
+          file_mime: documentFile?.type,
+          file_size: documentFile?.size,
         },
       });
       if (moduleType === "DOCUMENT" && documentFile) {
@@ -5156,8 +3662,8 @@ function App() {
             name: created.name || formForSave.name.trim(),
             category: formForSave.category || "GENERAL",
             sub_type: created.sub_type || created.type || formForSave.sub_type || "",
-            provider: created.provider || created.location || formForSave.provider || null,
-            member_id: created.member_id || formForSave.member_id || null,
+            provider: created.provider || created.location || formForSave.provider,
+            member_id: created.member_id || formForSave.member_id,
             amount: created.amount ?? formForSave.amount ?? "0",
             secondary_amount: created.secondary_amount ?? created.value ?? formForSave.secondary_amount ?? null,
             currency: created.currency || currencyCode(),
@@ -5165,13 +3671,12 @@ function App() {
               created.renewal_or_expiry_date ||
               created.next_due ||
               created.expiry_date ||
-              formForSave.renewal_or_expiry_date ||
-              null,
-            billing_cycle: created.billing_cycle || created.cycle || formForSave.billing_cycle || null,
-            payment_account_id: created.payment_account_id || formForSave.payment_account_id || null,
-            reference: created.reference || created.area || formForSave.reference || null,
+              formForSave.renewal_or_expiry_date,
+            billing_cycle: created.billing_cycle || created.cycle || formForSave.billing_cycle,
+            payment_account_id: created.payment_account_id || formForSave.payment_account_id,
+            reference: created.reference || created.area || formForSave.reference,
             status: "ACTIVE",
-            note: created.note || formForSave.note || null,
+            note: created.note || formForSave.note,
             has_file: false,
           };
           setPhase16Items((prev) => {
@@ -5196,7 +3701,7 @@ function App() {
         await enqueueOutboxChange({
           familyId: activeFamilyId,
           entity_type: lifeOfflineEntityType(moduleType),
-          entity_id: editingPhase16Id || null,
+          entity_id: editingPhase16Id,
           operation: op,
           payload: { ...payload, client_request_id: clientRequestId },
         });
@@ -5251,7 +3756,7 @@ function App() {
         return;
       }
 
-      // Cloud-local: download from Firebase Storage URL stored on the item
+      // Offline: open the file URL stored on the item
       if (isCloudLocalMode()) {
         const url = item.file_url || item.file_path;
         if (!url) {
@@ -5357,7 +3862,7 @@ function App() {
       setGroceryVendorSummary(Array.isArray(vendorSummary) ? vendorSummary : []);
       setGroceryVendors(Array.isArray(vendors) ? vendors : []);
       setGroceryActivity(Array.isArray(activity) ? activity : []);
-      setGroceryCollaboration(collaboration || null);
+      setGroceryCollaboration(collaboration);
       const nextListId =
         preferListId ||
         (activeGroceryListId && listRows.some((l) => String(l.id) === String(activeGroceryListId))
@@ -5424,8 +3929,8 @@ function App() {
       title: groceryListForm.title.trim(),
       budget_amount: groceryListForm.budget_amount || "0",
       currency: currencyCode(),
-      vendor_name: groceryListForm.vendor_name || null,
-      shopping_date: groceryListForm.shopping_date || null,
+      vendor_name: groceryListForm.vendor_name,
+      shopping_date: groceryListForm.shopping_date,
       note: groceryListForm.note,
       mobile_sync_key: `web-glist-${Date.now()}`,
     };
@@ -5474,8 +3979,8 @@ function App() {
     const payload = {
       family_id: activeFamilyId,
       name: groceryVendorForm.name.trim(),
-      phone: groceryVendorForm.phone || null,
-      address: groceryVendorForm.address || null,
+      phone: groceryVendorForm.phone,
+      address: groceryVendorForm.address,
       category: groceryVendorForm.category || "GENERAL",
       note: groceryVendorForm.note,
     };
@@ -5532,8 +4037,8 @@ function App() {
       unit: groceryItemForm.unit || "pcs",
       estimated_price: groceryItemForm.estimated_price || "0",
       actual_price: groceryItemForm.actual_price || "0",
-      vendor_name: groceryItemForm.vendor_name || null,
-      barcode: groceryItemForm.barcode || null,
+      vendor_name: groceryItemForm.vendor_name,
+      barcode: groceryItemForm.barcode,
       note: groceryItemForm.note,
       mobile_sync_key: `web-${Date.now()}`,
     };
@@ -5577,7 +4082,7 @@ function App() {
       family_id: activeFamilyId,
       is_bought: true,
       actual_price: item.actual_price || item.estimated_price || "0",
-      vendor_name: item.vendor_name || null,
+      vendor_name: item.vendor_name,
       expected_sync_version: item.sync_version,
       sync_version: item.sync_version,
     };
@@ -5602,7 +4107,7 @@ function App() {
         family_id: activeFamilyId,
         is_bought: true,
         actual_price: item.actual_price || item.estimated_price || "0",
-        vendor_name: item.vendor_name || null,
+        vendor_name: item.vendor_name,
         expected_sync_version: item.sync_version,
       });
       await selectGroceryList(activeGroceryListId);
@@ -5789,7 +4294,7 @@ function App() {
         actual_price: "0",
         vendor_name: null,
         barcode: null,
-        note: suggestion.raw_line || null,
+        note: suggestion.raw_line,
       });
       setMessage(t("ocrItemAdded").replace("{name}", suggestion.name), "success");
       await selectGroceryList(activeGroceryListId);
@@ -5823,7 +4328,7 @@ function App() {
           actual_price: "0",
           vendor_name: null,
           barcode: null,
-          note: suggestion.raw_line || null,
+          note: suggestion.raw_line,
         });
         added += 1;
       } catch {
@@ -5854,7 +4359,7 @@ function App() {
       );
       setLedgerReport(data);
     } catch (err) {
-      setLedgerReport((prev) => prev || null);
+      setLedgerReport((prev) => prev);
       setMessage(err.message || "Account ledger load failed", "error");
     }
   }
@@ -5918,17 +4423,17 @@ function App() {
       try {
         const cached = await loadOfflineSnapshot(activeFamilyId, "reports", "overview");
         if (cached?.data) {
-          setFinancialReport(cached.data.financial || null);
-          setWalletReport(cached.data.wallet || null);
+          setFinancialReport(cached.data.financial);
+          setWalletReport(cached.data.wallet);
           setMessage(t("syncQueuedOffline"), "success");
           return;
         }
       } catch {
         /* ignore */
       }
-      setFinancialReport((prev) => prev || null);
-      setWalletReport((prev) => prev || null);
-      setLedgerReport((prev) => prev || null);
+      setFinancialReport((prev) => prev);
+      setWalletReport((prev) => prev);
+      setLedgerReport((prev) => prev);
       setMessage(err.message || "Reports load failed", "error");
     } finally {
       setReportsLoading(false);
@@ -5967,7 +4472,7 @@ function App() {
         if (cached?.data) {
           setCurrencies(cached.data.currencies || []);
           setExchangeRates(cached.data.exchangeRates || []);
-          setCurrencySummary(cached.data.currencySummary || null);
+          setCurrencySummary(cached.data.currencySummary);
           setMessage(t("syncQueuedOffline") || "Showing offline currency cache", "success");
           setCurrencyLoading(false);
           return;
@@ -5975,7 +4480,7 @@ function App() {
       }
       setCurrencies((prev) => (prev?.length ? prev : []));
       setExchangeRates((prev) => (prev?.length ? prev : []));
-      setCurrencySummary((prev) => prev || null);
+      setCurrencySummary((prev) => prev);
       setMessage(err.message || "Currency data load failed", "error");
     } finally {
       setCurrencyLoading(false);
@@ -5985,98 +4490,20 @@ function App() {
   async function loadFamilyGovernance(overrideFamilyId) {
     const fid = String(overrideFamilyId || activeFamilyId || "").trim();
     if (!fid) return;
-    if (!token && !(cloudOnlyMode && firebaseUser?.uid)) return;
+    if (!token) return;
 
     setGovernanceLoading(true);
 
     try {
       let data;
-      if (cloudOnlyMode && !token) {
-        const hit = await cloudApiGet({
-          familyId: fid,
-          path: `/families/${fid}/members`,
-          currentUser: cloudApiUser(),
-        });
-        data = hit.handled ? hit.data : [];
-      } else {
-        data = await apiGet(`/families/${fid}/members`);
-      }
+      data = await apiGet(`/families/${fid}/members`);
       let members = Array.isArray(data) ? data : data.members || [];
 
-      // Merge live Firestore member registry (multi-account)
-      if (cloudOnlyMode && firebaseUser?.uid) {
-        try {
-          const { listFamilyCloudMembers } = await import("./firebase/familyCloud");
-          const cloudMembers = await listFamilyCloudMembers(fid);
-          if (cloudMembers.length) {
-            const byEmail = new Map();
-            for (const m of members) {
-              byEmail.set(String(m.email || m.uid || m.id).toLowerCase(), m);
-            }
-            for (const cm of cloudMembers) {
-              const key = String(cm.email || cm.uid || cm.id).toLowerCase();
-              const overrides = Array.isArray(cm.overrides)
-                ? cm.overrides
-                : Array.isArray(cm.permission_overrides)
-                  ? cm.permission_overrides
-                  : [];
-              if (!byEmail.has(key)) {
-                members.push({
-                  id: cm.uid || cm.id,
-                  member_id: cm.uid || cm.id,
-                  user_id: cm.uid || cm.id,
-                  uid: cm.uid || cm.id,
-                  full_name: cm.display_name || cm.email || "Member",
-                  email: cm.email || "",
-                  role: cm.role || "MEMBER",
-                  relationship: cm.relationship || cm.relationship_type || "",
-                  relationship_type: cm.relationship_type || cm.relationship || "",
-                  status: cm.status || "ACTIVE",
-                  overrides,
-                  source: "firestore_members",
-                });
-              } else {
-                const existing = byEmail.get(key);
-                // Firestore role is source of truth — never keep a higher local role after demotion
-                const cloudRole = String(cm.role || "").toUpperCase();
-                if (cloudRole) existing.role = cloudRole;
-                existing.normalized_role = cloudRole || existing.normalized_role || existing.role;
-                existing.full_name = cm.display_name || existing.full_name;
-                existing.uid = cm.uid || cm.id || existing.uid;
-                existing.user_id = cm.uid || cm.id || existing.user_id;
-                existing.member_id = cm.uid || cm.id || existing.member_id || existing.id;
-                existing.id = existing.member_id || existing.id;
-                const cloudRelation = String(
-                  cm.relationship_display_label || cm.relationship || cm.relationship_type || "",
-                ).trim();
-                if (cloudRelation) {
-                  existing.relationship = cloudRelation;
-                  existing.relationship_type = cloudRelation;
-                  existing.relationship_display_label = cloudRelation;
-                }
-                if (overrides.length) existing.overrides = overrides;
-                existing.source = existing.source || "merged";
-              }
-            }
-          }
-        } catch {
-          /* offline / rules not published yet */
-        }
-      }
 
       setGovernanceMembers(members);
       try {
         let pending;
-        if (cloudOnlyMode && !token) {
-          const hit = await cloudApiGet({
-            familyId: fid,
-            path: `/join-requests/family/${fid}`,
-            currentUser: cloudApiUser(),
-          });
-          pending = hit.handled ? hit.data : [];
-        } else {
-          pending = await apiGet(`/join-requests/family/${fid}`);
-        }
+        pending = await apiGet(`/join-requests/family/${fid}`);
         setJoinRequests(Array.isArray(pending) ? pending : pending?.requests || []);
       } catch {
         setJoinRequests([]);
@@ -6108,27 +4535,6 @@ function App() {
     }
     try {
       const code = joinForm.invite_code.trim().toUpperCase();
-      if ((cloudOnlyMode || isCloudLocalMode()) && !token && firebaseUser?.uid) {
-        const result = await joinFamilyByInviteCode({
-          code,
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || currentUser?.email || "",
-          displayName: currentUser?.full_name || firebaseUser.displayName || "Member",
-          relationshipType: joinForm.relationship_type || "Other",
-        });
-        const nextFamilyId = result.familyId;
-        await activateCloudSession(firebaseUser, nextFamilyId, "", { role: "MEMBER" });
-        setMessage(t("joinFamilySuccess") || t("joinRequestedOk") || "Joined family successfully", "success");
-        try {
-          await loadFamilyGovernance(nextFamilyId);
-        } catch {
-          /* optional */
-        }
-        window.setTimeout(() => {
-          void refreshAll();
-        }, 0);
-        return { ok: true, familyId: nextFamilyId };
-      }
 
       const body = {
         invite_code: code,
@@ -6175,19 +4581,16 @@ function App() {
       const data = await apiPost(`/invites/generate/${activeFamilyId}`, {
         expires_in_days: expiresInDays,
         max_uses: maxUses,
-        invitee_email: (inviteForm.invitee_email || "").trim() || null,
+        invitee_email: (inviteForm.invitee_email || "").trim(),
         send_email: Boolean(inviteForm.send_email),
-        owner_uid: firebaseUser?.uid || currentUser?.firebase_uid || currentUser?.uid || null,
+        owner_uid: currentUser?.uid,
       });
 
       const code = String(data?.invite_code || data?.code || "").trim();
-      if (!code || data?.cloud_published === false) {
+      if (!code) {
         setGeneratedInvite(null);
         setInviteSpotlightOpen(false);
-        setMessage(
-          `${t("inviteLocalOnlyWarn")}${data?.cloud_publish_error ? ` (${data.cloud_publish_error})` : ""}`,
-          "warning",
-        );
+        setMessage(appLanguage === "bn" ? "ইনভাইট কোড তৈরি হয়নি — আবার চেষ্টা করুন" : "Invite code was not created — try again", "warning");
         return;
       }
 
@@ -6225,12 +4628,7 @@ function App() {
       setGeneratedInvite(null);
       setInviteSpotlightOpen(false);
       const raw = String(err?.message || "");
-      const tip =
-        /permission-denied|OWNER shell|invite publish|membership/i.test(raw)
-          ? (appLanguage === "bn"
-              ? "Invite Firebase-এ সেভ হয়নি — এই কোড শেয়ার করবেন না। ইন্টারনেট চেক করে আবার Generate চাপুন। সফল হলে বড় বক্সে কোড আসবে।"
-              : "Invite was not saved to Firebase — do not share. Check internet and Generate again. On success the code appears in the big box.")
-          : raw || "Invite generation failed";
+      const tip = raw || "Invite generation failed";
       setMessage(tip, "error");
     } finally {
       setInviteGenerating(false);
@@ -6288,7 +4686,7 @@ function App() {
       const data = await apiPost(`/invites/link/${activeFamilyId}`, {
         expires_in_days: Number(inviteForm.expires_in_days || 7),
         max_uses: Number(inviteForm.max_uses || 5),
-        invitee_email: (inviteForm.invitee_email || "").trim() || null,
+        invitee_email: (inviteForm.invitee_email || "").trim(),
       });
       setGeneratedInvite(data);
       setMessage(data.invite_link ? `Link: ${data.invite_link}` : t("inviteGenerated"), "success");
@@ -6349,7 +4747,7 @@ function App() {
           return;
         }
       }
-      setBackupIntegrity((prev) => prev || null);
+      setBackupIntegrity((prev) => prev);
       setBackupList((prev) => prev?.backups?.length ? prev : { count: 0, backups: [] });
       if (!err?.isPermission) {
         setMessage(err.message || "Backup status load failed", "error");
@@ -6525,7 +4923,7 @@ function App() {
           open_conflicts: 0,
           offline_first: true,
           sync_state: browserOnline ? "CLOUD_LOCAL_READY" : "OFFLINE",
-          last_sync_at: firebaseMeta?.updated_at || firebaseMeta?.pushed_at || lastAutoSyncAt || null,
+          last_sync_at: lastAutoSyncAt,
           table_counts: {
             ...(statusData?.table_counts || {}),
             wallets: Array.isArray(cache["finance/wallets"]) ? cache["finance/wallets"].length : 0,
@@ -6552,7 +4950,7 @@ function App() {
       setSyncResolvedConflicts(resolvedData.conflicts || []);
       await refreshLocalOutboxCount();
     } catch (err) {
-      setSyncStatus((prev) => prev || null);
+      setSyncStatus((prev) => prev);
       setSyncConflicts((prev) => (prev?.length ? prev : []));
       setSyncResolvedConflicts((prev) => (prev?.length ? prev : []));
       setMessage(err.message || "Sync status load failed", "error");
@@ -6570,7 +4968,7 @@ function App() {
         await apiGet(`/sync-logs?family_id=${encodeURIComponent(activeFamilyId)}&limit=80`),
       );
     } catch (err) {
-      setSyncLogs((prev) => prev || null);
+      setSyncLogs((prev) => prev);
       setMessage(err.message || "Sync logs load failed", "error");
     } finally {
       setSyncLogsLoading(false);
@@ -6615,54 +5013,8 @@ function App() {
       return;
     }
 
-    // Hybrid cloud-only: flush outbox by pushing Firestore snapshot (no PC backend).
+    // Offline: the outbox flushes once the server is reachable again.
     if (isCloudLocalMode()) {
-      if (!firebaseUser?.uid || !isCloudEmailReady(firebaseUser)) return;
-      if (!silent) setSyncPushLoading(true);
-      try {
-        // Recover grocery rows that were enqueue-only (never written to IndexedDB).
-        const pending = await listPendingOutbox(activeFamilyId);
-        for (const row of pending) {
-          const et = String(row.entity_type || "").toLowerCase();
-          const op = String(row.operation || "").toUpperCase();
-          const payload = row.payload || {};
-          try {
-            if (et.includes("grocery_list") && op === "CREATE") {
-              await apiPost("/grocery/lists", payload);
-            } else if (et.includes("grocery_vendor") && op === "CREATE") {
-              await apiPost("/grocery/vendors", payload);
-            } else if (et.includes("grocery_item") && op === "CREATE") {
-              await apiPost("/grocery/items", payload);
-            } else if (et.includes("grocery_item") && (op === "UPDATE" || op === "BUY")) {
-              const id = row.entity_id || payload.id;
-              if (id) {
-                await apiPut(`/grocery/items/${id}/buy`, { ...payload, is_bought: true });
-              }
-            }
-          } catch {
-            // Keep outbox row; snapshot push still proceeds with current IDB.
-          }
-        }
-        const result = await flushCloudSnapshotOutbox({
-          familyId: activeFamilyId,
-          uid: firebaseUser.uid,
-          pushSnapshot: pushCloudSnapshot,
-          deviceLabel: SYNC_DEVICE_ID || "mobile",
-        });
-        if (isAutomatic) setLastAutoSyncAt(new Date().toISOString());
-        await refreshLocalOutboxCount();
-        await refreshFirebaseMeta(firebaseUser.uid);
-        await loadGrocery({ silent: true });
-        if (!silent) {
-          if (result.offline) setMessage(t("browserOffline"), "error");
-          else if (result.empty || result.pushed === 0) setMessage(t("noSyncStatus"), "success");
-          else setMessage(t("syncPushDone"), "success");
-        }
-      } catch (err) {
-        if (!silent) setMessage(err.message || "Sync push failed", "error");
-      } finally {
-        if (!silent) setSyncPushLoading(false);
-      }
       return;
     }
 
@@ -6711,16 +5063,11 @@ function App() {
 
     try {
       if (isCloudLocalMode()) {
-        const result = await pullAndHydrateCloudLocal();
-        setSyncPullPreview({
-          changes: [],
-          restored: result?.restored || 0,
-          sync_token: new Date().toISOString(),
-          note: "Cloud snapshot pulled into IndexedDB",
-          source: "cloud_local",
-        });
-        setMessage(t("syncPullPreviewLoaded"), "success");
-        await loadSyncStatus();
+        // Pull needs the VPS server; offline there is nothing new to fetch.
+        setMessage(
+          appLanguage === "bn" ? "অফলাইন — সার্ভারে সংযোগ দিয়ে পুল করুন" : "Offline — connect to the server to pull changes",
+          "warning",
+        );
         return;
       }
 
@@ -6940,9 +5287,6 @@ function App() {
           });
           await refreshLocalOutboxCount();
         }
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("walletUpdated"), "success");
         cancelEditWallet();
         return;
@@ -6999,9 +5343,6 @@ function App() {
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
         if (editingWalletId && String(editingWalletId) === String(wallet.id)) {
           cancelEditWallet();
-        }
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
         }
         setMessage(t("walletDeleted"), "success");
         return;
@@ -7141,7 +5482,7 @@ function App() {
                   ? {
                       ...row,
                       attachment_name: uploaded.file_name || attachFile.name,
-                      attachment_url: uploaded.url || uploaded.download_url || null,
+                      attachment_url: uploaded.url || uploaded.download_url,
                     }
                   : row,
               );
@@ -7192,7 +5533,7 @@ function App() {
         account_id: txForm.account_id,
         from_account_id: txForm.account_id,
         to_account_id: txForm.to_account_id,
-        category_id: txForm.category_id || null,
+        category_id: txForm.category_id,
         amount: txForm.amount,
         currency: currencyCode(),
         description: txForm.description,
@@ -7216,7 +5557,7 @@ function App() {
         const data = await apiPost(`/transactions/income`, {
           family_id: activeFamilyId,
           account_id: txForm.account_id,
-          category_id: txForm.category_id || null,
+          category_id: txForm.category_id,
           amount: txForm.amount,
           currency: currencyCode(),
           description: txForm.description,
@@ -7232,7 +5573,7 @@ function App() {
           const data = await apiPost(`/expenses/split`, {
             family_id: activeFamilyId,
             account_id: txForm.account_id,
-            category_id: txForm.category_id || null,
+            category_id: txForm.category_id,
             amount,
             currency: currencyCode(),
             description: txForm.description,
@@ -7247,7 +5588,7 @@ function App() {
           const data = await apiPost(`/transactions/expense`, {
             family_id: activeFamilyId,
             account_id: txForm.account_id,
-            category_id: txForm.category_id || null,
+            category_id: txForm.category_id,
             amount: txForm.amount,
             currency: currencyCode(),
             description: txForm.description,
@@ -7323,16 +5664,13 @@ function App() {
             ? {
                 ...row,
                 attachment_name: uploaded?.file_name || file.name,
-                attachment_url: uploaded?.url || uploaded?.download_url || null,
+                attachment_url: uploaded?.url || uploaded?.download_url,
                 updated_at: new Date().toISOString(),
               }
             : row,
         );
         setTransactions(sortTransactionsNewestFirst(next));
         await saveOfflineSnapshot(activeFamilyId, "finance", "transactions", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
       } else {
         await loadTransactions?.();
         refreshAll();
@@ -7351,7 +5689,7 @@ function App() {
       const nums = [...text.matchAll(/(\d+(?:\.\d{1,2})?)/g)].map((m) => Number(m[1])).filter((n) => n > 0);
       const total = nums.length ? nums.reduce((a, b) => a + b, 0) : 0;
       return {
-        suggested_total: total || null,
+        suggested_total: total,
         line_count: text.split(/\n/).filter(Boolean).length,
         engine: "cloud_local_regex",
         raw_text: text,
@@ -7547,12 +5885,7 @@ function App() {
         setSavings(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "savings", next);
         setSavingsAction((prev) => ({ ...prev, savings_goal_id: row.id }));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-          setMessage(t("savingsGoalCreated"), "success");
-        } else {
-          setMessage(t("savingsGoalCreatedOffline") || t("savingsGoalCreated"), "success");
-        }
+        setMessage(t("savingsGoalCreatedOffline") || t("savingsGoalCreated"), "success");
         setSavingsForm((prev) => ({ ...prev, name: "", target_amount: "", note: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
         return true;
@@ -7679,9 +6012,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "savings", nextSav);
         setSavingsAction((prev) => ({ ...prev, amount: "", description: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(
           actionOp === "DEPOSIT"
             ? t("savingsDepositPosted") || "Savings deposit posted"
@@ -7784,7 +6114,7 @@ function App() {
       interest_rate: Number(loanForm.interest_rate || 0),
       interest_type: loanForm.interest_type || "NONE",
       installment_count: loanForm.installment_count ? Number(loanForm.installment_count) : null,
-      start_date: loanForm.start_date || null,
+      start_date: loanForm.start_date,
       client_request_id: `web-loan-${Date.now()}`,
     };
 
@@ -7844,9 +6174,6 @@ function App() {
           loan_id: prev.loan_id || row.id,
         }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("loanCreated"), "success");
         return true;
       }
@@ -7974,9 +6301,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "loans", nextLoans);
         setLoanPaymentForm((prev) => ({ ...prev, amount: "", description: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("loanPaymentPosted"), "success");
         return;
       }
@@ -8119,12 +6443,7 @@ function App() {
         const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
         setBudgets(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-          setMessage(t("budgetCreated"), "success");
-        } else {
-          setMessage(t("budgetCreatedOffline") || t("budgetCreated"), "success");
-        }
+        setMessage(t("budgetCreatedOffline") || t("budgetCreated"), "success");
         setBudgetForm((prev) => ({ ...prev, name: "", budget_amount: "", note: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
         return true;
@@ -8194,7 +6513,7 @@ function App() {
       goal_type: goalForm.goal_type,
       target_amount: goalForm.target_amount,
       currency: currencyCode(),
-      target_date: goalForm.target_date || null,
+      target_date: goalForm.target_date,
       note: goalForm.note,
       client_request_id: `web-goal-${Date.now()}`,
     };
@@ -8226,9 +6545,6 @@ function App() {
           note: "",
         });
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("goalCreated"), "success");
         return;
       }
@@ -8357,9 +6673,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
         setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("goalContributionPosted"), "success");
         return;
       }
@@ -8529,9 +6842,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
         setGoalContributionForm((prev) => ({ ...prev, amount: "", description: "" }));
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("goalWithdrawPosted"), "success");
         return;
       }
@@ -8675,7 +6985,7 @@ function App() {
       goal_name: goalEditModal.goal_name.trim(),
       goal_type: goalEditModal.goal_type,
       target_amount: goalEditModal.target_amount,
-      target_date: goalEditModal.target_date || null,
+      target_date: goalEditModal.target_date,
       note: goalEditModal.note,
     };
 
@@ -8706,9 +7016,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "goals", next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
         closeGoalEdit();
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("goalUpdated"), "success");
         return;
       }
@@ -8797,9 +7104,6 @@ function App() {
         setGoalSummary(summary);
         await saveOfflineSnapshot(activeFamilyId, "finance", "goals", next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "goalSummary", summary);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("goalClosed"), "success");
         return;
       }
@@ -8840,14 +7144,14 @@ function App() {
     const payload = {
       family_id: activeFamilyId,
       account_id: recurringForm.account_id,
-      category_id: recurringForm.category_id || null,
+      category_id: recurringForm.category_id,
       title: recurringForm.title.trim(),
       transaction_type: recurringForm.transaction_type,
       amount: recurringForm.amount,
       currency: currencyCode(),
       frequency: recurringForm.frequency,
       start_date: recurringForm.start_date,
-      end_date: recurringForm.end_date || null,
+      end_date: recurringForm.end_date,
       description: recurringForm.description,
       client_request_id: `web-recurring-${Date.now()}`,
     };
@@ -8871,9 +7175,6 @@ function App() {
           description: "",
           end_date: "",
         }));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringCreated"), "success");
         return;
       }
@@ -8968,9 +7269,6 @@ function App() {
         await saveOfflineSnapshot(activeFamilyId, "finance", "wallets", nextWallets);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", nextRec);
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringPosted"), "success");
         return;
       }
@@ -9030,7 +7328,7 @@ function App() {
       title: recurringEditModal.title.trim(),
       amount: recurringEditModal.amount,
       frequency: recurringEditModal.frequency,
-      end_date: recurringEditModal.end_date || null,
+      end_date: recurringEditModal.end_date,
       description: recurringEditModal.description,
     };
 
@@ -9054,9 +7352,6 @@ function App() {
         setRecurringItems(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
         closeRecurringEdit();
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringUpdated"), "success");
         return;
       }
@@ -9087,9 +7382,6 @@ function App() {
         );
         setRecurringItems(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringPaused"), "success");
         return;
       }
@@ -9146,9 +7438,6 @@ function App() {
         );
         setRecurringItems(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringResumed"), "success");
         return;
       }
@@ -9205,9 +7494,6 @@ function App() {
         );
         setRecurringItems(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "recurring", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("recurringClosed"), "success");
         return;
       }
@@ -9386,9 +7672,6 @@ function App() {
         const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
         setBudgets(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         closeBudgetEdit();
         setMessage(t("budgetUpdated"), "success");
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
@@ -9458,9 +7741,6 @@ function App() {
         const next = enrichBudgetsFromLedger(nextRaw, txs, cats);
         setBudgets(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "budgets", nextRaw);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("budgetClosed"), "success");
         setDashboard(buildDashboardFromCache(await hydrateFamilyFromOfflineCache(activeFamilyId)));
         return;
@@ -9560,9 +7840,6 @@ function App() {
         setLoans(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "loans", next);
         closeLoanEdit();
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("loanUpdated"), "success");
         return;
       }
@@ -9682,9 +7959,6 @@ function App() {
         );
         setLoans(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "loans", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("loanClosed"), "success");
         return;
       }
@@ -9768,9 +8042,6 @@ function App() {
         const next = recomputeSavingsFromLedger(nextRaw, txs);
         setSavings(next);
         await saveOfflineSnapshot(activeFamilyId, "finance", "savings", next);
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("savingsGoalUpdated"), "success");
         return;
       }
@@ -9848,9 +8119,6 @@ function App() {
             ? prev.savings_goal_id
             : active[0]?.id || "",
         }));
-        if (isBrowserOnline() && canSyncCloudFinance(firebaseUser)) {
-          await syncCloudAfterWrite();
-        }
         setMessage(t("savingsGoalClosed"), "success");
         return;
       }
@@ -10024,219 +8292,15 @@ function App() {
     }
   }
 
-  // Phone ↔ laptop account swap often leaves empty local family_id while Firestore still has it.
-  // Retry until family restores — do not lock out after one failed attempt.
   useEffect(() => {
-    const uid = firebaseUser?.uid;
-    if (!uid || activeFamilyId || sessionBootstrapping || isFamilyLoading) return;
-    if (noFamilyAutoRestoreRef.current === `ok:${uid}`) return;
-    if (!isBrowserOnline()) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const fid = await restoreFamilyFromCloud(firebaseUser);
-        if (cancelled || !fid) return;
-        noFamilyAutoRestoreRef.current = `ok:${uid}`;
-        setMessage(
-          appLanguage === "bn" ? "পরিবার ক্লাউড থেকে পুনরুদ্ধার হয়েছে" : "Family restored from cloud",
-          "success",
-        );
-      } catch (err) {
-        if (!cancelled) softFail("Family auto-restore", err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseUser?.uid, activeFamilyId, sessionBootstrapping, isFamilyLoading]);
-
-  useEffect(() => {
-    // VPS / API mode — never attach Firebase Auth session bootstrap.
-    if (!FIREBASE_CONFIGURED || !FIREBASE_FIRST_MODE) {
-      try {
-        persistCloudOnlyMode(false);
-      } catch {
-        /* ignore */
-      }
-      setCloudOnlyMode(false);
-      setSessionBootstrapping(false);
-      if (!loadCloudFamilyId() && !token) setIsFamilyLoading(false);
-      return undefined;
+    // VPS / API only: clear any flag left by the removed cloud mode.
+    try {
+      persistCloudOnlyMode(false);
+    } catch {
+      /* ignore */
     }
-
-    let cancelled = false;
-    let bootDone = false;
-    let safetyTimer = 0;
-    const markBootDone = () => {
-      if (bootDone || cancelled) return;
-      bootDone = true;
-      window.clearTimeout(safetyTimer);
-      setSessionBootstrapping(false);
-      setIsFamilyLoading(false);
-      setFamiliesLoading(false);
-    };
-    // Hard unlock — never leave "Preparing a secure session..." stuck
-    safetyTimer = window.setTimeout(() => {
-      if (cancelled || bootDone) return;
-      softFail(
-        "Session bootstrap",
-        new Error(t("sessionBootstrapTimeout") || "Timed out — check internet, then Refresh or Create/Join family."),
-      );
-      bootDone = true;
-      setSessionBootstrapping(false);
-      setIsFamilyLoading(false);
-      setFamiliesLoading(false);
-      // Keep any local family id so dashboard can open offline
-      const localId = loadCloudFamilyId();
-      if (localId) {
-        setActiveFamilyId((cur) => cur || localId);
-        setCloudOnlyMode(true);
-        persistCloudOnlyMode(true);
-      }
-    }, 8000);
-
-    // Unlock UI immediately from localStorage before any Firestore wait
-    const cachedFamilyId = loadCloudFamilyId();
-    if (cachedFamilyId) {
-      setActiveFamilyId(cachedFamilyId);
-      setCloudOnlyMode(true);
-      persistCloudOnlyMode(true);
-      setFamilies((prev) =>
-        (prev || []).some((f) => f.id === cachedFamilyId)
-          ? prev
-          : [{ id: cachedFamilyId, name: t("cloudOnlyFamilyLabel") }, ...(prev || [])],
-      );
-      setIsFamilyLoading(false);
-      setSessionBootstrapping(false);
-    }
-
-    const unsub = subscribeFirebaseAuth(async (user) => {
-      setFirebaseUser(user);
-
-      if (!user) {
-        setFirebaseMeta(null);
-        if (!cancelled) {
-          markBootDone();
-        }
-        return;
-      }
-
-      try {
-        await Promise.race([
-          ensureUserProfile(user.uid, user),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 3000);
-          }),
-        ]);
-        await Promise.race([
-          refreshFirebaseMeta(user.uid),
-          new Promise((resolve) => {
-            window.setTimeout(resolve, 3000);
-          }),
-        ]);
-      } catch {
-        /* ignore profile/meta errors on subscribe */
-      }
-
-      const expectCloudSession =
-        loadCloudOnlyMode() || Boolean(loadCloudFamilyId()) || (FIREBASE_FIRST_MODE && !token);
-
-      if (!expectCloudSession) {
-        if (!cancelled) {
-          markBootDone();
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setCloudOnlyMode(true);
-        persistCloudOnlyMode(true);
-      }
-
-      try {
-        // Always resolve from Firestore profile first — localStorage can be empty/stale
-        // after swapping accounts across phone ↔ laptop.
-        let familyId = "";
-        try {
-          familyId = await Promise.race([
-            resolveCloudFamilyId(user.uid, user),
-            new Promise((resolve) => {
-              window.setTimeout(() => resolve(loadCloudFamilyId() || ""), 8000);
-            }),
-          ]);
-        } catch {
-          familyId = loadCloudFamilyId() || "";
-        }
-
-        if (familyId && !cancelled) {
-          setActiveFamilyId(familyId);
-          persistCloudFamilyId(familyId);
-          setIsFamilyLoading(false);
-          setSessionBootstrapping(false);
-        }
-
-        if (!familyId) {
-          /* keep empty — no-family UI + auto-restore effect will retry */
-        } else if (canSyncCloudFinance(user) && isBrowserOnline()) {
-          try {
-            const restored = await Promise.race([
-              pullCloudSnapshot(user.uid),
-              new Promise((resolve) => {
-                window.setTimeout(() => resolve(null), 5000);
-              }),
-            ]);
-            if (restored?.familyId) familyId = restored.familyId;
-          } catch (err) {
-            softFail("Bootstrap pull", err);
-          }
-        }
-        if (!familyId) familyId = loadCloudFamilyId();
-
-        if (familyId && !cancelled) {
-          void activateCloudSession(user, familyId).catch((err) => {
-            softFail("Session restore", err);
-            markBootDone();
-          });
-          markBootDone();
-        } else if (!cancelled) {
-          setCurrentUser({
-            full_name: user.displayName || user.email || "Cloud User",
-            email: user.email || "",
-            is_email_verified: isFirebaseEmailVerified(user),
-            is_active: true,
-            uid: user.uid,
-            firebase_uid: user.uid,
-          });
-          await applyCloudUserAvatar(user);
-          markBootDone();
-        }
-      } catch (err) {
-        softFail("Session restore", err);
-        const storedId = loadCloudFamilyId();
-        if (storedId && !cancelled) {
-          try {
-            persistCloudOnlyMode(true);
-            setCloudOnlyMode(true);
-            setActiveFamilyId(storedId);
-            setFamilies([{ id: storedId, name: t("cloudOnlyFamilyLabel") }]);
-          } catch {
-            /* ignore */
-          }
-        }
-        if (!cancelled) markBootDone();
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(safetyTimer);
-      try {
-        unsub?.();
-      } catch {
-        /* ignore */
-      }
-    };
+    setSessionBootstrapping(false);
+    if (!loadCloudFamilyId() && !token) setIsFamilyLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -10246,60 +8310,6 @@ function App() {
     }
   }, [driveConnected]);
 
-  useEffect(() => {
-    if (cloudOnlyMode && firebaseUser?.uid && !cloudAutoSyncRef.current.enabled) {
-      enableCloudAutoSyncDefaults();
-    }
-  }, [cloudOnlyMode, firebaseUser?.uid]);
-
-  useEffect(() => {
-    if (!cloudOnlyMode || token || !activeFamilyId) return undefined;
-
-    const timeoutId = window.setTimeout(() => {
-      refreshCloudLocalAll();
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudOnlyMode, token, activeFamilyId]);
-
-  useEffect(() => {
-    if (!cloudOnlyMode || !firebaseUser?.uid || !activeFamilyId) return undefined;
-    if (!canSyncCloudFinance(firebaseUser)) return undefined;
-
-    const syncWhenOnline = () => {
-      void syncCloudLocalBidirectional();
-      runCloudAutoBackup({ force: true });
-    };
-
-    window.addEventListener("online", syncWhenOnline);
-    return () => window.removeEventListener("online", syncWhenOnline);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudOnlyMode, firebaseUser?.uid, firebaseUser?.emailVerified, activeFamilyId]);
-
-  useEffect(() => {
-    // Cloud-only: periodically push snapshot while online (mirrors backend outbox auto-sync).
-    if (!isCloudLocalMode() || !firebaseUser?.uid || !canSyncCloudFinance(firebaseUser)) return undefined;
-    if (!autoSyncEnabled) return undefined;
-
-    const run = () => {
-      if (!isBrowserOnline() || syncPushLoading) return;
-      void syncCloudLocalBidirectional().then(() => {
-        pushLocalSyncOutbox({ silent: true, automatic: true });
-      });
-    };
-
-    const intervalId = window.setInterval(run, AUTO_SYNC_INTERVAL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") run();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudOnlyMode, token, activeFamilyId, firebaseUser?.uid, firebaseUser?.emailVerified, autoSyncEnabled, syncPushLoading, browserOnline]);
 
   useEffect(() => {
     try {
@@ -10307,45 +8317,16 @@ function App() {
     } catch (err) {
       console.warn("[S4 Notify] permission read failed", err);
     }
-    if (!isAppAuthed || !activeFamilyId) return undefined;
-    let unsub = () => {};
-    try {
-      unsub = subscribeForegroundMessages((payload) => {
-        const title = payload?.notification?.title || payload?.data?.title || "S4 Family Finance 143";
-        setMessage(title, "success");
-        loadNotifications().catch((e) => console.error("[S4 Notify] refresh after push failed", e));
-      });
-    } catch (err) {
-      console.error("[S4 Notify] subscribeForegroundMessages failed", err);
-    }
-    return () => {
-      try {
-        unsub();
-      } catch {
-        /* ignore */
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAppAuthed, activeFamilyId, firebaseUser?.uid]);
+  }, []);
 
   useEffect(() => {
     if (!isAppAuthed || !activeFamilyId) return;
     const timeoutId = window.setTimeout(() => {
       loadNotifications().catch((e) => console.error("[S4 Notify] loadNotifications failed", e));
-      // Soft: if already granted, refresh FCM token silently; do not prompt automatically.
-      try {
-        if (getNotificationPermission() === "granted") {
-          enableBrowserPushNotifications({ silent: true }).catch((e) =>
-            console.warn("[S4 Notify] silent enable failed", e)
-          );
-        }
-      } catch (err) {
-        console.warn("[S4 Notify] silent enable skipped", err);
-      }
     }, 400);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAppAuthed, activeFamilyId, firebaseUser?.uid]);
+  }, [isAppAuthed, activeFamilyId]);
 
   useEffect(() => {
     if (!authRestoring) return undefined;
@@ -10416,7 +8397,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudOnlyMode, activeFamilyId, firebaseUser?.uid]);
+  }, [activeFamilyId]);
 
   // Auto-fetch Family Governance + Permissions when those screens open
   // (wait until activeFamilyId is ready so the query does not fail silently).
@@ -10449,7 +8430,7 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMenu, settingsTab, activeFamilyId, token, cloudOnlyMode, firebaseUser?.uid]);
+  }, [activeMenu, settingsTab, activeFamilyId, token]);
 
   const activeFamily = families.find((family) => family.id === activeFamilyId);
   const effectivePermissions = myPermissions?.effective_permissions || [];
@@ -10495,7 +8476,7 @@ function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, token, firebaseUser?.uid]);
+  }, [activeFamilyId, token]);
 
   useEffect(() => {
     const settingsTabKey = parseSettingsTab(activeMenu);
@@ -10528,7 +8509,7 @@ function App() {
     tick();
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloudAutoSync.enabled, cloudAutoSync.intervalMinutes, activeFamilyId, firebaseUser?.uid, driveConnected]);
+  }, [cloudAutoSync.enabled, cloudAutoSync.intervalMinutes, activeFamilyId, driveConnected]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "savings") return;
@@ -10540,7 +8521,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "budgets") return;
@@ -10552,7 +8533,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "grocery") return;
@@ -10567,7 +8548,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || !isPhase15Menu(activeMenu)) return;
@@ -10580,7 +8561,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "zakat") return;
@@ -10593,7 +8574,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || !isPhase16Menu(activeMenu)) return;
@@ -10607,7 +8588,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "grocery") return undefined;
@@ -10619,7 +8600,7 @@ function App() {
     }, 20000);
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode]);
+  }, [activeFamilyId, activeMenu]);
 
   useEffect(() => {
     if (!activeFamilyId || activeMenu !== "sync") return;
@@ -10629,7 +8610,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeFamilyId, activeMenu, cloudOnlyMode, firebaseUser?.uid]);
+  }, [token, activeFamilyId, activeMenu]);
 
   useEffect(() => {
     if (!activeFamilyId) return;
@@ -10648,7 +8629,7 @@ function App() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFamilyId, activeMenu, cloudOnlyMode, token, firebaseUser?.uid]);
+  }, [activeFamilyId, activeMenu, token]);
 
   useEffect(() => {
     if (!activeFamilyId || !autoSyncEnabled) return undefined;
@@ -10657,8 +8638,6 @@ function App() {
     const runAutoSync = () => {
       if (!isBrowserOnline() || syncPushLoading) return;
       if (isCloudLocalMode()) {
-        if (!firebaseUser?.uid || !isCloudEmailReady(firebaseUser)) return;
-        pushLocalSyncOutbox({ silent: true, automatic: true });
         return;
       }
       if (localOutboxPending <= 0) return;
@@ -10675,16 +8654,7 @@ function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    token,
-    activeFamilyId,
-    autoSyncEnabled,
-    localOutboxPending,
-    syncPushLoading,
-    browserOnline,
-    cloudOnlyMode,
-    firebaseUser?.uid,
-  ]);
+  }, [token, activeFamilyId, autoSyncEnabled, localOutboxPending, syncPushLoading, browserOnline]);
 
   useEffect(() => {
     if (!token || !activeFamilyId || activeMenu !== "grocery") return undefined;
@@ -10698,27 +8668,6 @@ function App() {
   useEffect(() => {
     function onOnline() {
       setBrowserOnline(true);
-      if (isCloudLocalMode() && firebaseUser?.uid && activeFamilyId && isCloudEmailReady(firebaseUser)) {
-        pushLocalSyncOutbox({ silent: true, automatic: true }).catch(() => {});
-        flushPendingUploads({
-          familyId: activeFamilyId,
-          uploadFn: async (itemId, file) => {
-            if (String(itemId).startsWith("web-p16-")) return { skipped: true };
-            const result = await uploadFamilyDocument({
-              familyId: activeFamilyId,
-              itemId,
-              file,
-              uid: firebaseUser.uid,
-            });
-            await persistDocumentFileMeta(itemId, result);
-          },
-        })
-          .then((stats) => {
-            if (stats?.synced) loadPhase16().catch(() => {});
-          })
-          .catch(() => {});
-        return;
-      }
       if (token && activeFamilyId) {
         flushLocalOutbox({ familyId: activeFamilyId, deviceId: SYNC_DEVICE_ID, apiPost })
           .then(() =>
@@ -10813,6 +8762,108 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeFamilyId, activeMenu]);
+
+  // Live updates for the whole family over the VPS WebSocket. The server
+  // sends only "what changed"; each change is refetched through the REST API
+  // (so permissions still apply). Latest loaders are read through a ref.
+  const realtimeHandlerRef = useRef(null);
+  useEffect(() => {
+    realtimeHandlerRef.current = (types) => {
+      const has = (re) => [...types].some((t) => re.test(t));
+      const jobs = [];
+      if (has(/WALLET|ACCOUNT|TRANSACTION|INCOME|EXPENSE|TRANSFER/)) jobs.push(loadWallets(), loadTransactions());
+      if (has(/SAVING/)) jobs.push(loadSavings());
+      if (has(/LOAN/)) jobs.push(loadLoans());
+      if (has(/BUDGET/)) jobs.push(loadBudgets());
+      if (has(/RECURRING/)) jobs.push(loadRecurring());
+      if (has(/GOAL/)) jobs.push(loadGoals());
+      if (has(/CATEGOR/)) jobs.push(loadCategories());
+      if (has(/MEMBER|FAMILY|INVITE|JOIN|PERMISSION|ROLE/)) jobs.push(loadFamilyGovernance());
+      if (has(/GROCERY/)) jobs.push(loadGrocery({ silent: true }));
+      jobs.push(loadDashboard(), loadNotifications());
+      Promise.allSettled(jobs).catch(() => undefined);
+    };
+  });
+
+  useEffect(() => {
+    if (!token || !activeFamilyId || typeof WebSocket === "undefined") return undefined;
+    let alive = true;
+    let ws = null;
+    let retryTimer = 0;
+    let flushTimer = 0;
+    let attempt = 0;
+    const pending = new Set();
+    // Keep the socket alive through the Nginx proxy read timeout.
+    const pingTimer = window.setInterval(() => {
+      try {
+        if (ws?.readyState === 1) ws.send("ping");
+      } catch {
+        // ignore
+      }
+    }, 25000);
+
+    const flush = () => {
+      flushTimer = 0;
+      const types = new Set(pending);
+      pending.clear();
+      if (types.size) realtimeHandlerRef.current?.(types);
+    };
+
+    const scheduleRetry = () => {
+      if (!alive) return;
+      attempt += 1;
+      const delay = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 1000);
+      retryTimer = window.setTimeout(connect, delay);
+    };
+
+    function connect() {
+      if (!alive) return;
+      const wsBase = apiBase.replace(/^http/i, "ws");
+      try {
+        ws = new WebSocket(`${wsBase}/realtime/ws/${activeFamilyId}?token=${encodeURIComponent(token)}`);
+      } catch {
+        scheduleRetry();
+        return;
+      }
+      ws.onopen = () => {
+        attempt = 0;
+      };
+      ws.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (data?.type !== "family.changed") return;
+        pending.add(String(data.entity_type || "UNKNOWN"));
+        if (!flushTimer) flushTimer = window.setTimeout(flush, 800);
+        showBrowserNotification(
+          "S4 Family Finance 143",
+          appLanguage === "bn" ? "পরিবারে নতুন পরিবর্তন" : "New family update",
+        );
+      };
+      ws.onclose = (event) => {
+        // 4401/4403: token revoked or no longer a member — do not keep retrying.
+        if (event?.code === 4401 || event?.code === 4403) return;
+        scheduleRetry();
+      };
+    }
+
+    connect();
+    return () => {
+      alive = false;
+      window.clearInterval(pingTimer);
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(flushTimer);
+      try {
+        ws?.close();
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeFamilyId, apiBase]);
 
   const mobileNavItems = [
     ["dashboard", appLanguage === "bn" ? "হোম" : "Home", "⌂"],
@@ -10962,7 +9013,7 @@ function App() {
             persistAuthSession({
               accessToken: access,
               refreshToken: refresh || "",
-              user: user || null,
+              user: user,
               apiBase,
             });
             if (user) setCurrentUser(user);
@@ -10972,54 +9023,10 @@ function App() {
     );
   }
 
-  const needsEmailVerification =
-    REQUIRE_EMAIL_VERIFICATION &&
-    cloudOnlyMode &&
-    Boolean(firebaseUser?.uid) &&
-    !isCloudEmailReady(firebaseUser);
-
-  if (needsEmailVerification) {
-    return (
-      <div lang={currentLanguage.code} dir={currentLanguage.dir}>
-        {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
-        <EmailVerificationGate
-          t={t}
-          email={firebaseUser?.email || currentUser?.email || ""}
-          uid={firebaseUser?.uid || ""}
-          busy={securityAction === "verification" || cloudBusy}
-          statusMessage={toast?.message || status || ""}
-          statusType={toast?.type || (status ? "info" : "")}
-          onResend={resendVerification}
-          onRefresh={handleVerifyEmailRefresh}
-          onSignOut={handleVerifyEmailSignOut}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="app-layout s4-shell shoyb-shell" lang={currentLanguage.code} dir={currentLanguage.dir}>
-      {showBackupOnboarding && cloudOnlyMode && firebaseUser?.uid ? (
-        <CloudBackupOnboarding
-          t={t}
-          lang={appLanguage === "en" ? "en" : "bn"}
-          cloudBusy={cloudBusy}
-          driveConfigured={DRIVE_CONFIGURED}
-          driveConnected={driveConnected}
-          localFolderSupported={LOCAL_FOLDER_SUPPORTED}
-          localFolderLabel={localFolderLabel}
-          onDriveConnect={handleOnboardingDriveConnect}
-          onPickLocalFolder={handleOnboardingPickFolder}
-          onLocalDownload={handleLocalDownload}
-          onSkip={() => finishBackupOnboarding(true)}
-          onContinue={() => finishBackupOnboarding(false)}
-        />
-      ) : null}
-      {cloudOnlyMode && !isNativeApp() ? (
-        <div className="cloud-only-banner" role="status">
-          {t("cloudOnlyBanner")}
-        </div>
-      ) : null}
+      {null}
+      {null}
       {goalEditModal.open && (
         <div className="modal-overlay">
           <div className="modal-card">
@@ -11399,8 +9406,6 @@ function App() {
                   const localId = loadCloudFamilyId();
                   if (localId) {
                     setActiveFamilyId(localId);
-                    setCloudOnlyMode(true);
-                    persistCloudOnlyMode(true);
                   }
                 }}
               >
@@ -12305,11 +10310,10 @@ function App() {
             activeFamily={activeFamily}
             currentUser={{
               ...(currentUser || {}),
-              uid: firebaseUser?.uid || currentUser?.uid,
-              firebase_uid: firebaseUser?.uid || currentUser?.firebase_uid,
-              email: currentUser?.email || firebaseUser?.email || email || "",
+              uid: currentUser?.uid,
+              email: currentUser?.email || email || "",
             }}
-            email={email || firebaseUser?.email || ""}
+            email={email || ""}
             myPermissions={myPermissions}
             governanceMembers={governanceMembers}
             memberPermissions={memberPermissions}
@@ -12678,20 +10682,12 @@ function App() {
             notificationSummary={notificationSummary}
             notificationDelivery={notificationDelivery}
             notificationsLoading={notificationsLoading}
-            pushDevices={pushDevices}
-            pushTokenDraft={pushTokenDraft}
-            setPushTokenDraft={setPushTokenDraft}
-            pushPlatform={pushPlatform}
-            setPushPlatform={setPushPlatform}
             onRefresh={loadNotifications}
             onScan={scanNotifications}
             onMarkAllRead={markAllNotificationsRead}
             onMarkRead={markNotificationRead}
             onDelete={deleteNotification}
             onTestEmail={sendTestNotificationEmail}
-            onRegisterDevice={registerPushDevice}
-            onUnregisterDevice={unregisterPushDevice}
-            onTestPush={sendTestPushNotification}
             onEnableBrowserPush={() => enableBrowserPushNotifications()}
           />
         )}
@@ -12807,11 +10803,10 @@ function App() {
             settingsSaving={settingsSaving}
             currentUser={{
               ...(currentUser || {}),
-              uid: firebaseUser?.uid || currentUser?.uid,
-              firebase_uid: firebaseUser?.uid || currentUser?.firebase_uid,
-              email: currentUser?.email || firebaseUser?.email || email || "",
+              uid: currentUser?.uid,
+              email: currentUser?.email || email || "",
             }}
-            email={email || firebaseUser?.email || ""}
+            email={email || ""}
             avatarUrl={displayAvatarUrl || avatarUrl(currentUser)}
             onUploadPhoto={uploadProfilePhoto}
             onRemovePhoto={removeProfilePhoto}
@@ -12864,7 +10859,6 @@ function App() {
             onDeleteCategory={deleteCategoryById}
             onLoadCategories={loadCategories}
             apiBase={apiBase}
-            cloudOnlyMode={cloudOnlyMode}
             onApiBaseChange={(next) => setApiBase(persistApiBase(next))}
             browserOnline={browserOnline}
             cloudBusy={cloudBusy}

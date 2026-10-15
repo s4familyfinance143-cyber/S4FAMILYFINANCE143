@@ -28,3 +28,15 @@ def write_audit_log(
     )
 
     db.add(item)
+    # Every curated audit entry is a family data change: tell open clients
+    # (broadcast happens only after this session commits).
+    from app.services.family_realtime import queue_family_event
+
+    queue_family_event(
+        db,
+        family_id,
+        entity_type=entity_type,
+        action=action_type,
+        entity_id=entity_id,
+        actor_member_id=member_id,
+    )

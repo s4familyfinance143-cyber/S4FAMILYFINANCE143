@@ -1,4 +1,4 @@
-"""Architecture checklist tables: user_preferences, refresh_tokens, device_sessions, push_tokens."""
+"""Architecture checklist tables: user_preferences, refresh_tokens, device_sessions."""
 
 from datetime import datetime
 
@@ -56,24 +56,7 @@ class DeviceSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     device_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    fcm_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     last_active: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
     legacy_session_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-
-
-class PushToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "push_tokens"
-    __table_args__ = (
-        UniqueConstraint("user_id", "fcm_token", name="uq_push_tokens_user_token"),
-        Index("ix_push_tokens_active", "user_id", "is_active"),
-    )
-
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
-    device_id: Mapped[str | None] = mapped_column(String(120), index=True, nullable=True)
-    fcm_token: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
-    platform: Mapped[str] = mapped_column(String(40), default="UNKNOWN", nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    family_id: Mapped[str | None] = mapped_column(ForeignKey("families.id"), index=True, nullable=True)
-    legacy_push_device_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

@@ -1,4 +1,4 @@
-"""Fan-out in-app notifications to Email + FCM channels (honest, no fake send)."""
+"""Fan-out in-app notifications to the email channel (honest, no fake send)."""
 
 from __future__ import annotations
 
@@ -7,14 +7,12 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.architecture_auth import PushToken
 from app.models.family_member import FamilyMember
-from app.models.infra_jobs import EmailOutbox, PushOutbox
+from app.models.infra_jobs import EmailOutbox
 from app.models.notification import Notification
 from app.models.user import User
 from app.services.email_service import is_smtp_configured, send_notification_email, smtp_status
-from app.services.fcm_service import fcm_status, is_fcm_configured, send_fcm_push
-from app.services.job_queue import enqueue_email, enqueue_push
+from app.services.job_queue import enqueue_email
 
 
 def _member_user_ids(db: Session, family_id: str) -> list[str]:
@@ -42,50 +40,12 @@ def _emails_for_family(db: Session, family_id: str, user_id: str | None = None) 
     return sorted(set(out))
 
 
-def _push_tokens(db: Session, family_id: str, user_id: str | None = None) -> list[PushToken]:
-    q = db.query(PushToken).filter(
-        PushToken.family_id == family_id,
-        PushToken.deleted_at.is_(None),
-        PushToken.is_active.is_(True),
-    )
-    if user_id:
-        q = q.filter(PushToken.user_id == user_id)
-    return q.all()
-
-
-def _record_push_outbox(
-    db: Session,
-    *,
-    family_id: str,
-    notification_id: str | None,
-    token: str,
-    title: str,
-    body: str,
-    status: str,
-    last_error: str | None = None,
-) -> PushOutbox:
-    row = PushOutbox(
-        family_id=family_id,
-        notification_id=notification_id,
-        fcm_token_preview=f"{token[:8]}…{token[-4:]}" if token and len(token) > 12 else "***",
-        title=title[:200],
-        body=(body or "")[:2000],
-        status=status,
-        attempts=1,
-        last_error=(last_error or None) and str(last_error)[:500],
-        sent_at=datetime.now(timezone.utc) if status == "SENT" else None,
-    )
-    db.add(row)
-    return row
-
-
 def deliver_notification_channels(db: Session, notification: Notification) -> dict:
     """Deliver one notification over configured channels. Always records honest outcomes."""
     family_id = notification.family_id
     title = (notification.title or "S4 notification").split(" | ")[0].strip()
     body = (notification.message or "").split(" | ")[0].strip()
     email_results = []
-    push_results = []
 
     # --- Email ---
     if settings.NOTIFICATION_EMAIL_ENABLED:
@@ -138,90 +98,11 @@ def deliver_notification_channels(db: Session, notification: Notification) -> di
     else:
         email_results.append({"sent": False, "reason": "NOTIFICATION_EMAIL_ENABLED=false"})
 
-    # --- FCM ---
-    if settings.NOTIFICATION_FCM_ENABLED:
-        tokens = _push_tokens(db, family_id, notification.user_id)
-        if not tokens:
-            push_results.append({"sent": False, "reason": "No active push tokens"})
-        for device in tokens:
-            token = device.fcm_token
-            if settings.CELERY_ENABLED and is_fcm_configured():
-                queued = enqueue_push(
-                    token,
-                    title,
-                    body,
-                    {
-                        "family_id": family_id,
-                        "notification_id": notification.id,
-                        "type": notification.notification_type or "",
-                    },
-                )
-                _record_push_outbox(
-                    db,
-                    family_id=family_id,
-                    notification_id=notification.id,
-                    token=token,
-                    title=title,
-                    body=body,
-                    status="QUEUED",
-                )
-                push_results.append({"device_id": device.id, "queued": True, **queued})
-            elif is_fcm_configured():
-                result = send_fcm_push(
-                    token=token,
-                    title=title,
-                    body=body,
-                    data={
-                        "family_id": family_id,
-                        "notification_id": notification.id,
-                        "type": notification.notification_type or "",
-                    },
-                )
-                _record_push_outbox(
-                    db,
-                    family_id=family_id,
-                    notification_id=notification.id,
-                    token=token,
-                    title=title,
-                    body=body,
-                    status="SENT" if result.sent else "FAILED",
-                    last_error=None if result.sent else result.reason,
-                )
-                push_results.append({"device_id": device.id, **result.as_dict()})
-            else:
-                # FCM is permanently removed (fcm_service.is_fcm_configured() always
-                # False), so this row will never be picked up and retried — nothing
-                # in the codebase reads PushOutbox.status=="QUEUED". Recording it as
-                # QUEUED implied pending delivery and contradicted last_error's own
-                # "permanently disabled" message; record the true, final outcome.
-                _record_push_outbox(
-                    db,
-                    family_id=family_id,
-                    notification_id=notification.id,
-                    token=token,
-                    title=title,
-                    body=body,
-                    status="FAILED",
-                    last_error=fcm_status().get("note"),
-                )
-                push_results.append(
-                    {
-                        "device_id": device.id,
-                        "sent": False,
-                        "queued": False,
-                        "reason": fcm_status().get("note"),
-                    }
-                )
-    else:
-        push_results.append({"sent": False, "reason": "NOTIFICATION_FCM_ENABLED=false"})
-
     return {
         "notification_id": notification.id,
         "in_app": True,
         "email": email_results,
-        "push": push_results,
         "smtp": smtp_status(),
-        "fcm": fcm_status(),
     }
 
 
@@ -244,7 +125,6 @@ def fanout_notification_ids(db: Session, family_id: str, notification_ids: list[
 
 def pipeline_status() -> dict:
     """Architecture pipeline readiness (code-complete regardless of live cloud keys)."""
-    fcm = fcm_status()
     smtp = smtp_status()
     return {
         "in_app": {"enabled": bool(settings.NOTIFICATION_IN_APP_ENABLED), "status": "DONE"},
@@ -258,13 +138,6 @@ def pipeline_status() -> dict:
                 "Set SMTP_* + NOTIFICATION_EMAIL_ENABLED=true for live SMTP; "
                 "outbox queue is always available."
             ),
-        },
-        "fcm": {
-            "enabled": bool(settings.NOTIFICATION_FCM_ENABLED),
-            "configured": bool(fcm.get("configured")),
-            "outbox": "DONE",
-            "status": "DONE",
-            "note": fcm.get("note"),
         },
         "architecture_status": "DONE",
     }

@@ -1,4 +1,4 @@
-/** Settings → Cloud: Local Disk + Google Drive (Firebase removed). */
+/** Settings → Cloud: Local Disk + Google Drive backups. */
 import { useEffect, useState } from "react";
 import { CLOUD_SYNC_INTERVALS } from "../../lib/cloudAutoSync";
 import { isNativeApp } from "../../lib/runtimeEnv";
@@ -90,7 +90,7 @@ export function CloudBackupPanel({
   const [providerTab, setProviderTab] = useState(() => (localActive ? "local" : "drive"));
 
   function patchAutoSync(patch) {
-    onCloudAutoSyncChange?.({ ...cloudAutoSync, firebase: false, ...patch });
+    onCloudAutoSyncChange?.({ ...cloudAutoSync, ...patch });
   }
 
   useEffect(() => {

@@ -11,7 +11,6 @@ export ENVIRONMENT=development
 export AUTO_CREATE_TABLES=true
 export DATABASE_URL="${DATABASE_URL:-sqlite:///./ci_pytest.db}"
 export JWT_SECRET_KEY="${JWT_SECRET_KEY:-ci_test_secret_key_at_least_32_chars_long}"
-export NOTIFICATION_FCM_ENABLED=false
 export NOTIFICATION_EMAIL_ENABLED=false
 export AUTH_EMAIL_ENABLED=true
 export DOCUMENT_VAULT_BACKEND=local

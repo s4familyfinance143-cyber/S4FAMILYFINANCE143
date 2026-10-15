@@ -1,6 +1,6 @@
 # S4 Family Finance 143
 
-**Offline-first family finance platform** — income, expenses, grocery lists, loans, budgets, and savings for the whole family. Works on **PC, PWA (phone install), and Android APK** without a VPS.
+**Self-hosted family finance platform** — income, expenses, grocery lists, loans, budgets, and savings for the whole family. Everything runs on **your own VPS** (FastAPI + PostgreSQL + Redis); the web app, PWA, Android APK and Windows EXE all talk to that server. Code lives on GitHub. No third-party cloud database.
 
 [![Release](https://img.shields.io/github/v/release/s4familyfinance143-cyber/S4FAMILYFINANCE143)](https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE143/releases)
 [![License](https://img.shields.io/badge/license-Private-red)]()
@@ -13,14 +13,15 @@
 |------|----------------|
 | **Finance** | Wallets, transactions, budgets, loans, savings goals |
 | **Family** | Multi-member families, roles, invites, approvals |
-| **Offline** | Local SQLite + IndexedDB cache — works without internet |
-| **Cloud backup** | Firebase (no VPS), Google Drive, local folder |
+| **Live updates** | Changes by one family member appear on the others' screens over the VPS WebSocket |
+| **Offline** | Local SQLite + IndexedDB cache with a sync outbox — keeps working without internet, syncs to the VPS when back online |
+| **Backup** | Family-scoped export from the VPS, plus optional local folder / Google Drive copy |
 | **Platforms** | Web, PWA, Android APK, Windows EXE |
 | **Languages** | English, বাংলা, Hindi, Arabic, Urdu |
 
 ---
 
-## Quick start (PC)
+## Quick start (PC, local development)
 
 ### Requirements
 
@@ -37,11 +38,21 @@ cd S4FAMILYFINANCE143
 .\start_dev.ps1
 ```
 
-Open: **http://127.0.0.1:5173**
+Open: **http://127.0.0.1:5173** (API: http://127.0.0.1:8000)
 
 ### Login
 
-Use your own Firebase cloud account (email + password). Create a family from the login screen — no shared demo password is published.
+Register an account on the server (email + phone, OTP verification), then create or join a family from the login screen. No shared demo password is published.
+
+---
+
+## Production (VPS)
+
+Live app: **https://app.s4businessthinking.com** (API under `/api/v1`).
+
+Pushing to `main` deploys automatically to the VPS (`.github/workflows/auto-deploy-vps.yml`): rsync, Docker rebuild, `alembic upgrade head`, health checks. **Take a `pg_dump` backup before merging anything that touches the database.**
+
+See [`deploy/OPERATOR_GO_LIVE.md`](deploy/OPERATOR_GO_LIVE.md).
 
 ---
 
@@ -51,19 +62,19 @@ Go to **[Releases](https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE14
 
 | File | Platform |
 |------|----------|
-| `S4-Family-Finance-143-PWA.zip` | PWA — phone install / self-host |
+| `S4-Family-Finance-143-PWA.zip` | PWA — self-host |
 | `S4-Family-Finance-143-Setup.exe` | Windows PC installer |
 | `S4-Family-Finance-143.apk` | Android phone |
 
 ### PWA install (phone)
 
-1. Deploy or use hosted URL: `https://s4-family-finance.web.app`
+1. Open **https://app.s4businessthinking.com**
 2. **Android:** Chrome → Menu → **Install app**
 3. **iPhone:** Safari → Share → **Add to Home Screen**
 
 ### Android APK
 
-Download APK from Releases → install on phone (allow unknown sources).
+Download APK from Releases → install on phone (allow unknown sources). The app connects to the VPS server by default.
 
 ### Windows EXE (Tauri)
 
@@ -79,43 +90,19 @@ Or use GitHub Actions **Release** workflow artifacts.
 
 ---
 
-## Cloud backup (no VPS)
-
-Firebase is built into the app (`frontend/src/firebase/config.js`).
-
-1. Firebase Console → enable **Authentication** (Email + Google) and **Firestore**
-2. Publish rules from `deploy/firebase/firestore.rules`
-3. In app: **Settings → Cloud** → Sign in → **Upload backup to cloud**
-4. New device: Sign in → **Restore from cloud**
-
-Guides: [`deploy/FIREBASE_SETUP.md`](deploy/FIREBASE_SETUP.md) · [`deploy/GOOGLE_DRIVE_SETUP.md`](deploy/GOOGLE_DRIVE_SETUP.md)
-
----
-
 ## Project structure
 
 ```
 S4FAMILYFINANCE143/
-├── backend/          # FastAPI + SQLite API (optional / advanced)
+├── backend/          # FastAPI API — the single source of truth (VPS)
 ├── frontend/         # React + Vite PWA (primary UI)
 │   └── android/      # Capacitor Android — official APK
 ├── desktop/          # Tauri Windows EXE (official desktop)
-├── mobile/           # Expo RN — secondary / experimental (not the release APK)
-├── deploy/           # Hosting, Firebase, installer docs
+├── mobile/           # Expo React Native app (talks to the same VPS API)
+├── deploy/           # Docker, Nginx, VPS scripts and docs
 ├── setup_local.ps1   # One-time local setup
 └── start_dev.ps1     # Start backend + frontend
 ```
-
-**Platform note:** Store/sideload Android builds come from **Capacitor** (`frontend/android`). The `mobile/` Expo app is a separate stack — use Capacitor for production APKs.
----
-
-## Deploy PWA to Firebase Hosting
-
-```powershell
-.\deploy\scripts\deploy_firebase_hosting.ps1
-```
-
-Live URL: **https://s4-family-finance.web.app**
 
 ---
 
@@ -131,13 +118,13 @@ Requires Java JDK 21 + Android SDK (Android Studio).
 
 ## GitHub backup
 
-This repository is your **full project backup**. If USB or local files are lost:
+This repository is the **full code backup**:
 
 ```powershell
 git clone https://github.com/s4familyfinance143-cyber/S4FAMILYFINANCE143.git
 ```
 
-Finance **data** is not in Git — use **Firebase / Google Drive / local folder** backup in Settings → Cloud.
+Finance **data** is not in Git — it lives in PostgreSQL on the VPS. Back it up with `pg_dump` on the server; each family OWNER can also download a family export from Settings → Backup.
 
 ---
 
@@ -145,11 +132,10 @@ Finance **data** is not in Git — use **Firebase / Google Drive / local folder*
 
 | Doc | Topic |
 |-----|-------|
-| [`SETUP_COMPLETE.md`](SETUP_COMPLETE.md) | Checklist |
+| [`deploy/OPERATOR_GO_LIVE.md`](deploy/OPERATOR_GO_LIVE.md) | VPS go-live |
 | [`deploy/PWA_APK_RELEASE.md`](deploy/PWA_APK_RELEASE.md) | PWA + APK release |
 | [`deploy/WINDOWS_DESKTOP.md`](deploy/WINDOWS_DESKTOP.md) | Windows EXE |
 | [`deploy/MOBILE_SETUP.md`](deploy/MOBILE_SETUP.md) | Phone install |
-| [`deploy/FIREBASE_SETUP.md`](deploy/FIREBASE_SETUP.md) | Firebase Console |
 
 ---
 

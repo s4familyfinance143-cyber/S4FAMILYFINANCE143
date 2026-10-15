@@ -10,7 +10,6 @@ def test_architecture_tables_registered():
         "user_preferences",
         "refresh_tokens",
         "device_sessions",
-        "push_tokens",
         "tags",
         "transaction_tags",
         "loan_payments",
@@ -94,11 +93,15 @@ def test_sync_apply_allows_architecture_entities():
 
 
 def test_auth_push_cutover_models():
-    from app.models.architecture_auth import DeviceSession, PushToken, RefreshToken, UserPreference
+    from app.models.base import Base
+    from app.models.architecture_auth import DeviceSession, RefreshToken, UserPreference
 
     assert RefreshToken.__tablename__ == "refresh_tokens"
     assert DeviceSession.__tablename__ == "device_sessions"
-    assert PushToken.__tablename__ == "push_tokens"
+    # Push (FCM) tables were dropped with Firebase (migration 0027).
+    assert "push_tokens" not in Base.metadata.tables
+    assert "push_outbox" not in Base.metadata.tables
+    assert not hasattr(DeviceSession, "fcm_token")
     assert UserPreference.__tablename__ == "user_preferences"
     assert hasattr(RefreshToken, "token_family")
     assert hasattr(RefreshToken, "status")

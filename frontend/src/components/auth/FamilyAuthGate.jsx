@@ -113,13 +113,6 @@ const UI = {
       "লাইভ সার্ভার: https://app.s4businessthinking.com/api/v1 — সাধারণত আলাদা সেটিং লাগে না।",
     mobileApiBlocked:
       "এই অ্যাপ localhost API ধরছে। নতুন APK ইনস্টল করুন বা https://app.s4businessthinking.com খুলুন।",
-    cloudCreateSub: "",
-    cloudLoginSub: "Firebase অ্যাকাউন্ট দিয়ে লগইন — PC বা backend লাগবে না",
-    cloudLoginPageSub: "Firebase ক্লাউড — লগইন করুন বা পরিবার তৈরি করুন",
-    cloudNewUser: "নতুন ব্যবহারকারী?",
-    cloudGoogleSignIn: "Google দিয়ে সাইন ইন",
-    cloudFirstHint:
-      "ফোন/APK-তে সরাসরি অ্যাকাউন্ট তৈরি করুন বা লগইন করুন। ডেটা Firebase-এ সংরক্ষিত থাকবে।",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -198,13 +191,6 @@ const UI = {
       "Live server: https://app.s4businessthinking.com/api/v1 — usually no extra setup.",
     mobileApiBlocked:
       "This app is pointed at localhost. Install the latest APK or open https://app.s4businessthinking.com.",
-    cloudCreateSub: "",
-    cloudLoginSub: "Sign in with Firebase — no PC or backend needed",
-    cloudLoginPageSub: "Cloud sign in or create your family",
-    cloudNewUser: "New here?",
-    cloudGoogleSignIn: "Sign in with Google",
-    cloudFirstHint:
-      "On phone/APK, create an account or sign in directly. Your data is stored in Firebase.",
     stAccount: "Account",
     stFamily: "Family/Invite",
     stApproval: "Approval",
@@ -303,8 +289,8 @@ function LoginCardBrand({ subtitle }) {
   );
 }
 
-function MobileApiBanner({ nativeApp, useCloudAuth, labels, apiBase }) {
-  if (!nativeApp || useCloudAuth) return null;
+function MobileApiBanner({ nativeApp, labels, apiBase }) {
+  if (!nativeApp) return null;
   // Hide noisy LAN/PC banner when talking to the live production API.
   if (isProductionApi(apiBase) && !isLocalhostApi(apiBase)) return null;
   return (
@@ -337,8 +323,7 @@ export function FamilyAuthGate({
 }) {
   const lang = appLanguage === "en" ? "en" : "bn";
   const L = UI[lang] || UI.en;
-  // Firebase client removed — always VPS/API auth.
-  const useCloudAuth = false;
+  // Auth is always against the VPS API.
   const [view, setView] = useState("login"); // login | createFamily | join | forgot | resetPassword | verifyOtp
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -639,7 +624,6 @@ export function FamilyAuthGate({
   }
 
   function requireMobileApiBase() {
-    if (useCloudAuth) return true;
     if (!nativeApp || !isLocalhostApi(apiBase)) return true;
     setMessage(L.mobileApiBlocked, "error");
     return false;
@@ -693,7 +677,7 @@ export function FamilyAuthGate({
           /* ignore */
         }
       }
-      onAuthenticated(access, refresh, data.user || data.data?.user || null);
+      onAuthenticated(access, refresh, data.user || data.data?.user);
       setMessage(t("loginSuccessful"), "success");
       setStatus("");
     } catch (error) {
@@ -971,10 +955,10 @@ export function FamilyAuthGate({
                   </select>
                 </div>
 
-                <LoginCardBrand subtitle={useCloudAuth ? L.cloudLoginPageSub : L.subtitle} />
-                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
+                <LoginCardBrand subtitle={L.subtitle} />
+                <MobileApiBanner nativeApp={nativeApp} labels={L} apiBase={apiBase} />
 
-                {!useCloudAuth && view !== "login" && view !== "forgot" && view !== "resetPassword" ? (
+                {view !== "login" && view !== "forgot" && view !== "resetPassword" ? (
                 <div className="mode-select-wrap" ref={menuRef}>
                   <span className="mode-select-label">{L.modeLabel}</span>
                   <button
@@ -1281,8 +1265,7 @@ export function FamilyAuthGate({
                       </button>
                     </form>
                     <div className="footer-note">
-                      {!useCloudAuth ? (
-                        <>
+                      {<>
                           <button
                             type="button"
                             className="link"
@@ -1296,8 +1279,7 @@ export function FamilyAuthGate({
                             {L.resetTokenPaste}
                           </button>
                           {" · "}
-                        </>
-                      ) : null}
+                        </>}
                       <button type="button" className="link" disabled={authLoading} onClick={() => setMode("login")}>
                         {L.backToLogin}
                       </button>
@@ -1307,7 +1289,7 @@ export function FamilyAuthGate({
 
                 {view === "login" ? (
                   <div className="cloud-footer">
-                    {useCloudAuth ? L.cloudNewUser : L.noAccount}{" "}
+                    {L.noAccount}{" "}
                     <button type="button" className="link" disabled={authLoading} onClick={() => setMode("createFamily")}>
                       {L.btnCreate}
                     </button>
@@ -1376,7 +1358,7 @@ export function FamilyAuthGate({
                     </button>
                   </div>
 
-                <MobileApiBanner nativeApp={nativeApp} useCloudAuth={useCloudAuth} labels={L} apiBase={apiBase} />
+                <MobileApiBanner nativeApp={nativeApp} labels={L} apiBase={apiBase} />
 
                 {view === "createFamily" ? (
                   <form className="signup-form" onSubmit={handleCreateFamily}>

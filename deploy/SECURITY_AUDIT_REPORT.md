@@ -50,7 +50,7 @@ found 0 vulnerabilities (audit-level=high)
 
 ## Residual risks (accepted for beta)
 
-1. Live FCM / SMTP credentials not installed until operator configures them.
+1. Live SMTP credentials not installed until operator configures them.
 2. Production domain TLS until Certbot/Cloudflare is applied on VPS.
 3. Real-user abuse testing happens in beta (see `deploy/BETA_TESTING_PLAN.md`).
 

@@ -22,6 +22,7 @@ from app.middleware.request_logger import RequestLoggerMiddleware
 from app.middleware.response_formatter import ResponseFormatterMiddleware
 from app.models.base import Base
 import app.models as _all_models  # noqa: F401 — register all ORM tables
+import app.services.family_realtime as _family_realtime  # noqa: F401 — after-commit live-update hooks
 from app.workers.auto_backup_worker import process_auto_backup
 from app.workers.recurring_scheduler import process_recurring_transactions
 from app.api.v1.family_governance_hardened import router as family_governance_hardened_router
@@ -43,10 +44,10 @@ def create_development_tables() -> None:
     Development safety:
     - SQLite local dev can auto-create tables.
     - Production PostgreSQL must use Alembic migrations, not create_all.
-    - Deprecated alias tables (auth_sessions, push_devices) must not be recreated.
+    - Deprecated alias table auth_sessions must not be recreated.
     """
     if settings.AUTO_CREATE_TABLES and settings.IS_SQLITE:
-        for deprecated in ("auth_sessions", "push_devices"):
+        for deprecated in ("auth_sessions",):
             table = Base.metadata.tables.get(deprecated)
             if table is not None:
                 Base.metadata.remove(table)

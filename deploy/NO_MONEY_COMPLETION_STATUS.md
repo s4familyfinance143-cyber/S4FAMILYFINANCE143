@@ -34,7 +34,7 @@ Updated: 2026-08-13 (evening)
 | Item | Status |
 |------|--------|
 | Full raw SQL wipe | Hardened phase6–9 dynamic SQL kept intentionally (schema-drift); sync_apply ORM done |
-| Money ops | VPS/DNS/SSL/Firebase/Vision/AWS — out of scope |
+| Money ops | VPS/DNS/SSL/Vision/AWS — out of scope |
 
 ## Ops flags
 

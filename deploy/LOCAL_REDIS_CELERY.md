@@ -52,4 +52,4 @@ Open http://127.0.0.1:8025 — all outgoing emails appear here (no real send).
 docker compose -f docker-compose.local.yml down
 ```
 
-See also: `deploy/EMAIL_FCM_SETUP.md`
+See also: `deploy/EMAIL_SETUP.md`

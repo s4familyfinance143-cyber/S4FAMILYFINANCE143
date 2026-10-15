@@ -55,4 +55,3 @@ Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 $sizeMb = [math]::Round((Get-Item $OutZip).Length / 1MB, 2)
 Write-Host "PASS package_release"
 Write-Host "OUT  $OutZip ($sizeMb MB)"
-Write-Host "NOTE: Fill frontend/.env Firebase keys before cloud backup."

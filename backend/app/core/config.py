@@ -69,12 +69,8 @@ class Settings(BaseSettings):
     ENABLE_AUTO_BACKUP_WORKER: bool = True
 
     NOTIFICATION_IN_APP_ENABLED: bool = True
-    # Firebase Admin / FCM removed — flags kept for env compatibility; always ignored by fcm_service.
-    NOTIFICATION_FCM_ENABLED: bool = False
     NOTIFICATION_EMAIL_ENABLED: bool = False
     AUTH_EMAIL_ENABLED: bool = True
-    FCM_PROJECT_ID: str | None = None
-    FCM_CREDENTIALS_PATH: str | None = None
 
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587

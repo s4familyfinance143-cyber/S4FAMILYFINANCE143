@@ -91,7 +91,6 @@ Write-Host "API:    http://127.0.0.1:8000"
 Write-Host "App:    cd frontend && npm run dev  -> http://127.0.0.1:5173"
 Write-Host ""
 Write-Host "YOU STILL NEED (manual - Google account):" -ForegroundColor Yellow
-Write-Host "  - Firebase keys in frontend/.env  (deploy/FIREBASE_SETUP.md)"
 Write-Host "  - VITE_GOOGLE_CLIENT_ID           (deploy/GOOGLE_DRIVE_SETUP.md)"
 Write-Host "  - Docker for Redis/Mailpit        (deploy/LOCAL_REDIS_CELERY.md)"
 Write-Host "  - Inno Setup for Windows .exe     (deploy/WINDOWS_DESKTOP.md)"

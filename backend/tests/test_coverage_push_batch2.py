@@ -1121,48 +1121,18 @@ def test_job_queue_celery_enabled_paths(monkeypatch):
     class AR:
         id = "task-1"
 
-    monkeypatch.setattr(
-        "app.workers.celery_tasks.send_push_task",
-        SimpleNamespace(delay=lambda *a, **k: AR()),
-        raising=False,
-    )
-    # patch via import inside function
     import app.workers.celery_tasks as tasks
 
-    monkeypatch.setattr(tasks.send_push_task, "delay", lambda *a, **k: AR())
     monkeypatch.setattr(tasks.send_email_task, "delay", lambda *a, **k: AR())
     monkeypatch.setattr(tasks.generate_report_task, "delay", lambda *a, **k: AR())
     monkeypatch.setattr(tasks.export_job_task, "delay", lambda *a, **k: AR())
 
-    assert job_queue.enqueue_push("t", "ti", "b")["queued"] is True
     assert job_queue.enqueue_email("a@b.com", "s", "t")["queued"] is True
     assert job_queue.enqueue_report("f1")["queued"] is True
     assert job_queue.enqueue_export_job("j1")["queued"] is True
-
-
-# ---------------------------------------------------------------------------
-# fcm extra paths
-# ---------------------------------------------------------------------------
-
-
-def test_fcm_credential_resolve_and_send_guards(monkeypatch, tmp_path):
-    from app.services import fcm_service as fcm
-
-    assert fcm._resolve_credentials_path() is None
-    assert fcm._firebase_admin_available() is False
-    st = fcm.fcm_status()
-    assert st["configured"] is False
-    assert st["firebase_admin_available"] is False
-    assert "removed" in st["note"].lower()
-
-    assert fcm.send_fcm_push(token="", title="t", body="b").sent is False
-    assert fcm.send_fcm_push(token="tok", title="", body="b").sent is False
-    r = fcm.send_fcm_push(token="tok", title="t", body="b")
-    assert r.sent is False
-    assert "removed" in r.reason.lower()
-
-    with pytest.raises(RuntimeError, match="removed"):
-        fcm._get_firebase_app()
+    # Push (FCM) was removed: no push queue exists any more.
+    assert not hasattr(job_queue, "enqueue_push")
+    assert not hasattr(tasks, "send_push_task")
 
 
 # ---------------------------------------------------------------------------
@@ -1173,9 +1143,6 @@ def test_fcm_credential_resolve_and_send_guards(monkeypatch, tmp_path):
 def test_notification_delivery_email_and_push_branches(monkeypatch):
     from app.services import notification_delivery_service as nd
     from app.core import config as cfg
-    from app.models.architecture_auth import PushToken
-    from app.models.user import User
-    from app.models.family_member import FamilyMember
 
     notif = SimpleNamespace(
         id="n1",
@@ -1187,53 +1154,25 @@ def test_notification_delivery_email_and_push_branches(monkeypatch):
     )
 
     monkeypatch.setattr(cfg.settings, "NOTIFICATION_EMAIL_ENABLED", True, raising=False)
-    monkeypatch.setattr(cfg.settings, "NOTIFICATION_FCM_ENABLED", True, raising=False)
     monkeypatch.setattr(cfg.settings, "CELERY_ENABLED", False, raising=False)
     monkeypatch.setattr(nd, "is_smtp_configured", lambda: False)
-    monkeypatch.setattr(nd, "is_fcm_configured", lambda: False)
     monkeypatch.setattr(nd, "smtp_status", lambda: {"configured": False, "note": "no smtp"})
-    monkeypatch.setattr(nd, "fcm_status", lambda: {"configured": False, "note": "no fcm"})
-
-    token = SimpleNamespace(id="d1", fcm_token="abcdefghijklmnop", user_id="u1")
-    user = SimpleNamespace(id="u1", email="a@b.com", is_active=True)
-
-    class NDb(Db):
-        def query(self, model):
-            if model is FamilyMember or getattr(model, "key", None) == FamilyMember.user_id:
-                return Query(rows=[("u1",)])
-            # User.id.in_ query uses User
-            name = getattr(model, "__name__", str(model))
-            if model is User or "User" in name:
-                return Query(rows=[user])
-            if model is PushToken or "PushToken" in name:
-                return Query(rows=[token])
-            return Query(rows=[])
-
-    # _member_user_ids uses FamilyMember.user_id column query — simplify by patching helpers
     monkeypatch.setattr(nd, "_emails_for_family", lambda db, fid, uid=None: ["a@b.com"])
-    monkeypatch.setattr(nd, "_push_tokens", lambda db, fid, uid=None: [token])
 
-    db = NDb()
+    db = Db()
     out = nd.deliver_notification_channels(db, notif)
     assert out["email"][0]["queued"] is True
-    # FCM is permanently removed (is_fcm_configured() False here), so this row
-    # will never be retried -- honestly reported as not-queued, not sent.
-    assert out["push"][0]["queued"] is False
-    assert out["push"][0]["sent"] is False
-    assert any(isinstance(x, type(db.added[0])) or True for x in db.added)
+    # Email + in-app only: push (FCM) channel no longer exists.
+    assert "push" not in out and "fcm" not in out
 
     # celery email path
     monkeypatch.setattr(cfg.settings, "CELERY_ENABLED", True, raising=False)
     monkeypatch.setattr(nd, "enqueue_email", lambda *a, **k: {"queued": True, "task_id": "e1"})
-    monkeypatch.setattr(nd, "is_fcm_configured", lambda: True)
-    monkeypatch.setattr(nd, "enqueue_push", lambda *a, **k: {"queued": True, "task_id": "p1"})
     out2 = nd.deliver_notification_channels(db, notif)
     assert out2["email"][0]["queued"] is True
-    assert out2["push"][0]["queued"] is True
 
-    # inline fcm configured send
+    # inline SMTP send
     monkeypatch.setattr(cfg.settings, "CELERY_ENABLED", False, raising=False)
-    monkeypatch.setattr(nd, "send_fcm_push", lambda **kw: SimpleNamespace(sent=True, reason="sent", as_dict=lambda: {"sent": True, "reason": "sent"}))
     monkeypatch.setattr(nd, "is_smtp_configured", lambda: True)
     monkeypatch.setattr(
         nd,
@@ -1242,14 +1181,10 @@ def test_notification_delivery_email_and_push_branches(monkeypatch):
     )
     out3 = nd.deliver_notification_channels(db, notif)
     assert out3["email"][0]["sent"] is True
-    assert out3["push"][0]["sent"] is True
 
-    # no tokens
-    monkeypatch.setattr(nd, "_push_tokens", lambda *a, **k: [])
-    out4 = nd.deliver_notification_channels(db, notif)
-    assert "No active push tokens" in out4["push"][0]["reason"]
-
-    assert nd.pipeline_status()["architecture_status"] == "DONE"
+    status = nd.pipeline_status()
+    assert status["architecture_status"] == "DONE"
+    assert "fcm" not in status
     assert nd.fanout_notification_ids(db, "f1", []) == {"delivered": 0, "results": []}
 
 
@@ -1257,7 +1192,6 @@ def test_notification_helper_email_and_tokens():
     from app.services import notification_delivery_service as nd
     from app.models.family_member import FamilyMember
     from app.models.user import User
-    from app.models.architecture_auth import PushToken
 
     class QDb(Db):
         def query(self, model):
@@ -1271,8 +1205,6 @@ def test_notification_helper_email_and_tokens():
                         SimpleNamespace(id="u2", email="", is_active=True),
                     ]
                 )
-            if model is PushToken:
-                return Query(rows=[SimpleNamespace(id="t1", fcm_token="x", user_id="u1")])
             # InstrumentedAttribute for FamilyMember.user_id
             if getattr(model, "key", None) == "user_id":
                 return Query(rows=[("u1",), (None,), ("u2",)])
@@ -1284,54 +1216,13 @@ def test_notification_helper_email_and_tokens():
     assert emails == ["a@b.com"]
     emails_direct = nd._emails_for_family(qdb, "f", user_id="u1")
     assert emails_direct == ["a@b.com"]
-    tokens = nd._push_tokens(qdb, "f", user_id="u1")
-    assert len(tokens) == 1
-
-    row = nd._record_push_outbox(
-        qdb,
-        family_id="f",
-        notification_id="n",
-        token="short",
-        title="t",
-        body="b",
-        status="SENT",
-    )
-    assert row.status == "SENT"
-    short = nd._record_push_outbox(
-        qdb,
-        family_id="f",
-        notification_id=None,
-        token="abcdefghijklmnop",
-        title="t",
-        body="b",
-        status="FAILED",
-        last_error="x" * 600,
-    )
-    assert "…" in short.fcm_token_preview or short.fcm_token_preview
+    # Push-token / push-outbox helpers were removed with FCM.
+    assert not hasattr(nd, "_push_tokens") and not hasattr(nd, "_record_push_outbox")
 
 
 # ---------------------------------------------------------------------------
-# celery send_push_task (no redis)
+# celery export / report tasks (no redis)
 # ---------------------------------------------------------------------------
-
-
-def test_celery_send_push_task_mocked(monkeypatch):
-    from app.workers import celery_tasks as tasks
-
-    monkeypatch.setattr(
-        "app.services.fcm_service.send_fcm_push",
-        lambda **kw: SimpleNamespace(sent=True, reason="sent"),
-    )
-    out = tasks.send_push_task("tok", "t", "b", {"a": 1})
-    assert out["ok"] is True
-    assert out["task"] == "push"
-
-    monkeypatch.setattr(
-        "app.services.fcm_service.send_fcm_push",
-        lambda **kw: SimpleNamespace(sent=False, reason="nope"),
-    )
-    out2 = tasks.send_push_task("tok", "t", "b")
-    assert out2["ok"] is False
 
 
 def test_celery_export_and_report_mocked(monkeypatch, tmp_path):

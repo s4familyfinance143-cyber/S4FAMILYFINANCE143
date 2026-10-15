@@ -1,4 +1,4 @@
-# Build Windows desktop installer (Tauri + VPS API — Firebase Auth disabled)
+# Build Windows desktop installer (Tauri + VPS API)
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -9,7 +9,7 @@ if (-not (Test-Path (Join-Path $Root "desktop\src-tauri\Cargo.toml"))) {
 $Desktop = Join-Path $Root "desktop"
 $Frontend = Join-Path $Root "frontend"
 
-Write-Host "Building S4 desktop installer (VPS API — Firebase Auth off)..." -ForegroundColor Cyan
+Write-Host "Building S4 desktop installer (VPS API)..." -ForegroundColor Cyan
 
 Set-Location $Frontend
 if (-not (Test-Path "node_modules")) {

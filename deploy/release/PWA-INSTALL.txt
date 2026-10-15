@@ -1,11 +1,9 @@
 S4 Family Finance 143 — PWA install
 ===================================
 
-1. Unzip this folder anywhere (or use the live site).
-2. Host the files on HTTPS (Firebase Hosting recommended):
-   https://s4-family-finance.web.app
-3. Android: Chrome → open URL → Menu → Install app
-4. iPhone: Safari → Share → Add to Home Screen
-5. Sign in with Firebase Google account → Restore from cloud backup
+1. Open the live site: https://app.s4businessthinking.com
+2. Android: Chrome → Menu → Install app
+3. iPhone: Safari → Share → Add to Home Screen
+4. Log in with your server account (or register), then create or join a family.
 
-For full PC features (create/edit live data), run the Windows EXE or local backend.
+Data is stored on the VPS server; the app keeps an offline copy and syncs when online.

@@ -3,15 +3,6 @@ const CLOUD_FAMILY_KEY = "s4_cloud_family_id";
 /** Alias — active family id is persisted for API sessions. */
 export const ACTIVE_FAMILY_STORAGE_KEY = CLOUD_FAMILY_KEY;
 
-/** Firebase client removed — always VPS/API mode. */
-export function isFirebaseFirstMode() {
-  return false;
-}
-
-export function requireEmailVerification() {
-  return false;
-}
-
 export function loadCloudOnlyMode() {
   try {
     return localStorage.getItem(CLOUD_ONLY_KEY) === "1";
