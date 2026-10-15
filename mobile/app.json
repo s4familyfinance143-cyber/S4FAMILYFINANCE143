@@ -62,7 +62,7 @@
     },
     "extra": {
       "router": {},
-      "apiBaseUrl": "",
+      "apiBaseUrl": "https://app.s4businessthinking.com",
       "sentryDsn": "",
       "eas": {
         "projectId": "dfc31d5c-eddc-4d79-b540-05127584161c"

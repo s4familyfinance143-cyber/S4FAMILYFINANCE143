@@ -1,19 +1,16 @@
 /**
  * Expo config — loads EXPO_PUBLIC_* from .env into app extra.
+ * The app talks only to the VPS API (no Firebase / cloud mode).
  */
 const appJson = require("./app.json");
+
+const PRODUCTION_API_BASE_URL = "https://app.s4businessthinking.com";
 
 module.exports = ({ config }) => {
   const base = appJson.expo || config || {};
   const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN || base.extra?.sentryDsn || "";
-  const firebaseFirstRaw = process.env.EXPO_PUBLIC_FIREBASE_FIRST ?? "true";
-  const firebaseFirst =
-    String(firebaseFirstRaw).trim().toLowerCase() !== "0" &&
-    String(firebaseFirstRaw).trim().toLowerCase() !== "false";
   const apiBaseUrl =
-    process.env.EXPO_PUBLIC_API_BASE_URL ||
-    base.extra?.apiBaseUrl ||
-    (firebaseFirst ? "" : "http://127.0.0.1:8000");
+    process.env.EXPO_PUBLIC_API_BASE_URL || base.extra?.apiBaseUrl || PRODUCTION_API_BASE_URL;
 
   return {
     ...base,
@@ -21,7 +18,6 @@ module.exports = ({ config }) => {
       ...(base.extra || {}),
       apiBaseUrl,
       sentryDsn,
-      firebaseFirst,
       crashVault: "local+optional-sentry",
     },
   };
