@@ -29,7 +29,6 @@ import app.models.join_request  # noqa: F401
 import app.models.loan  # noqa: F401
 import app.models.member_permission  # noqa: F401
 import app.models.notification  # noqa: F401
-import app.models.push_device  # noqa: F401
 import app.models.recurring  # noqa: F401
 import app.models.relationship_type  # noqa: F401
 import app.models.savings  # noqa: F401
